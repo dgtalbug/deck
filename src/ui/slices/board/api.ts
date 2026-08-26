@@ -72,6 +72,8 @@ export interface GitDigest {
   branches?: string[];
   stashCount?: number;
   gh?: { available: boolean; account?: string };
+  graph?: string;
+  tags?: string[];
 }
 
 export interface PullRequest {

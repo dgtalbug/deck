@@ -29,6 +29,8 @@ export interface GitDigest {
   branches?: string[];
   stashCount?: number;
   gh?: GhStatus;
+  graph?: string;
+  tags?: string[];
 }
 
 const TIMEOUT_MS = 2000;
@@ -104,7 +106,7 @@ function parseRecent(log: string | undefined): GitCommit[] {
 }
 
 export async function gitDigest(projectPath: string): Promise<GitDigest> {
-  const [branch, head, status, counts, log, origin, branches, stashList, gh] = await Promise.all([
+  const [branch, head, status, counts, log, origin, branches, stashList, graph, tags, gh] = await Promise.all([
     git(projectPath, ['rev-parse', '--abbrev-ref', 'HEAD']),
     git(projectPath, ['rev-parse', '--short', 'HEAD']),
     git(projectPath, ['status', '--porcelain']),
@@ -113,6 +115,8 @@ export async function gitDigest(projectPath: string): Promise<GitDigest> {
     git(projectPath, ['remote', 'get-url', 'origin']),
     git(projectPath, ['branch', '--format=%(refname:short)']),
     git(projectPath, ['stash', 'list']),
+    git(projectPath, ['log', '--graph', '--oneline', '--all', '-n', '20']),
+    git(projectPath, ['tag', '--sort=-refname']),
     ghStatus(projectPath),
   ]);
   if (branch === undefined || head === undefined) {
@@ -137,6 +141,8 @@ export async function gitDigest(projectPath: string): Promise<GitDigest> {
     ...(origin !== undefined && origin !== '' ? { origin } : {}),
     branches: branches === undefined || branches === '' ? [] : branches.split('\n'),
     stashCount,
+    ...(graph !== undefined && graph !== '' ? { graph } : {}),
+    ...(tags !== undefined && tags !== '' ? { tags: tags.split('\n').slice(0, 10) } : {}),
     gh,
   };
 }

@@ -820,3 +820,63 @@ button.wip.is-over {
 .git-pr-row:last-child {
   border-bottom: none;
 }
+
+/* git panel two-pane layout + commit tree (v0.3.1) */
+
+.git-panel {
+  display: grid;
+  grid-template-columns: minmax(260px, 300px) 1fr;
+  gap: 14px;
+  align-items: start;
+}
+
+.git-panel-actions,
+.git-panel-content {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+
+.git-status-card {
+  padding: 10px 16px;
+}
+
+.git-graph {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.6;
+  margin: 0;
+  padding: 8px 0;
+  overflow-x: auto;
+  white-space: pre;
+  color: var(--soft);
+}
+
+.git-local-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: 13px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.git-local-list .mono {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.git-tag-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 900px) {
+  .git-panel {
+    grid-template-columns: 1fr;
+  }
+}

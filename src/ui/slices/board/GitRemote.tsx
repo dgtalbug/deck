@@ -7,7 +7,8 @@ import { ActionBtn, CLEAN_HINT, type GitActionCtx } from './gitShared.tsx';
 
 // Remote card (fetch / pull --ff-only / push behind a confirm naming branch +
 // remote) and the pull-requests card (gh badge, open PR list, create form →
-// URL + toast, explicit gh-unavailable state).
+// URL + toast). The page only mounts this card when gh is available — the
+// gh-unavailable state renders GitLocalCard instead.
 
 export function GitRemote({ ctx }: { ctx: GitActionCtx }): VNode {
   const { api, digest, busy, run, askConfirm, project } = ctx;
@@ -75,8 +76,8 @@ export function GitPullRequests(props: { ctx: GitActionCtx; pulls: PullRequest[]
         </span>
       </div>
       {gh?.available !== true ? (
-        <p class="callout c-warn git-gh-unavailable" data-testid="gh-unavailable">
-          gh CLI is missing or not authenticated — PR create/list is disabled. Everything else keeps working.
+        <p class="hint" style="margin:0">
+          gh became unavailable — refresh to re-check.
         </p>
       ) : (
         <>

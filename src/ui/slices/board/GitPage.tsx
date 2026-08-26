@@ -12,6 +12,7 @@ import { Dialog, DialogHead } from '../../components/Dialog.tsx';
 import { GitBranches } from './GitBranches.tsx';
 import { GitChanges, GitMergeCard } from './GitChanges.tsx';
 import { GitPullRequests, GitRemote } from './GitRemote.tsx';
+import { GitLocalCard, GitTree } from './GitTree.tsx';
 import type { GitActionCtx } from './gitShared.tsx';
 
 // Git mini control panel (v0.3.0): the SDD loop's git hands. Local component
@@ -93,10 +94,11 @@ export function GitPage(props: { project: string; api?: BoardApi }): VNode {
 
   const ctx: GitActionCtx = { project, api, digest, busy, run, askConfirm };
   const repo = digest?.repo === true;
+  const ghOn = digest?.gh?.available === true;
 
   return (
     <div class="git-page" aria-label={`git panel for ${project}`}>
-      <section class="card git-card" aria-label="git status">
+      <section class="card git-card git-status-card" aria-label="git status">
         <div class="git-card-head">
           <h3>status</h3>
           <button
@@ -112,35 +114,26 @@ export function GitPage(props: { project: string; api?: BoardApi }): VNode {
         {!repo ? (
           <p class="hint">not a git repository</p>
         ) : (
-          <>
-            <div class="git-status-grid">
-              <div class="git-branch">
-                <GitBranch size={12} /> {digest?.branch} <span class="mono">@{digest?.head}</span>
-              </div>
-              <span class="git-fact" title="uncommitted changes">
-                <CircleDot size={11} /> {digest?.dirtyCount ?? 0} dirty
-              </span>
-              {digest?.ahead !== undefined && digest.behind !== undefined ? (
-                <span class="git-fact" title="ahead/behind upstream">
-                  <ArrowUp size={11} /> {digest.ahead} <ArrowDown size={11} /> {digest.behind}
-                </span>
-              ) : null}
-              <span class="git-fact" title="stash entries">
-                <Inbox size={11} /> {digest?.stashCount ?? 0} stashed
-              </span>
-              <span class={`git-gh-badge${digest?.gh?.available === true ? ' is-on' : ''}`} data-testid="gh-badge">
-                gh {digest?.gh?.available === true ? (digest.gh.account !== undefined ? `· ${digest.gh.account}` : '· ready') : 'unavailable'}
-              </span>
-              {digest?.origin !== undefined ? <span class="hint mono git-origin">{digest.origin}</span> : null}
+          <div class="git-status-grid">
+            <div class="git-branch">
+              <GitBranch size={12} /> {digest?.branch} <span class="mono">@{digest?.head}</span>
             </div>
-            <ul class="git-recent">
-              {digest?.recent.map((commit) => (
-                <li key={commit.sha}>
-                  <span class="mono">{commit.sha}</span> {commit.subject}
-                </li>
-              ))}
-            </ul>
-          </>
+            <span class="git-fact" title="uncommitted changes">
+              <CircleDot size={11} /> {digest?.dirtyCount ?? 0} dirty
+            </span>
+            {digest?.ahead !== undefined && digest.behind !== undefined ? (
+              <span class="git-fact" title="ahead/behind upstream">
+                <ArrowUp size={11} /> {digest.ahead} <ArrowDown size={11} /> {digest.behind}
+              </span>
+            ) : null}
+            <span class="git-fact" title="stash entries">
+              <Inbox size={11} /> {digest?.stashCount ?? 0} stashed
+            </span>
+            <span class={`git-gh-badge${ghOn ? ' is-on' : ''}`} data-testid="gh-badge">
+              gh {ghOn ? (digest?.gh?.account !== undefined ? `· ${digest.gh.account}` : '· ready') : 'unavailable'}
+            </span>
+            {digest?.origin !== undefined ? <span class="hint mono git-origin">{digest.origin}</span> : null}
+          </div>
         )}
       </section>
 
@@ -151,13 +144,18 @@ export function GitPage(props: { project: string; api?: BoardApi }): VNode {
       ) : null}
 
       {repo ? (
-        <>
-          <GitBranches ctx={ctx} />
-          <GitChanges ctx={ctx} />
-          <GitMergeCard ctx={ctx} />
-          <GitRemote ctx={ctx} />
-          <GitPullRequests ctx={ctx} pulls={pulls} />
-        </>
+        <div class="git-panel">
+          <div class="git-panel-actions">
+            <GitChanges ctx={ctx} />
+            <GitMergeCard ctx={ctx} />
+            <GitRemote ctx={ctx} />
+          </div>
+          <div class="git-panel-content">
+            <GitTree digest={digest} />
+            <GitBranches ctx={ctx} />
+            {ghOn ? <GitPullRequests ctx={ctx} pulls={pulls} /> : <GitLocalCard ctx={ctx} />}
+          </div>
+        </div>
       ) : null}
 
       {confirm !== null ? (

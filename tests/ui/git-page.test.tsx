@@ -27,6 +27,8 @@ const DIGEST: GitDigest = {
   branches: ['feat/x', 'main', 'topic'],
   stashCount: 1,
   gh: { available: true, account: 'tester' },
+  graph: '* abc1234 (HEAD -> main) first\n* d41a3c9 c0',
+  tags: ['v1.0.0'],
 };
 
 const PULLS: PullRequest[] = [
@@ -99,7 +101,7 @@ const click = (win: TestWindow, selector: string): void => {
 };
 
 describe('GitPage', () => {
-  test('status card shows branch, dirty, stash, origin, gh badge, commits; PR list renders', async () => {
+  test('status card shows branch, dirty, stash, origin, gh badge; commit tree renders git graph', async () => {
     const { api } = makeApi();
     const win = await mountGitPage(api);
     const text = win.document.body.textContent ?? '';
@@ -111,6 +113,9 @@ describe('GitPage', () => {
     expect(text).toContain('first');
     expect(text).toContain('#7');
     expect(text).toContain('do the thing');
+    // two-pane: tree on the content side, action cards on the rail
+    expect(win.document.querySelector('.git-panel-content .git-graph')?.textContent).toContain('(HEAD -> main)');
+    expect(win.document.querySelector('.git-panel-actions button[data-action="commit"]')).not.toBeNull();
   });
 
   test('branch list marks current; switch disabled on dirty tree with hint; delete disabled on current', async () => {
@@ -263,7 +268,11 @@ describe('GitPage', () => {
 
     const { api: noGhApi, calls: noGhCalls } = makeApi({}, { ...DIGEST, gh: { available: false } });
     const win2 = await mountGitPage(noGhApi);
-    expect(win2.document.querySelector('[data-testid="gh-unavailable"]')).not.toBeNull();
+    // gh fallback: local repository facts replace the PR card
+    const fallback = win2.document.querySelector('[data-testid="gh-fallback"]');
+    expect(fallback).not.toBeNull();
+    expect(fallback?.textContent).toContain('https://example.com/x/y.git');
+    expect(fallback?.textContent).toContain('v1.0.0');
     expect(win2.document.querySelector('.git-pr-list')).toBeNull();
     expect(noGhCalls.actions).not.toContain('fetchPulls');
     // other sections still render and work

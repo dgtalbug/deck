@@ -123,6 +123,18 @@ describe('gitDigest', () => {
     const digest = await gitDigest(path);
     expect(digest.branches).toEqual(['chore/cleanup', 'feat/x', 'main']);
     expect(digest.stashCount).toBe(2);
+    expect(digest.graph).toContain('*');
+    expect(digest.graph).toContain('c1');
+  });
+
+  test('lists tags descending (capped at 10)', async () => {
+    const path = repo();
+    writeFileSync(join(path, 'a.txt'), 'one\n');
+    git('add .', path);
+    git('commit -m "c1"', path);
+    for (const tag of ['v1', 'v2', 'v3']) git(`tag -a ${tag} -m ${tag}`, path);
+    const digest = await gitDigest(path);
+    expect(digest.tags).toEqual(['v3', 'v2', 'v1']);
   });
 
   test('gh fields: stubbed gh with an account reports available + account', async () => {
