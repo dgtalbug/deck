@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { existsSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import {
   AGENTS_END,
   AGENTS_START,
@@ -48,7 +48,7 @@ describe('upsertAgentsBlock', () => {
 describe('initProject', () => {
   test('first init registers, writes config, AGENTS block, gitignore', async () => {
     const result = await initProject(registry, proj.path);
-    expect(result.project.name).toBe(proj.path.split('/').pop());
+    expect(result.project.name).toBe(basename(proj.path));
     expect(registry.find(proj.path)).toBeDefined();
     expect(existsSync(join(proj.path, 'deck.config.yaml'))).toBe(true);
     expect(existsSync(join(proj.path, '.deck', 'board.sqlite'))).toBe(true);

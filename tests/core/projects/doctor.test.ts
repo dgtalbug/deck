@@ -12,7 +12,7 @@ let proj: TmpProject;
 let savedGhBin: string | undefined;
 let stubDir: string;
 
-function check(checks: { name: string; pass: boolean; detail?: string }[], name: string) {
+function check(checks: { name: string; pass: boolean; detail?: string | undefined }[], name: string) {
   return checks.find((entry) => entry.name === name);
 }
 
