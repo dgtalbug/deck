@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, rmSync, writeFileSync, chmodSync, symlinkSync } from 'node:fs';
 import { execSync } from 'node:child_process';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -9,10 +9,15 @@ import { gitDigest } from '../../../src/core/git/digest.ts';
 // Real throwaway git repos in tmp (read-only plumbing against git itself).
 
 let dir: string | undefined;
+let prevPath: string | undefined;
 
 afterEach(() => {
   if (dir !== undefined) rmSync(dir, { recursive: true, force: true });
   dir = undefined;
+  if (prevPath !== undefined) {
+    process.env['PATH'] = prevPath;
+    prevPath = undefined;
+  }
 });
 
 function git(command: string, cwd: string): void {
@@ -25,6 +30,33 @@ function repo(): string {
   git('config user.email t@t', dir);
   git('config user.name t', dir);
   return dir;
+}
+
+// Fake `gh` on a prepended PATH — deterministic availability probe. The
+// repo needs at least one commit or the digest collapses to { repo: false }.
+function stubGh(script: string): void {
+  writeFileSync(join(dir!, 'seed.txt'), 'x');
+  git('add .', dir!);
+  git('commit -m "seed"', dir!);
+  const bin = join(dir!, 'bin');
+  mkdirSync(bin);
+  const gh = join(bin, 'gh');
+  writeFileSync(gh, `#!/bin/sh\n${script}\n`);
+  chmodSync(gh, 0o755);
+  prevPath = process.env['PATH'];
+  process.env['PATH'] = `${bin}:${prevPath ?? ''}`;
+}
+
+// PATH holding only git — deterministic gh absence.
+function hideGh(): void {
+  writeFileSync(join(dir!, 'seed.txt'), 'x');
+  git('add .', dir!);
+  git('commit -m "seed"', dir!);
+  const bin = join(dir!, 'onlygit');
+  mkdirSync(bin);
+  symlinkSync(execSync('command -v git').toString().trim(), join(bin, 'git'));
+  prevPath = process.env['PATH'];
+  process.env['PATH'] = bin;
 }
 
 describe('gitDigest', () => {
@@ -48,6 +80,8 @@ describe('gitDigest', () => {
     expect(digest.recent[0]!.subject).toBe('second commit');
     expect(digest.recent[1]!.subject).toBe('first commit');
     expect(digest.origin).toBeUndefined();
+    expect(digest.branches).toEqual(['main']);
+    expect(digest.stashCount).toBe(0);
   });
 
   test('counts dirty files and reports origin when set', async () => {
@@ -62,6 +96,46 @@ describe('gitDigest', () => {
     const digest = await gitDigest(path);
     expect(digest.dirtyCount).toBe(2); // one modified + one untracked
     expect(digest.origin).toBe('https://example.com/x/y.git');
+  });
+
+  test('lists branches and counts stashes', async () => {
+    const path = repo();
+    writeFileSync(join(path, 'a.txt'), 'one');
+    git('add .', path);
+    git('commit -m "c1"', path);
+    git('branch feat/x', path);
+    git('branch chore/cleanup', path);
+    writeFileSync(join(path, 'a.txt'), 'dirty');
+    git('stash push -m "wip"', path);
+    writeFileSync(join(path, 'a.txt'), 'dirty again');
+    git('stash push', path);
+
+    const digest = await gitDigest(path);
+    expect(digest.branches).toEqual(['chore/cleanup', 'feat/x', 'main']);
+    expect(digest.stashCount).toBe(2);
+  });
+
+  test('gh fields: stubbed gh with an account reports available + account', async () => {
+    const path = repo();
+    stubGh('echo "Logged in to github.com account tester (keyring)"; exit 0');
+    const digest = await gitDigest(path);
+    expect(digest.gh?.available).toBe(true);
+    expect(digest.gh?.account).toBe('tester');
+  });
+
+  test('gh fields: unauthenticated gh reports unavailable', async () => {
+    const path = repo();
+    stubGh('echo "not logged in" >&2; exit 1');
+    const digest = await gitDigest(path);
+    expect(digest.gh).toEqual({ available: false });
+  });
+
+  test('gh fields: missing gh binary reports unavailable', async () => {
+    const path = repo();
+    hideGh();
+    const digest = await gitDigest(path);
+    expect(digest.gh).toEqual({ available: false });
+    expect(digest.branch).toBe('main'); // git itself still resolves
   });
 
   test('non-repo directory collapses to { repo: false }', async () => {
