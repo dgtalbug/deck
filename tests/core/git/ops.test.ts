@@ -26,6 +26,7 @@ import { GhUnavailableError, GitOpError, InvalidBranchError } from '../../../src
 
 let dir: string;
 let prevPath: string | undefined;
+let prevGh: string | undefined;
 
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'deck-gitops-'));
@@ -48,6 +49,12 @@ afterEach(() => {
   if (prevPath !== undefined) {
     process.env['PATH'] = prevPath;
     prevPath = undefined;
+  }
+  if (prevGh !== undefined) {
+    process.env['DECK_GH_BIN'] = prevGh;
+    prevGh = undefined;
+  } else {
+    delete process.env['DECK_GH_BIN'];
   }
 });
 
@@ -326,7 +333,9 @@ describe('pull requests via gh', () => {
     mkdirSync(bin, { recursive: true });
     prevPath = process.env['PATH'];
     process.env['PATH'] = bin;
-    // git remains reachable through absolute-path execSync calls in helpers
+    // well-known install locations would find a real gh — point the override nowhere
+    prevGh = process.env['DECK_GH_BIN'];
+    process.env['DECK_GH_BIN'] = join(dir, 'definitely-no-gh');
     await expect(listPullRequests(dir)).rejects.toThrow(GhUnavailableError);
     await expect(createPullRequest(dir, { title: 'x' })).rejects.toThrow(GhUnavailableError);
   });

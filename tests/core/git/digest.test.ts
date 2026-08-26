@@ -10,6 +10,7 @@ import { gitDigest } from '../../../src/core/git/digest.ts';
 
 let dir: string | undefined;
 let prevPath: string | undefined;
+let prevGh: string | undefined;
 
 afterEach(() => {
   if (dir !== undefined) rmSync(dir, { recursive: true, force: true });
@@ -17,6 +18,12 @@ afterEach(() => {
   if (prevPath !== undefined) {
     process.env['PATH'] = prevPath;
     prevPath = undefined;
+  }
+  if (prevGh !== undefined) {
+    process.env['DECK_GH_BIN'] = prevGh;
+    prevGh = undefined;
+  } else {
+    delete process.env['DECK_GH_BIN'];
   }
 });
 
@@ -47,7 +54,8 @@ function stubGh(script: string): void {
   process.env['PATH'] = `${bin}:${prevPath ?? ''}`;
 }
 
-// PATH holding only git — deterministic gh absence.
+// No gh anywhere: PATH stripped of gh AND DECK_GH_BIN pointed at nothing —
+// well-known install locations would otherwise find a real gh.
 function hideGh(): void {
   writeFileSync(join(dir!, 'seed.txt'), 'x');
   git('add .', dir!);
@@ -57,6 +65,8 @@ function hideGh(): void {
   symlinkSync(execSync('command -v git').toString().trim(), join(bin, 'git'));
   prevPath = process.env['PATH'];
   process.env['PATH'] = bin;
+  prevGh = process.env['DECK_GH_BIN'];
+  process.env['DECK_GH_BIN'] = join(dir!, 'definitely-no-gh');
 }
 
 describe('gitDigest', () => {

@@ -4,6 +4,7 @@
 // merge auto-aborts so the repo is never left mid-merge. Each op returns
 // git's captured output; refusals throw the typed errors from errors.ts.
 import { runGit } from './digest.ts';
+import { runGh } from './gh.ts';
 import { GitOpError, InvalidBranchError, GhUnavailableError } from './errors.ts';
 
 const LOCAL_TIMEOUT_MS = 10_000;
@@ -68,34 +69,11 @@ function assertRepo(result: { code: number; stdout: string; stderr: string }, op
 // gh feature detection per request (design D4): absent binary or failed auth
 // both throw GhUnavailableError — no partial degradation inside an operation.
 async function requireGh(projectPath: string): Promise<void> {
-  let result: Awaited<ReturnType<typeof runGh>>;
-  try {
-    result = await runGh(projectPath, ['auth', 'status']);
-  } catch {
-    throw new GhUnavailableError();
-  }
+  const result = await runGh(projectPath, ['auth', 'status']);
+  if (result === null) throw new GhUnavailableError();
   if (result.code !== 0) {
     throw new GhUnavailableError(`${result.stdout}${result.stderr}`.trim());
   }
-}
-
-// gh is a different binary — same runner discipline as runGit.
-async function runGh(projectPath: string, args: string[]): Promise<{ code: number; stdout: string; stderr: string }> {
-  const proc = Bun.spawn(['gh', ...args], {
-    cwd: projectPath,
-    stdout: 'pipe',
-    stderr: 'pipe',
-    stdin: 'ignore',
-    env: { ...process.env }, // explicit copy — see runCommand
-  });
-  const timer = setTimeout(() => proc.kill(), NETWORK_TIMEOUT_MS);
-  const [stdout, stderr, code] = await Promise.all([
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
-    proc.exited,
-  ]);
-  clearTimeout(timer);
-  return { code, stdout, stderr };
 }
 
 // --- branches ---
@@ -224,9 +202,11 @@ export interface PullRequest {
 
 export async function listPullRequests(projectPath: string): Promise<PullRequest[]> {
   await requireGh(projectPath);
-  const { code, stdout, stderr } = await runGh(projectPath, [
+  const result = await runGh(projectPath, [
     'pr', 'list', '--json', 'number,title,headRefName,url,isDraft', '--limit', '20',
   ]);
+  if (result === null) throw new GhUnavailableError();
+  const { code, stdout, stderr } = result;
   if (code !== 0) {
     throw new GitOpError('pr list', `exit ${code}`, `${stdout}${stderr}`.trim());
   }
@@ -242,13 +222,15 @@ export async function createPullRequest(
   input: { title: string; base?: string | undefined; draft?: boolean | undefined },
 ): Promise<{ url: string }> {
   await requireGh(projectPath);
-  const { code, stdout, stderr } = await runGh(projectPath, [
+  const result = await runGh(projectPath, [
     'pr', 'create',
     '--title', input.title,
     '--body', '',
     ...(input.base !== undefined && input.base !== '' ? ['--base', input.base] : []),
     ...(input.draft === true ? ['--draft'] : []),
   ]);
+  if (result === null) throw new GhUnavailableError();
+  const { code, stdout, stderr } = result;
   if (code !== 0) {
     throw new GitOpError('pr create', `exit ${code}`, `${stdout}${stderr}`.trim());
   }

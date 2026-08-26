@@ -5,6 +5,8 @@
 // (worktrees/packed-refs fragility). The write side lives in ops.ts and
 // shares runGit (design D1).
 
+import { runGh } from './gh.ts';
+
 export interface GitCommit {
   sha: string;
   subject: string;
@@ -82,14 +84,10 @@ async function git(projectPath: string, args: string[], timeoutMs = TIMEOUT_MS):
 // gh availability (design D4): probed per digest, never cached at boot; a
 // missing binary or non-zero exit both collapse to { available: false }.
 async function ghStatus(projectPath: string): Promise<GhStatus> {
-  try {
-    const { code, stdout, stderr } = await runCommand('gh', projectPath, ['auth', 'status'], GH_TIMEOUT_MS);
-    if (code !== 0) return { available: false };
-    const match = /account\s+([^\s(]+)/.exec(`${stdout}\n${stderr}`);
-    return match === null ? { available: true } : { available: true, account: match[1] };
-  } catch {
-    return { available: false };
-  }
+  const result = await runGh(projectPath, ['auth', 'status'], GH_TIMEOUT_MS);
+  if (result === null || result.code !== 0) return { available: false };
+  const match = /account\s+([^\s(]+)/.exec(`${result.stdout}\n${result.stderr}`);
+  return match === null ? { available: true } : { available: true, account: match[1] };
 }
 
 function parseRecent(log: string | undefined): GitCommit[] {

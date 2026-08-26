@@ -41,6 +41,7 @@ describe('git write routes (v0.3.0)', () => {
   let gitdir: string;
   let bare: string;
   let prevPath: string | undefined;
+  let prevGh: string | undefined;
 
   beforeAll(() => {
     gitdir = mkdtempSync(join(tmpdir(), 'deck-http-git-'));
@@ -74,6 +75,12 @@ describe('git write routes (v0.3.0)', () => {
     if (prevPath !== undefined) {
       process.env['PATH'] = prevPath;
       prevPath = undefined;
+    }
+    if (prevGh !== undefined) {
+      process.env['DECK_GH_BIN'] = prevGh;
+      prevGh = undefined;
+    } else {
+      delete process.env['DECK_GH_BIN'];
     }
   });
 
@@ -215,9 +222,12 @@ describe('git write routes (v0.3.0)', () => {
     expect(created.status).toBe(200);
     expect(((await created.json()) as { url: string }).url).toBe('https://github.com/x/y/pull/8');
 
-    // no gh anywhere on PATH → 503 while other git routes stay functional
+    // no gh reachable (PATH stripped + override pointed nowhere) → 503 while
+    // other git routes stay functional
     prevPath = process.env['PATH'];
     process.env['PATH'] = '/usr/bin:/bin:/usr/sbin:/sbin';
+    prevGh = process.env['DECK_GH_BIN'];
+    process.env['DECK_GH_BIN'] = join(gitdir, 'definitely-no-gh');
     const unavailable = await fetch(`${baseUrl}/gitproj/git/pulls`);
     expect(unavailable.status).toBe(503);
     expect((await unavailable.json()).error).toContain('gh');
