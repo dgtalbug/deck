@@ -1,6 +1,9 @@
 {
   "name": "@dgtalbug/deck",
   "type": "module",
+  "bin": {
+    "deck": "./deck"
+  },
   "scripts": {
     "dev": "bun run src/server/serve.ts",
     "seed": "bun run scripts/seed.ts",
@@ -8,7 +11,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "oxlint src tests scripts",
     "build:ui": "rm -rf dist/ui && bun build src/ui/app.tsx --outdir dist/ui --minify --splitting && bun run scripts/check-ui-budget.ts && bun run scripts/embed-ui.ts",
-    "build:bin": "bun run build:ui && bun run scripts/embed-migrations.ts && bun build --compile --define DECK_FEATURE_GROOMING:true --define DECK_FEATURE_SSE:true --define DECK_FEATURE_TWEAK:true src/server/serve.ts --outfile deck",
+    "build:bin": "bun run build:ui && bun run scripts/embed-migrations.ts && bun build --compile --define DECK_FEATURE_GROOMING:true --define DECK_FEATURE_SSE:true --define DECK_FEATURE_TWEAK:true src/cli/main.ts --outfile deck",
     "build": "bun run build:bin",
     "start": "./deck",
     "deck": "bun run build:bin && ./deck"
