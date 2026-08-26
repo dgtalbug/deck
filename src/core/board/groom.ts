@@ -15,11 +15,18 @@ function nowIso(): string {
 }
 
 // On accept, the spec directory exists with a real checklist so the
-// tasks-read-from-spec contract has a source from day one.
-function materializeSpec(projectPath: string, specPath: string, proposal: GroomProposal): void {
+// tasks-read-from-spec contract has a source from day one. Re-edits pass a
+// doneByTitle snapshot so surviving tasks keep their checkmarks in tasks.md
+// (next's digest reads the file, not the DB).
+export function materializeSpec(
+  projectPath: string,
+  specPath: string,
+  proposal: GroomProposal,
+  doneByTitle: ReadonlyMap<string, boolean> = new Map(),
+): void {
   const dir = join(projectPath, specPath);
   mkdirSync(dir, { recursive: true });
-  const checklist = proposal.tasks.map((task) => `- [ ] ${task}`).join('\n');
+  const checklist = proposal.tasks.map((task) => `- [${doneByTitle.get(task) === true ? 'x' : ' '}] ${task}`).join('\n');
   Bun.write(join(dir, 'tasks.md'), `${checklist}\n`);
   const deltas = proposal.specDeltas
     .map((delta) => `### ${delta.op}: ${delta.requirement}\n${delta.text}\n`)

@@ -27,6 +27,18 @@ export class LaneViolation extends DeckError {
   }
 }
 
+// Same-lane write refusal (v0.2.0 CRUD): edit/delete target a card that
+// lives in an engine-owned lane. Distinct from LaneViolation (transitions).
+export class EngineOwnedError extends DeckError {
+  constructor(cardId: string, lane: Lane, action: string) {
+    super(
+      `card ${cardId}: ${action} is not allowed in ${lane} — ` +
+        `active/verify/done are engine-owned; block/unblock is the only human action there`,
+      { cardId, lane, action },
+    );
+  }
+}
+
 export class WipLimitError extends DeckError {
   constructor(active: number, limit: number, topCardId: string) {
     super(

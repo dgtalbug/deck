@@ -1,4 +1,5 @@
-// Event names and payloads per .meta/board-epic.md "Events" table.
+// Event names and payloads per .meta/board-epic.md "Events" table, plus the
+// v0.2.0 additive CRUD events (card.updated / card.deleted).
 export type BoardEventType =
   | 'card.created'
   | 'card.groomed'
@@ -6,7 +7,9 @@ export type BoardEventType =
   | 'card.tasks.updated'
   | 'card.blocked'
   | 'card.unblocked'
-  | 'card.done';
+  | 'card.done'
+  | 'card.updated'
+  | 'card.deleted';
 
 export interface CardLanePayload {
   id: string;
