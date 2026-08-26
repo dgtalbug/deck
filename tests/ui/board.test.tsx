@@ -37,6 +37,19 @@ function makeApi(doc: BoardDoc): BoardApi {
     tweak: () => Promise.resolve({ id: 't', title: 't', lane: 'active', requirement: 'r' }),
     demote: () => Promise.resolve(note('d', 'demoted')),
     fetchGit: () => Promise.resolve({ repo: false, recent: [] }),
+    createBranch: () => Promise.resolve({ output: '' }),
+    switchBranch: () => Promise.resolve({ output: '' }),
+    mergeBranch: () => Promise.resolve({ output: '' }),
+    commitAll: () => Promise.resolve({ output: '' }),
+    undoLastCommit: () => Promise.resolve({ output: '' }),
+    stashPush: () => Promise.resolve({ output: '' }),
+    stashPop: () => Promise.resolve({ output: '' }),
+    deleteBranch: () => Promise.resolve({ output: '' }),
+    fetchRemote: () => Promise.resolve({ output: '' }),
+    pullRemote: () => Promise.resolve({ output: '' }),
+    pushRemote: () => Promise.resolve({ output: '' }),
+    fetchPulls: () => Promise.resolve([]),
+    createPullRequest: () => Promise.resolve({ url: 'https://x/1' }),
     updateCard: (_p: string, id: string, title: string) => Promise.resolve({ id, title }),
     deleteCard: () => Promise.resolve(),
     updateGroom: (_p: string, id: string) => Promise.resolve({ id, title: 'g' }),
@@ -139,6 +152,42 @@ describe('view toggle (task 6.2/6.3)', () => {
     const { win } = await renderBoard(DOC, '/proj/?view=todo');
     expect(win.document.querySelector('.board')).toBeNull();
     expect(win.document.querySelector('.todo-view')).not.toBeNull();
+  });
+});
+
+describe('git view (v0.3.0)', () => {
+  test('deep link ?view=git renders GitPage; sidebar marks Git current', async () => {
+    expect(boardPath('proj', 'git')).toBe('/proj/?view=git');
+    const { win } = await renderBoard(DOC, '/proj/?view=git');
+    expect(win.document.querySelector('.board')).toBeNull();
+    expect(win.document.querySelector('.git-page')).not.toBeNull();
+    const current = win.document.querySelector('.sidebar-nav a[aria-current="page"]');
+    expect(current?.textContent).toContain('Git');
+    // filter bar and note capture are hidden on the git view
+    expect(win.document.querySelector('.filterbar')).toBeNull();
+  });
+
+  test('Board → Git switch updates the URL only — no board refetch', async () => {
+    let boardFetches = 0;
+    const counting = { ...makeApi(DOC), fetchBoard: () => { boardFetches += 1; return Promise.resolve(DOC); } };
+    const win = installDom();
+    const stop = startRouter();
+    const container = win.document.createElement('div');
+    win.document.body.appendChild(container);
+    mountedContainers.push(container);
+    navigate('/proj/');
+    render(<Board project="proj" api={counting} subscribe={silentSubscribe} />, container);
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    expect(boardFetches).toBe(1); // mount only
+
+    const gitLink = win.document.querySelector('.sidebar-nav a[href*="view=git"]') as unknown as HTMLElement;
+    gitLink.click();
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    expect(route.value.view).toBe('git');
+    expect(win.location.search).toContain('view=git');
+    expect(win.document.querySelector('.git-page')).not.toBeNull();
+    expect(boardFetches).toBe(1); // URL-only switch — no additional board fetch
+    stop();
   });
 });
 

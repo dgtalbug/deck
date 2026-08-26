@@ -631,3 +631,192 @@ button.wip.is-over {
 .quick-unblock {
   color: var(--success);
 }
+
+/* ═══ git panel (v0.3.0) — cards, branch rows, output block; tokens only ═══ */
+
+.git-page {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-width: 760px;
+}
+
+.git-card {
+  padding: 14px 16px;
+}
+
+.git-card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.git-card-head h3 {
+  margin: 0;
+  text-transform: lowercase;
+  letter-spacing: 0.04em;
+}
+
+.git-card-head .icon-btn {
+  margin-left: auto;
+}
+
+.git-status-grid {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 14px;
+}
+
+.git-gh-badge {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border-2);
+  color: var(--muted);
+}
+
+.git-gh-badge.is-on {
+  color: var(--success);
+  border-color: var(--success);
+}
+
+.git-branch-list,
+.git-pr-list {
+  list-style: none;
+  margin: 0 0 10px;
+  padding: 0;
+}
+
+.git-branch-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border-1);
+}
+
+.git-branch-row:last-child {
+  border-bottom: none;
+}
+
+.git-branch-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--soft);
+}
+
+.git-branch-name.is-current {
+  color: var(--foreground);
+  font-weight: 600;
+}
+
+.git-current-mark {
+  font-style: normal;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--chip);
+  color: var(--muted);
+}
+
+.git-branch-actions {
+  display: inline-flex;
+  gap: 6px;
+}
+
+.git-action {
+  font-size: 12px;
+  padding: 4px 10px;
+}
+
+.git-action-danger:not(:disabled) {
+  color: var(--warning);
+}
+
+.git-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.git-row:last-child {
+  margin-bottom: 0;
+}
+
+.git-row input[type='text'],
+.git-create-form input[type='text'] {
+  flex: 1;
+  min-width: 180px;
+}
+
+.git-create-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.git-create-form input[type='text'] {
+  flex: 2;
+}
+
+.git-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.git-output {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-2);
+  background: var(--chip);
+  color: var(--soft);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 220px;
+  overflow: auto;
+}
+
+.git-output[data-kind='err'] {
+  border-color: var(--warning);
+  color: var(--warning);
+}
+
+.git-gh-unavailable {
+  margin: 0;
+}
+
+.git-confirm-body {
+  margin: 0 0 12px;
+  font-size: 13px;
+}
+
+.git-pr-row {
+  padding: 4px 0;
+  font-size: 13px;
+  border-bottom: 1px solid var(--border-1);
+}
+
+.git-pr-row:last-child {
+  border-bottom: none;
+}

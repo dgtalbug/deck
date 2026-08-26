@@ -74,6 +74,7 @@ export function ProjectSidebar(props: {
       <nav class="sidebar-nav" aria-label="board views">
         {nav('kanban', 'Board', <Columns3 size={14} />)}
         {nav('todo', 'Todo', <ListTodo size={14} />)}
+        {nav('git', 'Git', <GitBranch size={14} />)}
       </nav>
 
       <button type="button" class="btn btn-outline sidebar-next" onClick={props.onNext}>

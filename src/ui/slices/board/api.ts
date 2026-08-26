@@ -69,6 +69,21 @@ export interface GitDigest {
   behind?: number;
   recent: { sha: string; subject: string }[];
   origin?: string;
+  branches?: string[];
+  stashCount?: number;
+  gh?: { available: boolean; account?: string };
+}
+
+export interface PullRequest {
+  number: number;
+  title: string;
+  headRefName: string;
+  url: string;
+  isDraft: boolean;
+}
+
+export interface GitOpResult {
+  output: string;
 }
 
 export interface GroomInput {
@@ -187,6 +202,45 @@ function buildApi(base: string): BoardApi {
 
     demote: (project: string, id: string): Promise<UiCard> =>
       post(base, `/${project}/cards/${id}/demote`, {}),
+
+    createBranch: (project: string, name: string, opts?: { base?: string; checkout?: boolean }): Promise<GitOpResult> =>
+      post(base, `/${project}/git/branch`, { name, ...opts }),
+
+    switchBranch: (project: string, name: string): Promise<GitOpResult> =>
+      post(base, `/${project}/git/switch`, { name }),
+
+    mergeBranch: (project: string, from: string): Promise<GitOpResult> =>
+      post(base, `/${project}/git/merge`, { from }),
+
+    commitAll: (project: string, message?: string): Promise<GitOpResult> =>
+      post(base, `/${project}/git/commit`, message === undefined ? {} : { message }),
+
+    undoLastCommit: (project: string): Promise<GitOpResult> =>
+      post(base, `/${project}/git/undo-commit`, {}),
+
+    stashPush: (project: string, message?: string): Promise<GitOpResult> =>
+      post(base, `/${project}/git/stash`, message === undefined ? {} : { message }),
+
+    stashPop: (project: string): Promise<GitOpResult> =>
+      post(base, `/${project}/git/stash/pop`, {}),
+
+    deleteBranch: (project: string, name: string): Promise<GitOpResult> =>
+      post(base, `/${project}/git/branch/delete`, { name }),
+
+    fetchRemote: (project: string): Promise<GitOpResult> =>
+      post(base, `/${project}/git/fetch`, {}),
+
+    pullRemote: (project: string): Promise<GitOpResult> =>
+      post(base, `/${project}/git/pull`, {}),
+
+    pushRemote: (project: string): Promise<GitOpResult> =>
+      post(base, `/${project}/git/push`, {}),
+
+    fetchPulls: (project: string): Promise<PullRequest[]> =>
+      request(base, `/${project}/git/pulls`),
+
+    createPullRequest: (project: string, input: { title: string; base?: string; draft?: boolean }): Promise<{ url: string }> =>
+      post(base, `/${project}/git/pulls`, input),
   };
 }
 
@@ -209,4 +263,17 @@ export type BoardApi = {
   unblock: (project: string, id: string) => Promise<UiCard>;
   tweak: (project: string, id: string) => Promise<UiCard>;
   demote: (project: string, id: string) => Promise<UiCard>;
+  createBranch: (project: string, name: string, opts?: { base?: string; checkout?: boolean }) => Promise<GitOpResult>;
+  switchBranch: (project: string, name: string) => Promise<GitOpResult>;
+  mergeBranch: (project: string, from: string) => Promise<GitOpResult>;
+  commitAll: (project: string, message?: string) => Promise<GitOpResult>;
+  undoLastCommit: (project: string) => Promise<GitOpResult>;
+  stashPush: (project: string, message?: string) => Promise<GitOpResult>;
+  stashPop: (project: string) => Promise<GitOpResult>;
+  deleteBranch: (project: string, name: string) => Promise<GitOpResult>;
+  fetchRemote: (project: string) => Promise<GitOpResult>;
+  pullRemote: (project: string) => Promise<GitOpResult>;
+  pushRemote: (project: string) => Promise<GitOpResult>;
+  fetchPulls: (project: string) => Promise<PullRequest[]>;
+  createPullRequest: (project: string, input: { title: string; base?: string; draft?: boolean }) => Promise<{ url: string }>;
 };

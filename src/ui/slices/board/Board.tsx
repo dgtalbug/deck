@@ -11,6 +11,7 @@ import { route, setParam } from '../../router.ts';
 import { Lane, LANE_ORDER } from './Lane.tsx';
 import { FilterBar } from './FilterBar.tsx';
 import { TodoView } from './TodoView.tsx';
+import { GitPage } from './GitPage.tsx';
 import { CardDetail, type DetailActions } from './CardDetail.tsx';
 import { GroomForm } from './GroomForm.tsx';
 import { NoteCapture } from './NoteCapture.tsx';
@@ -118,10 +119,10 @@ export function Board({ project, api = boardApi, subscribe = subscribeBoardEvent
   const deleteCard = deletingId !== null ? store.cardById(deletingId) : undefined;
   const regroomCard = regroomId !== null ? store.cardById(regroomId) : undefined;
 
-  // kanban↔todo toggle rides the View Transition API when available
+  // kanban↔todo↔git toggle rides the View Transition API when available
   // (D-UI-005); the plain swap is the fallback.
-  const switchView = (next: 'kanban' | 'todo') => {
-    const go = () => setParam('view', next === 'kanban' ? null : 'todo');
+  const switchView = (next: 'kanban' | 'todo' | 'git') => {
+    const go = () => setParam('view', next === 'kanban' ? null : next);
     if (typeof document !== 'undefined' && typeof document.startViewTransition === 'function') {
       document.startViewTransition(go);
     } else {
@@ -142,7 +143,8 @@ export function Board({ project, api = boardApi, subscribe = subscribeBoardEvent
 
   // ONE note-capture affordance: the ghost card at the top of the todo lane
   // (kanban) / inbox group (todo view) — same card visual language as the
-  // notes it creates. `N` focuses it from anywhere outside a field.
+  // notes it creates. `N` focuses it from anywhere outside a field. Hidden on
+  // the git view along with the filter bar (spec: git view is git-only).
   const capture = <NoteCapture onAdd={(title) => store.addNote(title)} />;
 
   return (
@@ -150,10 +152,14 @@ export function Board({ project, api = boardApi, subscribe = subscribeBoardEvent
       <ProjectSidebar project={project} view={view} onNavigate={switchView} onNext={() => setNextOpen(true)} api={api} />
       <section ref={containerRef}>
       <h1 class="page">
-        {project} · {view === 'todo' ? 'todo' : 'board'}
+        {project} · {view === 'todo' ? 'todo' : view === 'git' ? 'git' : 'board'}
       </h1>
       <p class="subtitle">
-        Capture → groom → prioritize. The engine owns everything after <code>groomed</code>.
+        {view === 'git' ? (
+          'Branch, checkpoint, integrate, publish — guarded git for the SDD loop.'
+        ) : (
+          <>Capture → groom → prioritize. The engine owns everything after <code>groomed</code>.</>
+        )}
       </p>
 
       <Banners online={store.online.value} />
@@ -167,12 +173,16 @@ export function Board({ project, api = boardApi, subscribe = subscribeBoardEvent
         </div>
       ) : null}
 
-      <FilterBar
-        filter={store.filter.value}
-        onFilter={(partial) => store.setFilter(partial)}
-      />
+      {view !== 'git' ? (
+        <FilterBar
+          filter={store.filter.value}
+          onFilter={(partial) => store.setFilter(partial)}
+        />
+      ) : null}
 
-      {view === 'kanban' ? (
+      {view === 'git' ? (
+        <GitPage project={project} api={api} />
+      ) : view === 'kanban' ? (
         <div class="board">
           {LANE_ORDER.map((lane) => (
             <Lane
@@ -193,14 +203,16 @@ export function Board({ project, api = boardApi, subscribe = subscribeBoardEvent
         <TodoView store={{ filtered: store.filtered }} actions={actions} lead={capture} />
       )}
 
-      <div class="callout c-info" style="margin-top:14px">
-        <ArrowRightLeft size={15} />
-        <div>
-          <strong class="label">restricted drag</strong>
-          Drag reorders any lane and moves cards <code>todo ↔ groomed</code> only. <code>active / verify / done</code> are
-          engine-owned — drops land nowhere, and the store rejects them server-side too.
+      {view !== 'git' ? (
+        <div class="callout c-info" style="margin-top:14px">
+          <ArrowRightLeft size={15} />
+          <div>
+            <strong class="label">restricted drag</strong>
+            Drag reorders any lane and moves cards <code>todo ↔ groomed</code> only. <code>active / verify / done</code> are
+            engine-owned — drops land nowhere, and the store rejects them server-side too.
+          </div>
         </div>
-      </div>
+      ) : null}
 
       <NextPanel
         store={store}

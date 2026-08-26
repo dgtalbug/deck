@@ -6,7 +6,7 @@ import { signal } from '@preact/signals';
 // history noise. Links must keep the trailing slash on /<project>/ (Bun only
 // matches that form).
 
-export type BoardViewMode = 'kanban' | 'todo';
+export type BoardViewMode = 'kanban' | 'todo' | 'git';
 
 export interface Route {
   project: string | null;
@@ -28,7 +28,7 @@ export function parseLocation(): Route {
   const viewParam = params.get('view');
   return {
     project,
-    view: viewParam === 'todo' ? 'todo' : 'kanban',
+    view: viewParam === 'todo' || viewParam === 'git' ? viewParam : 'kanban',
     card: params.get('card'),
   };
 }
@@ -53,7 +53,7 @@ export function setParam(name: 'view' | 'card', value: string | null): void {
 }
 
 export function boardPath(project: string, view: BoardViewMode = 'kanban'): string {
-  return view === 'todo' ? `/${project}/?view=todo` : `/${project}/`;
+  return view === 'kanban' ? `/${project}/` : `/${project}/?view=${view}`;
 }
 
 // Bind popstate (back/forward). Returns a dispose fn for tests.

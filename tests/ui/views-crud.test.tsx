@@ -54,6 +54,19 @@ function makeApi(doc: BoardDoc): { api: BoardApi; calls: string[] } {
       calls.push('fetchGit');
       return Promise.resolve(GIT);
     },
+    createBranch: () => Promise.resolve({ output: '' }),
+    switchBranch: () => Promise.resolve({ output: '' }),
+    mergeBranch: () => Promise.resolve({ output: '' }),
+    commitAll: () => Promise.resolve({ output: '' }),
+    undoLastCommit: () => Promise.resolve({ output: '' }),
+    stashPush: () => Promise.resolve({ output: '' }),
+    stashPop: () => Promise.resolve({ output: '' }),
+    deleteBranch: () => Promise.resolve({ output: '' }),
+    fetchRemote: () => Promise.resolve({ output: '' }),
+    pullRemote: () => Promise.resolve({ output: '' }),
+    pushRemote: () => Promise.resolve({ output: '' }),
+    fetchPulls: () => Promise.resolve([]),
+    createPullRequest: () => Promise.resolve({ url: 'https://x/1' }),
     addNote: (_p, title) => Promise.resolve({ id: `n-${title}`, title }),
     updateCard: (_p, id, title) => {
       calls.push(`updateCard:${id}:${title}`);
