@@ -35,7 +35,9 @@ describe('API docs', () => {
       '/{project}/board',
       '/{project}/next',
       '/{project}/events',
+      '/{project}/git',
       '/{project}/notes',
+      '/{project}/cards/{id}',
       '/{project}/cards/{id}/groom',
       '/{project}/cards/{id}/move',
       '/{project}/cards/{id}/reorder',
@@ -47,6 +49,12 @@ describe('API docs', () => {
     ]) {
       expect(paths).toContain(required);
     }
+    // v0.2.0 additions carry their methods
+    const card = doc.paths['/{project}/cards/{id}'] as Record<string, Record<string, unknown>>;
+    expect(Object.keys(card)).toContain('patch');
+    expect(Object.keys(card)).toContain('delete');
+    const groom = doc.paths['/{project}/cards/{id}/groom'] as Record<string, Record<string, unknown>>;
+    expect(Object.keys(groom)).toContain('patch');
     // Body schemas are generated from the live zod validators.
     const move = doc.paths['/{project}/cards/{id}/move']?.['post'] as {
       requestBody: { content: Record<string, { schema: Record<string, unknown> }> };

@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { join } from 'node:path';
-import { blockBody, groomBody, moveBody, reorderBody, verifyBody } from './routes/cards.ts';
+import { blockBody, groomBody, moveBody, reorderBody, updateBody, verifyBody } from './routes/cards.ts';
 import { noteBody } from './routes/notes.ts';
 
 // OpenAPI 3.1 document generated from the same zod schemas that validate
@@ -63,10 +63,13 @@ export function openApiDocument(): Record<string, unknown> {
     openapi: '3.1.0',
     info: {
       title: 'deck board API',
-      version: '0.1.0',
+      version: '0.2.0',
       description:
         'One deck server hosts every project. Cards move into active/verify/done ' +
-        'only through engine events; human moves are todo ↔ groomed only.',
+        'only through engine events; human moves are todo ↔ groomed only. ' +
+        'v0.2.0 adds card CRUD on the human lanes (PATCH/DELETE card, PATCH groom re-edit), ' +
+        'the card.updated/card.deleted events, and GET /{project}/git — all additive; ' +
+        'no v0.1.0 route, payload, or event changed.',
     },
     servers: [{ url: 'http://127.0.0.1:3325' }],
     paths: {
@@ -106,8 +109,41 @@ export function openApiDocument(): Record<string, unknown> {
         },
       },
       '/{project}/notes': post('Capture a note into the todo lane', noteBody, [projectParam]),
+      '/{project}/cards/{id}': {
+        patch: {
+          summary: 'Rename a card (todo/groomed only — engine lanes refuse)',
+          parameters: [projectParam, idParam],
+          requestBody: requestBody(updateBody),
+          responses: { '200': jsonResponse('The renamed card'), ...errorResponses },
+        },
+        delete: {
+          summary: 'Hard-delete a card and its tasks (todo/groomed only)',
+          parameters: [projectParam, idParam],
+          responses: { '204': jsonResponse('Deleted — no content'), ...errorResponses },
+        },
+      },
+      '/{project}/git': {
+        get: {
+          summary: 'Local git facts for the project path (read-only; { repo: false } when not a git repo)',
+          parameters: [projectParam],
+          responses: { '200': jsonResponse('GitDigest'), '404': errorResponses['404'] },
+        },
+      },
+      '/{project}/cards/{id}/groom': {
+        post: {
+          summary: 'Accept a GroomProposal: note → verb item in groomed',
+          parameters: [projectParam, idParam],
+          requestBody: requestBody(groomBody),
+          responses: { '200': jsonResponse('The groomed verb item'), ...errorResponses },
+        },
+        patch: {
+          summary: 'Re-edit an already-groomed verb item (research/spec/tasks; keeps specPath)',
+          parameters: [projectParam, idParam],
+          requestBody: requestBody(groomBody),
+          responses: { '200': jsonResponse('The updated verb item'), ...errorResponses },
+        },
+      },
       ...Object.fromEntries([
-        cardPath('groom', 'Accept a GroomProposal: note → verb item in groomed', groomBody),
         cardPath('move', 'Move a card (todo ↔ groomed only for humans)', moveBody),
         cardPath('reorder', 'Midpoint insert after another card', reorderBody),
         cardPath('block', 'Flag a card blocked with a reason (no lane change)', blockBody),

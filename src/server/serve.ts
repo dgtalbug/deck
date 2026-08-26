@@ -3,6 +3,7 @@ import { ProjectRegistry } from '../core/projects/registry.ts';
 import { DEFAULT_PORT, parseServeArgs, resolvePort } from './config.ts';
 import { boardRoutes } from './routes/board.ts';
 import { cardsRoutes } from './routes/cards.ts';
+import { gitRoutes } from './routes/git.ts';
 import { homeRoutes } from './routes/home.ts';
 import { notesRoutes } from './routes/notes.ts';
 import { sseRoutes } from './sse.ts';
@@ -27,6 +28,7 @@ export function buildRoutes(registry: ProjectRegistry, staticRoot?: string, embe
     ...boardRoutes(registry),
     ...notesRoutes(registry),
     ...cardsRoutes(registry),
+    ...gitRoutes(registry),
     ...(DECK_FEATURE_SSE ? sseRoutes(registry) : {}),
   };
   return withPages(routes, staticRoot ?? process.cwd(), embedded);

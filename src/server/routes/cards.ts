@@ -1,6 +1,7 @@
 
 import { z } from 'zod';
 import { convertToVerbItem, demoteToNote, tweak } from '../../core/board/groom.ts';
+import { deleteCard, updateCard, updateGroom } from '../../core/board/crud.ts';
 import { moveLane } from '../../core/board/lanes.ts';
 import type { Lane } from '../../core/board/types.ts';
 import { applyVerifyResult } from '../../core/board/verify.ts';
@@ -9,6 +10,9 @@ import { projectStore } from '../stores.ts';
 import { attempt, type RouteTable } from '../http.ts';
 
 export const parity = {
+  'PATCH /:project/cards/:id': 'updateCard',
+  'DELETE /:project/cards/:id': 'deleteCard',
+  'PATCH /:project/cards/:id/groom': 'updateGroom',
   'POST /:project/cards/:id/groom': 'convertToVerbItem',
   'POST /:project/cards/:id/move': 'moveLane',
   'POST /:project/cards/:id/reorder': 'reorder',
@@ -43,6 +47,7 @@ export const groomBody = z.object({
 export const moveBody = z.object({ to: z.enum(['todo', 'groomed', 'active', 'verify', 'done']) });
 export const reorderBody = z.object({ afterId: z.string().optional() });
 export const blockBody = z.object({ reason: z.string().optional() });
+export const updateBody = z.object({ title: z.string().min(1) });
 export const verifyBody = z.object({
   result: z.enum(['clean', 'gaps']),
   newTasks: z.array(z.string()).optional(),
@@ -50,6 +55,20 @@ export const verifyBody = z.object({
 
 export function cardsRoutes(registry: ProjectRegistry): RouteTable {
   const routes: RouteTable = {
+    '/:project/cards/:id': {
+      PATCH: (req) =>
+        attempt(async () => {
+          const body = updateBody.parse(await req.json());
+          const store = await projectStore(registry, req.params.project!);
+          return Response.json(updateCard(store, req.params.id!, { title: body.title }));
+        }),
+      DELETE: (req) =>
+        attempt(async () => {
+          const store = await projectStore(registry, req.params.project!);
+          deleteCard(store, req.params.id!);
+          return new Response(null, { status: 204 });
+        }),
+    },
     '/:project/cards/:id/move': {
       POST: (req) =>
         attempt(async () => {
@@ -108,6 +127,13 @@ export function cardsRoutes(registry: ProjectRegistry): RouteTable {
           const store = await projectStore(registry, req.params.project!);
           const item = convertToVerbItem(store, { ...body, noteId: req.params.id! });
           return Response.json(item);
+        }),
+      // v0.2.0 re-edit of an already-groomed item (no openQuestions gate)
+      PATCH: (req) =>
+        attempt(async () => {
+          const body = groomBody.parse(await req.json());
+          const store = await projectStore(registry, req.params.project!);
+          return Response.json(updateGroom(store, req.params.id!, { ...body, noteId: req.params.id! }));
         }),
     };
   }

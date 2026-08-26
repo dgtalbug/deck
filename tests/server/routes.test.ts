@@ -38,6 +38,14 @@ async function post(path: string, body: unknown): Promise<Response> {
   });
 }
 
+async function patch(path: string, body: unknown): Promise<Response> {
+  return fetch(`${baseUrl}${path}`, {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+}
+
 const groomBody = (title: string) => ({
   proposedVerb: 'feat',
   refinedTitle: title,
@@ -159,5 +167,88 @@ describe('next route', () => {
     const digest = (await response.json()) as { cardId: string; context: string; wipBlockedBy?: string };
     expect(digest.wipBlockedBy).toBeDefined(); // three tweaks are active
     expect(typeof digest.context).toBe('string');
+  });
+});
+
+describe('card CRUD routes (v0.2.0)', () => {
+  test('PATCH rename happy path; empty title 400; unknown id 404', async () => {
+    const note = (await (await post('/testproj/notes', { title: 'rename me' })).json()) as { id: string };
+    const renamed = await patch(`/testproj/cards/${note.id}`, { title: 'renamed via api' });
+    expect(renamed.status).toBe(200);
+    expect(((await renamed.json()) as { title: string }).title).toBe('renamed via api');
+
+    const empty = await patch(`/testproj/cards/${note.id}`, { title: '' });
+    expect(empty.status).toBe(400);
+    const ghost = await patch('/testproj/cards/ghost-card', { title: 'x' });
+    expect(ghost.status).toBe(404);
+  });
+
+  test('PATCH on an engine-lane card → 400', async () => {
+    const board = (await (await fetch(`${baseUrl}/testproj/board`)).json()) as {
+      lanes: Record<string, { id: string }[]>;
+    };
+    const active = board.lanes['active']![0]!;
+    const response = await patch(`/testproj/cards/${active.id}`, { title: 'nope' });
+    expect(response.status).toBe(400);
+    expect((await response.json()).error).toContain(active.id);
+  });
+
+  test('DELETE removes a todo note with 204; engine lane 400; ghost 404', async () => {
+    const note = (await (await post('/testproj/notes', { title: 'delete me' })).json()) as { id: string };
+    const gone = await fetch(`${baseUrl}/testproj/cards/${note.id}`, { method: 'DELETE' });
+    expect(gone.status).toBe(204);
+    expect(await gone.text()).toBe('');
+    const again = await fetch(`${baseUrl}/testproj/cards/${note.id}`, { method: 'DELETE' });
+    expect(again.status).toBe(404);
+
+    const board = (await (await fetch(`${baseUrl}/testproj/board`)).json()) as {
+      lanes: Record<string, { id: string }[]>;
+    };
+    const active = board.lanes['active']![0]!;
+    const refused = await fetch(`${baseUrl}/testproj/cards/${active.id}`, { method: 'DELETE' });
+    expect(refused.status).toBe(400);
+  });
+
+  test('PATCH groom re-edits a groomed item; non-verb 404', async () => {
+    const note = (await (await post('/testproj/notes', { title: 'regroom me' })).json()) as { id: string };
+    await post(`/testproj/cards/${note.id}/groom`, groomBody('first title'));
+    const revised = await patch(`/testproj/cards/${note.id}/groom`, {
+      ...groomBody('revised title'),
+      proposedVerb: 'fix',
+      research: { codebaseFindings: ['new finding'] },
+    });
+    expect(revised.status).toBe(200);
+    const item = (await revised.json()) as { title: string; verb: string; research: { codebaseFindings: string[] } };
+    expect(item.title).toBe('revised title');
+    expect(item.verb).toBe('fix');
+    expect(item.research.codebaseFindings).toEqual(['new finding']);
+
+    const plain = (await (await post('/testproj/notes', { title: 'plain note' })).json()) as { id: string };
+    const notVerb = await patch(`/testproj/cards/${plain.id}/groom`, groomBody('x'));
+    expect(notVerb.status).toBe(404);
+  });
+});
+
+describe('git route (v0.2.0)', () => {
+  test('non-repo project → { repo: false } at 200; unknown project 404', async () => {
+    const response = await fetch(`${baseUrl}/testproj/git`);
+    expect(response.status).toBe(200);
+    expect((await response.json())).toEqual({ repo: false, recent: [] });
+    const ghost = await fetch(`${baseUrl}/nope/git`);
+    expect(ghost.status).toBe(404);
+  });
+
+  test('repo project reports branch and commits', async () => {
+    const { execSync } = await import('node:child_process');
+    execSync('git init --initial-branch=main', { cwd: project.path, stdio: 'ignore' });
+    execSync('git config user.email t@t && git config user.name t', { cwd: project.path, stdio: 'ignore' });
+    await Bun.write(`${project.path}/a.txt`, 'x');
+    execSync('git add . && git commit -m "first"', { cwd: project.path, stdio: 'ignore' });
+    const response = await fetch(`${baseUrl}/testproj/git`);
+    expect(response.status).toBe(200);
+    const digest = (await response.json()) as { repo: boolean; branch: string; recent: { subject: string }[] };
+    expect(digest.repo).toBe(true);
+    expect(digest.branch).toBe('main');
+    expect(digest.recent[0]!.subject).toBe('first');
   });
 });
