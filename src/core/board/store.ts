@@ -2,7 +2,7 @@ import { Database } from 'bun:sqlite';
 import { asc, eq, inArray, sql } from 'drizzle-orm';
 import { drizzle, type SQLiteBunDatabase } from 'drizzle-orm/bun-sqlite';
 import { migrate } from 'drizzle-orm/bun-sqlite/migrator';
-import { mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { z } from 'zod';
 import { readDeckConfig } from './config.ts';
@@ -102,9 +102,16 @@ export class DocumentStore {
     const db = drizzle({ client: sqlite });
     // Two processes opening a fresh board race the initial DDL; retry —
     // once the winner commits, the migration journal makes this a no-op.
+    // Compiled binaries have no drizzle/ folder next to import.meta.dir —
+    // they carry the journal embedded (scripts/embed-migrations.ts).
+    const drizzleDir = join(import.meta.dir, '../../../drizzle');
     for (let attempt = 0; ; attempt++) {
       try {
-        migrate(db, { migrationsFolder: join(import.meta.dir, '../../../drizzle') });
+        if (existsSync(drizzleDir)) {
+          migrate(db, { migrationsFolder: drizzleDir });
+        } else {
+          migrate(db, { migrationsJournal: (await import('./migrations')).migrationsJournal });
+        }
         break;
       } catch (error) {
         if (attempt >= 4) throw error;

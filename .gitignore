@@ -21,6 +21,10 @@
 # Build & runtime artifacts (also ignored inside tracked dirs)
 node_modules/
 dist/
+/deck
+/deck.exe
+src/server/ui-assets.ts
+src/core/board/migrations.ts
 build/
 coverage/
 .deck/
