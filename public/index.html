@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en" data-mode="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>deck · board</title>
+    <meta name="color-scheme" content="dark light" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <script>
+      // No-flash mode pin (D-UI-008): must run before the stylesheet paints.
+      // Saved choice wins; first visit honors prefers-color-scheme once.
+      (function () {
+        try {
+          var saved = localStorage.getItem('deck-mode');
+          var mode =
+            saved === 'light' || saved === 'dark'
+              ? saved
+              : matchMedia('(prefers-color-scheme: light)').matches
+                ? 'light'
+                : 'dark';
+          document.documentElement.dataset.mode = mode;
+        } catch {
+          document.documentElement.dataset.mode = 'dark';
+        }
+      })();
+    </script>
+    <!-- bun build merges spade.css + app.css into one app.css asset -->
+    <link rel="stylesheet" href="/ui/app.css" />
+  </head>
+  <body>
+    <div class="backdrop"><div class="orb"></div></div>
+    <div id="app"></div>
+    <script type="module" src="/ui/app.js"></script>
+  </body>
+</html>

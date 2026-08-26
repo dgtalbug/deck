@@ -1,0 +1,393 @@
+/* ═══ deck app page styles (data-page equivalent) — var(--*) only ═══ */
+
+/* home */
+.project-card {
+  cursor: pointer;
+}
+.project-card:hover {
+  border-color: var(--border-2);
+}
+.project-path {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.project-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.project-row .spacer {
+  flex: 1;
+}
+.last-activity {
+  font-size: 12px;
+  color: var(--muted);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.project-card a,
+.project-card a:visited {
+  color: inherit;
+  text-decoration: none;
+  display: block;
+}
+
+/* board extras (mockup §page) */
+.lane-head .wip {
+  margin-left: auto;
+}
+.lane-head .wip + .count {
+  margin-left: 0;
+}
+.kcard .grip {
+  color: var(--soft);
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  cursor: grab;
+  display: inline-flex;
+  vertical-align: middle;
+  margin-right: 4px;
+}
+.kcard:hover .grip,
+.kcard:focus-visible .grip {
+  opacity: 1;
+}
+.kcard .menu-btn {
+  all: unset;
+  cursor: pointer;
+  color: var(--soft);
+  border-radius: 6px;
+  padding: 2px;
+  display: inline-flex;
+}
+.kcard .menu-btn:hover,
+.kcard .menu-btn:focus-visible {
+  color: var(--foreground);
+  background: var(--chip);
+}
+.kcard .menu-btn .lucide {
+  width: 14px;
+  height: 14px;
+}
+.kcard[role='button'] {
+  cursor: pointer;
+}
+.lane-empty {
+  border: 1.5px dashed var(--border-2);
+  border-radius: var(--radius-sm);
+  padding: 14px 10px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--soft);
+}
+.add-note {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.add-note input {
+  all: unset;
+  box-sizing: border-box;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 7px 12px;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--foreground);
+  flex: 1;
+  min-width: 200px;
+}
+.add-note input:focus-visible {
+  outline: 2px solid var(--primary-vivid);
+  outline-offset: 2px;
+}
+.add-note input::placeholder {
+  color: var(--soft);
+}
+
+/* todo view */
+.todo-group {
+  margin-bottom: 18px;
+}
+.todo-group-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  font-weight: 700;
+  margin: 14px 0 8px;
+}
+.todo-group-head .lucide {
+  width: 14px;
+  height: 14px;
+}
+.todo-pos {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--muted);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.row-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* dialogs */
+.scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: color-mix(in srgb, var(--background) 62%, transparent);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 7vh 20px 40px;
+  overflow-y: auto;
+}
+.dialog {
+  width: min(760px, 100%);
+  max-height: 84vh;
+  overflow-y: auto;
+  box-shadow: var(--shadow-pop);
+  border-color: var(--border-2);
+}
+.dialog-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.dialog-close {
+  all: unset;
+  cursor: pointer;
+  color: var(--muted);
+  border-radius: 8px;
+  padding: 6px;
+  display: inline-flex;
+}
+.dialog-close:hover,
+.dialog-close:focus-visible {
+  color: var(--foreground);
+  background: var(--chip);
+}
+.task {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 7px 0;
+  font-size: 13.5px;
+}
+.task.done {
+  color: var(--muted);
+  text-decoration: line-through;
+  text-decoration-color: var(--soft);
+}
+.task .added-by-verify {
+  font-size: 10.5px;
+  font-family: var(--font-mono);
+  color: var(--accent-3);
+  margin-left: 6px;
+}
+.form-grid {
+  display: grid;
+  gap: 12px;
+}
+.form-grid label {
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--muted);
+  display: block;
+  margin-bottom: 5px;
+}
+.form-grid input[type='text'],
+.form-grid select,
+.form-grid textarea {
+  all: unset;
+  box-sizing: border-box;
+  width: 100%;
+  background: var(--card-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px 12px;
+  font-family: inherit;
+  font-size: 13.5px;
+  color: var(--foreground);
+}
+.form-grid textarea {
+  min-height: 74px;
+  resize: vertical;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+}
+.form-grid select {
+  cursor: pointer;
+  appearance: none;
+  background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%),
+    linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+  background-position: calc(100% - 18px) 55%, calc(100% - 13px) 55%;
+  background-size: 5px 5px;
+  background-repeat: no-repeat;
+}
+.form-grid input:focus-visible,
+.form-grid select:focus-visible,
+.form-grid textarea:focus-visible {
+  outline: 2px solid var(--primary-vivid);
+  outline-offset: 2px;
+}
+.q-item {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--card-2);
+  font-size: 13px;
+}
+.q-item .lucide {
+  flex-shrink: 0;
+  margin-top: 3px;
+  width: 14px;
+  height: 14px;
+}
+.q-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+.dialog-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  border-top: 1px solid var(--border);
+  padding-top: 14px;
+  margin-top: 16px;
+}
+
+/* spec markdown (lazy sanitized render) — code panels stay dark in both modes */
+.spec-md {
+  font-size: 13.5px;
+}
+.spec-md pre {
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 12px;
+  overflow-x: auto;
+  font-size: 12px;
+  margin: 10px 0;
+}
+.spec-md code {
+  background: var(--card-2);
+  padding: 2px 6px;
+  border-radius: 6px;
+  font-size: 0.88em;
+  color: var(--accent-3);
+}
+.spec-md pre code {
+  background: none;
+  padding: 0;
+}
+.spec-md h1,
+.spec-md h2 {
+  font-family: var(--font-display);
+  letter-spacing: -0.01em;
+  margin: 14px 0 6px;
+}
+.spec-md h1 {
+  font-size: 18px;
+}
+.spec-md h2 {
+  font-size: 15px;
+}
+.spec-md ul,
+.spec-md ol {
+  padding-left: 22px;
+  margin: 8px 0;
+}
+
+/* action menu pop */
+.menu-root {
+  position: relative;
+  display: inline-flex;
+}
+.menu-pop {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 90;
+  min-width: 170px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-pop);
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+}
+.menu-item {
+  all: unset;
+  cursor: pointer;
+  padding: 7px 10px;
+  border-radius: 6px;
+  font-size: 12.5px;
+  font-weight: 550;
+  color: var(--foreground);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: inherit;
+}
+.menu-item:hover,
+.menu-item:focus-visible {
+  background: var(--chip);
+  color: var(--primary-vivid);
+}
+
+/* toast */
+.toast {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 120;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  background: var(--card);
+  border: 1px solid color-mix(in srgb, var(--danger) 40%, transparent);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-pop);
+  padding: 13px 16px;
+  font-size: 13px;
+  max-width: 380px;
+}
+.hint {
+  font-size: 12px;
+  color: var(--muted);
+  font-style: italic;
+}
+.banner {
+  margin: 0 0 14px;
+}
+
+/* board page header */
+.board-head-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
