@@ -52,11 +52,13 @@ describe('cli happy paths', () => {
     expect(store.getNote(id).title).toBe('fix the flaky test');
   });
 
-  test('board renders lanes', async () => {
+  test('board renders lanes on the 72-col grid', async () => {
     store.addNote('a note');
     expect(await run(['board'])).toBe(0);
-    expect(out.join('\n')).toContain('todo (1)');
-    expect(out.join('\n')).toContain('groomed (0)');
+    // lane head: name + rule to col 70, count at 72 (identity §3)
+    expect(out.join('\n')).toMatch(/^todo [─ ]+ 1$/m);
+    expect(out.join('\n')).toMatch(/^groomed [─ ]+ 0$/m);
+    expect(out.join('\n')).toContain('board · todo 1 · groomed 0');
   });
 
   test('board --view todo renders the flat list', async () => {
@@ -176,5 +178,30 @@ describe('cli project resolution', () => {
   test('unknown command exits 64 with usage', async () => {
     expect(await run(['borad'])).toBe(64);
     expect(err.join('\n')).toContain("unknown command 'borad'");
+  });
+});
+
+describe('cli identity — plain-text equivalence', () => {
+  test('board/todo/projects renders are character-identical with SGR stripped', async () => {
+    const { palette, stripSgr } = await import('../../src/cli/color.ts');
+    const { renderBoard, renderProjects } = await import('../../src/cli/render.ts');
+    const { boardView } = await import('../../src/core/board/views.ts');
+    store.addNote('a note');
+    groomNote('build me');
+    const on = palette('24bit');
+    const off = palette('off');
+    for (const [colored, plain] of [
+      [renderBoard(boardView(store), on), renderBoard(boardView(store), off)],
+      [renderProjects([{ name: 'p', path: '/tmp/p', activeCount: 1, doneCount: 2, lastActivity: '2m ago', createdAt: 'today' }], on),
+       renderProjects([{ name: 'p', path: '/tmp/p', activeCount: 1, doneCount: 2, lastActivity: '2m ago', createdAt: 'today' }], off)],
+    ] as const) {
+      expect(stripSgr(colored)).toBe(plain);
+    }
+  });
+
+  test('cli output under test env (non-TTY) contains no SGR', async () => {
+    store.addNote('quiet note');
+    await run(['board']);
+    expect(out.join('')).not.toMatch(/\x1b\[/);
   });
 });

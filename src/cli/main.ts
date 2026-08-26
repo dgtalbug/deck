@@ -20,6 +20,8 @@ import { noteBody } from '../server/routes/notes.ts';
 import { serveMain } from '../server/serve.ts';
 import { flagString, flagStrings, parseArgs, UsageError, type ParsedArgs } from './args.ts';
 import { ProjectResolutionError, resolveProject } from './context.ts';
+import { detectLevel, palette, type Palette } from './color.ts';
+import { withSpinner } from './spin.ts';
 import { cardSummary, renderBoard, renderProjects, renderTodo } from './render.ts';
 
 // Command → core function (route↔core↔CLI parity; the parity test walks
@@ -74,6 +76,7 @@ interface RunContext {
   registry: ProjectRegistry;
   cwd: string;
   io: CliIo;
+  pal: Palette;
 }
 
 const commands: Record<string, Command> = {
@@ -85,10 +88,16 @@ const commands: Record<string, Command> = {
   },
   board: async (args, ctx) => {
     const project = resolveProject(ctx.registry, args, ctx.cwd);
-    const store = await getStore(project.path);
-    return flagString(args.flags, 'view') === 'todo'
-      ? renderTodo(todoView(store))
-      : renderBoard(boardView(store));
+    return withSpinner(
+      { isatty: Boolean(process.stdout.isTTY), dumb: Bun.env['TERM'] === 'dumb', io: ctx.io },
+      'opening board…',
+      async () => {
+        const store = await getStore(project.path);
+        return flagString(args.flags, 'view') === 'todo'
+          ? renderTodo(todoView(store), ctx.pal)
+          : renderBoard(boardView(store), ctx.pal);
+      },
+    );
   },
   groom: async (args, ctx) => {
     const id = requiredId(args, 'groom <id>');
@@ -155,7 +164,17 @@ const commands: Record<string, Command> = {
   },
   init: async (args, ctx) => {
     const result = await initProject(ctx.registry, ctx.cwd, flagString(args.flags, 'name'));
-    return `registered '${result.project.name}' — board: ${result.boardUrl}`;
+    const p = ctx.pal;
+    // identity §3 init template: spade pip, board URL in lime, quiet rest
+    return [
+      `${p.color('primary', '♠')} ${p.bold(`deck initialized — ${result.project.name}`)}`,
+      '',
+      `  ${p.dim('board')}  ${p.color('primary', `${result.boardUrl}/`)}`,
+      `  ${p.dim('data')}   .deck/deck.db`,
+      `  ${p.dim('specs')}  specs/`,
+      '',
+      `  ${p.dim('next')}   deck note "your first thought"`,
+    ].join('\n');
   },
   doctor: async (args, ctx) => {
     const checks = await runDoctor(ctx.registry, ctx.cwd);
@@ -166,7 +185,7 @@ const commands: Record<string, Command> = {
     const projects = await Promise.all(
       ctx.registry.list().map(async (project) => projectSummary(await getStore(project.path), project)),
     );
-    return renderProjects(projects);
+    return renderProjects(projects, ctx.pal);
   },
   serve: async () => {
     await serveMain();
@@ -186,6 +205,7 @@ export async function runCli(argv: string[], options: RunOptions = {}): Promise<
     registry: options.registry ?? new ProjectRegistry(),
     cwd: options.cwd ?? process.cwd(),
     io,
+    pal: palette(detectLevel(Bun.env, Boolean(process.stdout.isTTY))),
   };
   const args = parseArgs(argv);
   if (args.command === undefined) {
