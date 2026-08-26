@@ -251,33 +251,11 @@ describe('quick block on engine lanes', () => {
   });
 });
 
-describe('sidebar git section', () => {
-  test('renders branch/head/commits on load and refresh re-fetches', async () => {
-    const { host, calls } = await mount();
-    expect(calls).toContain('fetchGit'); // on-load digest
-    const git = host.querySelector('.sidebar-git')!;
-    expect(git.textContent).toContain('main');
-    expect(git.textContent).toContain('abc1234');
-    expect(git.textContent).toContain('first commit');
-    expect(git.textContent).toContain('2 dirty');
-    click(git.querySelector('.icon-btn[aria-label="refresh git facts"]'));
-    await new Promise((resolve) => setTimeout(resolve, 60));
-    expect(calls.filter((call) => call === 'fetchGit').length).toBe(2); // manual refresh
-  });
-
-  test('hides facts when the project is not a git repo', async () => {
-    const doc: BoardDoc = { ...DOC };
-    const { api } = makeApi(doc);
-    api.fetchGit = () => Promise.resolve({ repo: false, recent: [] });
-    const host = win.document.createElement('div') as unknown as HTMLElement;
-    mountedHosts.push(host);
-    win.document.body.appendChild(host as unknown as Parameters<typeof win.document.body.appendChild>[0]);
-    seq += 1;
-    navigate(`/p${seq}/`);
-    render(<Board project={`p${seq}`} api={api} subscribe={silentSubscribe} />, host);
-    await new Promise((resolve) => setTimeout(resolve, 80));
-    const git = host.querySelector('.sidebar-git')!;
-    expect(git.textContent).toContain('not a git repository');
-    expect(git.querySelector('.git-branch')).toBeNull();
+describe('sidebar git section (v0.3.1)', () => {
+  test('removed — git facts live on the GitPage now', async () => {
+    const { host } = await mount();
+    expect(host.querySelector('.sidebar-git')).toBeNull();
+    expect(host.querySelector('.sidebar-nav')?.textContent).toContain('Git');
   });
 });
+
