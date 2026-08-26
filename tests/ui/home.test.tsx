@@ -47,7 +47,9 @@ async function renderHome(projects: ProjectSummary[] | { error: number }): Promi
 describe('Home', () => {
   test('renders the registry payload with navigate links', async () => {
     const { win } = await renderHome(PAYLOAD);
-    expect(win.document.querySelector('.grad-text')?.textContent).toBe('home');
+    // gradient text lives ONLY on the topbar brand (Spade rule) — page h1s are plain
+    expect(win.document.querySelector('.grad-text')).toBeNull();
+    expect(win.document.querySelector('h1.page')?.textContent).toBe('workspace');
     const cards = [...win.document.querySelectorAll('.project-card')];
     expect(cards.length).toBe(2);
     const deck = cards[0]!;

@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { effect } from '@preact/signals';
 import { createBoardStore } from '../../src/ui/slices/board/store.ts';
-import { ApiError, type BoardApi, type BoardDoc, type UiCard } from '../../src/ui/slices/board/api.ts';
+import { ApiError, type BoardApi, type BoardDoc, type GroomInput, type UiCard } from '../../src/ui/slices/board/api.ts';
 
 // Fake api — the store is exercised without a server (task 4.2): burst
 // batching, optimistic apply → response replace → rollback, never-optimistic
@@ -20,7 +20,7 @@ function makeApi(initial: BoardDoc): BoardApi & { calls: string[]; failures: Map
   const calls: string[] = [];
   const failures = new Map<string, ApiError>();
   const refresh = async (): Promise<BoardDoc> => current;
-  const record = async (name: string, apply: () => UiCard): Promise<UiCard> => {
+  const record = async (name: string, apply: () => UiCard | void): Promise<UiCard | void> => {
     calls.push(name);
     const failure = failures.get(name);
     if (failure !== undefined) throw failure;
@@ -41,6 +41,51 @@ function makeApi(initial: BoardDoc): BoardApi & { calls: string[]; failures: Map
         const note: UiCard = { id: `n-${title}`, title };
         current = { ...current, lanes: { ...current.lanes, todo: [...current.lanes.todo, note] } };
         return note;
+      }),
+    updateCard: (_project: string, id: string, title: string) =>
+      record(`update:${id}`, () => {
+        let updated: UiCard = { id, title };
+        current = {
+          ...current,
+          lanes: Object.fromEntries(
+            Object.entries(current.lanes).map(([lane, cards]) => [
+              lane,
+              cards.map((entry) => {
+                if (entry.id !== id) return entry;
+                updated = { ...entry, title };
+                return updated;
+              }),
+            ]),
+          ) as BoardDoc['lanes'],
+        };
+        return updated;
+      }),
+    deleteCard: (_project: string, id: string) =>
+      record(`delete:${id}`, () => {
+        current = {
+          ...current,
+          lanes: Object.fromEntries(
+            Object.entries(current.lanes).map(([lane, cards]) => [lane, cards.filter((entry) => entry.id !== id)]),
+          ) as BoardDoc['lanes'],
+        };
+      }),
+    updateGroom: (_project: string, id: string, input: GroomInput) =>
+      record(`updateGroom:${id}`, () => {
+        let updated: UiCard = { id, title: input.refinedTitle };
+        current = {
+          ...current,
+          lanes: Object.fromEntries(
+            Object.entries(current.lanes).map(([lane, cards]) => [
+              lane,
+              cards.map((entry) => {
+                if (entry.id !== id) return entry;
+                updated = { ...entry, title: input.refinedTitle, ...(input.proposedVerb !== undefined ? { verb: input.proposedVerb } : {}) };
+                return updated;
+              }),
+            ]),
+          ) as BoardDoc['lanes'],
+        };
+        return updated;
       }),
     groom: (_project: string, id: string) =>
       record('groom', () => {
@@ -189,5 +234,163 @@ describe('board store', () => {
     store.applyEvents([{ rowid: 1, type: 'card.moved', payload: { id: 'x', lane: 'active', position: 1 } }]);
     // moved into active without the card existing → no-op (unknown id)
     expect(store.wip.value.active).toBe(0);
+  });
+});
+
+describe('SSE idempotency + echo suppression (findings 6+7)', () => {
+  test('a replayed event (same rowid) never re-applies', async () => {
+    const api = makeApi(doc([{ id: 'a', lane: 'todo' }, { id: 'b', lane: 'todo' }]));
+    const store = createBoardStore('p', api);
+    await store.refetch();
+    const event = { rowid: 7, type: 'card.moved' as const, payload: { id: 'a', lane: 'groomed', position: 1 } };
+    store.applyEvents([event]);
+    const afterFirst = store.board.value;
+    store.applyEvents([event]); // reconnect replay
+    store.applyEvents([event]); // and again
+    expect(store.board.value).toBe(afterFirst);
+    expect(store.board.value.lanes.groomed.map((card) => card.id)).toEqual(['a']);
+  });
+
+  test('card.moved to the same lane+position is a no-op; same-lane position moves in place', async () => {
+    const api = makeApi(doc([{ id: 'a', lane: 'todo' }, { id: 'b', lane: 'todo' }, { id: 'c', lane: 'todo' }]));
+    const store = createBoardStore('p', api);
+    await store.refetch();
+    // echo of a move that already happened (a is at position 1 of todo)
+    store.applyEvents([{ rowid: 1, type: 'card.moved', payload: { id: 'a', lane: 'todo', position: 1 } }]);
+    expect(store.board.value.lanes.todo.map((card) => card.id)).toEqual(['a', 'b', 'c']); // no re-append
+    // a remote reorder within the lane honors position
+    store.applyEvents([{ rowid: 2, type: 'card.moved', payload: { id: 'a', lane: 'todo', position: 3 } }]);
+    expect(store.board.value.lanes.todo.map((card) => card.id)).toEqual(['b', 'c', 'a']);
+    // cross-lane insertion honors position too (not a blind append)
+    store.applyEvents([{ rowid: 3, type: 'card.moved', payload: { id: 'x', lane: 'todo', position: 1 } }]);
+    store.applyEvents([{ rowid: 4, type: 'card.moved', payload: { id: 'b', lane: 'groomed', position: 1 } }]);
+    store.applyEvents([{ rowid: 5, type: 'card.created', payload: { id: 'n', lane: 'todo', position: 4 } }]);
+    store.applyEvents([{ rowid: 6, type: 'card.moved', payload: { id: 'n', lane: 'groomed', position: 1 } }]);
+    expect(store.board.value.lanes.groomed.map((card) => card.id)).toEqual(['n', 'b']);
+  });
+
+  test('card.created for an existing id never duplicates the stub', async () => {
+    const api = makeApi(doc([{ id: 'a', lane: 'todo' }]));
+    const store = createBoardStore('p', api);
+    await store.refetch();
+    store.applyEvents([{ rowid: 1, type: 'card.created', payload: { id: 'a', lane: 'todo', position: 1 } }]);
+    expect(store.board.value.lanes.todo.length).toBe(1);
+  });
+
+  test('an echoed delta for an in-flight mutation is dropped until the response lands', async () => {
+    const base = doc([{ id: 'a', lane: 'todo' }, { id: 'b', lane: 'todo' }]);
+    let current = base;
+    let release: (() => void) | null = null;
+    const api = makeApi(base);
+    api.move = (_project: string, id: string, to: 'todo' | 'groomed' | 'active' | 'verify' | 'done') =>
+      new Promise((resolve) => {
+        release = () => {
+          const found = current.lanes.todo.find((entry) => entry.id === id)!;
+          current = {
+            ...current,
+            lanes: {
+              ...current.lanes,
+              todo: current.lanes.todo.filter((entry) => entry.id !== id),
+              groomed: [...current.lanes.groomed, { ...found, lane: to }],
+            },
+          };
+          resolve({ ...found, lane: to });
+        };
+      });
+    api.fetchBoard = () => Promise.resolve(current);
+    const store = createBoardStore('p', api);
+    await store.refetch();
+
+    let settled!: (value: boolean) => void;
+    const done = new Promise<boolean>((resolve) => {
+      settled = resolve;
+    });
+    void store.move('a', 'groomed').then((ok) => settled(ok));
+
+    // the SSE echo arrives while the mutation is in flight → suppressed
+    store.applyEvents([{ rowid: 1, type: 'card.moved', payload: { id: 'a', lane: 'groomed', position: 1 } }]);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(store.board.value.lanes.groomed.length).toBe(1); // optimistic state only
+
+    release!();
+    expect(await done).toBe(true);
+    expect(store.board.value.lanes.groomed.map((card) => card.id)).toEqual(['a']);
+
+    // window closed: a later remote delta for the same card applies again
+    store.applyEvents([{ rowid: 2, type: 'card.moved', payload: { id: 'a', lane: 'todo', position: 2 } }]);
+    expect(store.board.value.lanes.todo.map((card) => card.id)).toEqual(['b', 'a']);
+  });
+
+  test('remote moves cue exactly the moved card and the cue clears', async () => {
+    const api = makeApi(doc([{ id: 'a', lane: 'todo' }]));
+    const store = createBoardStore('p', api);
+    await store.refetch();
+    store.applyEvents([{ rowid: 1, type: 'card.moved', payload: { id: 'a', lane: 'groomed', position: 1 } }]);
+    expect([...store.remoteMoved.value]).toEqual(['a']);
+    await new Promise((resolve) => setTimeout(resolve, 500)); // cue lifetime
+    expect([...store.remoteMoved.value]).toEqual([]);
+  });
+});
+
+describe('card CRUD mutations + new SSE events (v0.2.0)', () => {
+  const groomInput = { proposedVerb: 'fix' as const, refinedTitle: 'revised', research: { codebaseFindings: [] }, specDeltas: [], tasks: [], openQuestions: [] };
+
+  test('rename applies optimistically and rolls back on failure', async () => {
+    const api = makeApi(doc([{ id: 'a', lane: 'todo' }]));
+    api.failures.set('update:a', new ApiError(400, 'nope'));
+    const store = createBoardStore('p', api);
+    await store.refetch();
+    const ok = await store.updateCard('a', 'new title');
+    expect(ok).toBe(false);
+    expect(store.cardById('a')?.title).toBe('a'); // rolled back
+    api.failures.delete('update:a');
+    const good = await store.updateCard('a', 'new title');
+    expect(good).toBe(true);
+    expect(store.cardById('a')?.title).toBe('new title');
+  });
+
+  test('delete removes optimistically and restores on failure', async () => {
+    const api = makeApi(doc([{ id: 'a', lane: 'todo' }, { id: 'b', lane: 'todo' }]));
+    api.failures.set('delete:a', new ApiError(400, 'refused'));
+    const store = createBoardStore('p', api);
+    await store.refetch();
+    expect(await store.deleteCard('a')).toBe(false);
+    expect(store.board.value.lanes.todo.map((card) => card.id)).toEqual(['a', 'b']);
+    api.failures.delete('delete:a');
+    expect(await store.deleteCard('a')).toBe(true);
+    expect(store.board.value.lanes.todo.map((card) => card.id)).toEqual(['b']);
+  });
+
+  test('updateGroom optimistically swaps verb + title', async () => {
+    const api = makeApi(doc([{ id: 'v', lane: 'groomed', title: 'old' }]));
+    const store = createBoardStore('p', api);
+    await store.refetch();
+    expect(await store.updateGroom('v', groomInput)).toBe(true);
+    expect(store.cardById('v')?.title).toBe('revised');
+    expect(store.cardById('v')?.verb).toBe('fix');
+  });
+
+  test('SSE card.deleted removes locally without a refetch; replay is a no-op', async () => {
+    const api = makeApi(doc([{ id: 'a', lane: 'todo' }, { id: 'b', lane: 'todo' }]));
+    const store = createBoardStore('p', api);
+    await store.refetch();
+    const before = api.calls.filter((call) => call === 'fetchBoard').length;
+    store.applyEvents([{ rowid: 5, type: 'card.deleted', payload: { id: 'a', lane: 'todo' } }]);
+    expect(store.board.value.lanes.todo.map((card) => card.id)).toEqual(['b']);
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    expect(api.calls.filter((call) => call === 'fetchBoard').length).toBe(before); // no trailing refetch
+    const state = store.board.value;
+    store.applyEvents([{ rowid: 5, type: 'card.deleted', payload: { id: 'a', lane: 'todo' } }]);
+    expect(store.board.value).toBe(state); // watermark replay — nothing
+  });
+
+  test('SSE card.updated schedules a trailing refetch for detail', async () => {
+    const api = makeApi(doc([{ id: 'a', lane: 'todo', title: 'before' }]));
+    const store = createBoardStore('p', api);
+    await store.refetch();
+    const before = api.calls.filter((call) => call === 'fetchBoard').length;
+    store.applyEvents([{ rowid: 3, type: 'card.updated', payload: { id: 'a', lane: 'todo' } }]);
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    expect(api.calls.filter((call) => call === 'fetchBoard').length).toBeGreaterThan(before);
   });
 });

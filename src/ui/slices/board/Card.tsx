@@ -1,17 +1,19 @@
 import type { VNode } from 'preact';
-import { GripVertical, StickyNote, TriangleAlert, Zap } from 'lucide-preact';
+import { GripVertical, OctagonPause, OctagonX, StickyNote, TriangleAlert, Zap } from 'lucide-preact';
 import type { UiCard } from './api.ts';
+import { VerbIcon } from './verbIcon.tsx';
 import { Menu } from '../../components/Menu.tsx';
-import { keyboardAfterId, registerCardDrag, registerCardDrop, type DragCallbacks } from './dnd.ts';
+import { keyboardAfterId, registerCardDrag, registerCardDrop, registeredCards, type DragCallbacks } from './dnd.ts';
 
 // Kanban card per Spade §13: type chip (note muted / verb chip / tweak pink),
 // blocked dim + reachable reason, progress badge + meter, restricted drag,
 // and the keyboard path (action menu + Alt+↑/↓) so drag is never the only
-// way to move a card.
+// way to move a card. v0.2.0: manual lanes carry edit/delete in the menu;
+// engine lanes carry a one-action block/unblock (hold) control.
 
 // pdd registration is once-per-element: keyed diffs reuse DOM nodes, and
-// re-registering on every render would stack drop listeners.
-const registered = new WeakSet<HTMLElement>();
+// re-registering on every render would stack drop listeners (dnd.ts owns
+// the marks so disposeDnd can swap them between test windows).
 
 export interface CardActions {
   onOpen(id: string): void;
@@ -19,7 +21,14 @@ export interface CardActions {
   onTweak(id: string): void;
   onMove(id: string, to: 'todo' | 'groomed'): void;
   onKeyboardReorder(id: string, afterId: string | undefined): void;
+  onEditTitle(id: string): void;
+  onEditGroom(id: string): void;
+  onDelete(id: string): void;
+  onBlock(id: string): void;
+  onUnblock(id: string): void;
 }
+
+const ENGINE_LANES: ReadonlySet<string> = new Set(['active', 'verify', 'done']);
 
 export function cardKind(card: UiCard): 'note' | 'verb' | 'tweak' {
   if (card.verb !== undefined) return 'verb';
@@ -40,7 +49,7 @@ export interface CardDndProps {
   laneCards: UiCard[];
 }
 
-export function Card({ card, actions, dnd }: { card: UiCard; actions: CardActions; dnd?: CardDndProps }): VNode {
+export function Card({ card, actions, dnd, flash }: { card: UiCard; actions: CardActions; dnd?: CardDndProps; flash?: boolean }): VNode {
   const kind = cardKind(card);
   const progress = progressParts(card);
   const complete = progress !== null && progress.total > 0 && progress.done === progress.total;
@@ -64,18 +73,28 @@ export function Card({ card, actions, dnd }: { card: UiCard; actions: CardAction
   // The store only lane-moves verb items — notes leave todo via grooming
   // and tweaks via their fast lane, so the menu never offers a move the
   // server is guaranteed to reject (drags still POST; the store decides).
-  const canLaneMove = kind === 'verb';
-  const menuItems =
-    dnd !== undefined && canLaneMove && (dnd.lane === 'todo' || dnd.lane === 'groomed')
-      ? [
-          ...(dnd.lane === 'todo' ? [{ label: 'Move to Groomed', onSelect: () => actions.onMove(card.id, 'groomed') }] : []),
-          ...(dnd.lane === 'groomed' ? [{ label: 'Move to Todo', onSelect: () => actions.onMove(card.id, 'todo') }] : []),
-        ]
-      : [];
+  const manualLane = dnd !== undefined && (dnd.lane === 'todo' || dnd.lane === 'groomed');
+  const engineLane = ENGINE_LANES.has(card.lane ?? 'todo');
+  const menuItems = manualLane
+    ? [
+        ...(kind === 'verb'
+          ? [
+              { label: 'Edit groom…', onSelect: () => actions.onEditGroom(card.id) },
+              ...(dnd!.lane === 'todo'
+                ? [{ label: 'Move to Groomed', onSelect: () => actions.onMove(card.id, 'groomed') }]
+                : []),
+              ...(dnd!.lane === 'groomed'
+                ? [{ label: 'Move to Todo', onSelect: () => actions.onMove(card.id, 'todo') }]
+                : []),
+            ]
+          : [{ label: 'Edit title…', onSelect: () => actions.onEditTitle(card.id) }]),
+        { label: 'Delete…', onSelect: () => actions.onDelete(card.id) },
+      ]
+    : [];
 
   return (
     <div
-      class={`kcard${card.blocked !== undefined ? ' is-blocked' : ''}`}
+      class={`kcard${card.blocked !== undefined ? ' is-blocked' : ''}${flash === true ? ' is-remote-in' : ''}`}
       role="button"
       tabindex={0}
       data-id={card.id}
@@ -84,8 +103,8 @@ export function Card({ card, actions, dnd }: { card: UiCard; actions: CardAction
       onClick={() => actions.onOpen(card.id)}
       ref={(element) => {
         const html = element as HTMLElement | null;
-        if (html === null || dnd === undefined || registered.has(html)) return;
-        registered.add(html);
+        if (html === null || dnd === undefined || registeredCards.has(html)) return;
+        registeredCards.add(html);
         registerCardDrag(html, card, dnd.lane as 'todo' | 'groomed', dnd.callbacks);
         registerCardDrop(html, dnd.lane as 'todo' | 'groomed', dnd.callbacks);
       }}
@@ -97,7 +116,11 @@ export function Card({ card, actions, dnd }: { card: UiCard; actions: CardAction
         {card.title}
       </div>
       <div class="kcard-meta">
-        {kind === 'verb' ? <span class="verb-chip">{card.verb}</span> : null}
+        {kind === 'verb' ? (
+          <span class="verb-chip">
+            <VerbIcon verb={card.verb} /> {card.verb}
+          </span>
+        ) : null}
         {kind === 'note' ? (
           <span class="type-note">
             <StickyNote size={12} /> note
@@ -139,6 +162,33 @@ export function Card({ card, actions, dnd }: { card: UiCard; actions: CardAction
           >
             fast lane
           </button>
+        ) : null}
+        {engineLane ? (
+          card.blocked !== undefined ? (
+            <button
+              class="icon-btn quick-unblock"
+              aria-label={`unblock ${card.title}`}
+              title="unblock — resume"
+              onClick={(event) => {
+                event.stopPropagation();
+                actions.onUnblock(card.id);
+              }}
+            >
+              <OctagonX size={12} /> unblock
+            </button>
+          ) : (
+            <button
+              class="icon-btn quick-block"
+              aria-label={`block ${card.title}`}
+              title="hold this card — block with no lane change"
+              onClick={(event) => {
+                event.stopPropagation();
+                actions.onBlock(card.id);
+              }}
+            >
+              <OctagonPause size={12} /> hold
+            </button>
+          )
         ) : null}
         {menuItems.length > 0 ? <Menu label={`actions for ${card.title}`} items={menuItems} /> : null}
       </div>

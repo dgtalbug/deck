@@ -41,7 +41,8 @@ function connectEvents(url: string, source: EsLike, handlers: SseHandlers, wasOp
     handlers.onError();
   });
   const types: BoardEvent['type'][] = [
-    'card.created', 'card.groomed', 'card.moved', 'card.tasks.updated', 'card.blocked', 'card.unblocked', 'card.done',
+    'card.created', 'card.groomed', 'card.moved', 'card.tasks.updated',
+    'card.blocked', 'card.unblocked', 'card.done', 'card.updated', 'card.deleted',
   ];
   for (const type of types) {
     source.addEventListener(type, (event) => {

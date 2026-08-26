@@ -30,6 +30,9 @@ function actionsLog(log: string[]): DetailActions {
     onTweak: (id) => log.push(`tweak:${id}`),
     onDemote: (id) => log.push(`demote:${id}`),
     onNext: () => log.push('next'),
+    onEditTitle: (id) => log.push(`editTitle:${id}`),
+    onEditGroom: (id) => log.push(`editGroom:${id}`),
+    onDelete: (id) => log.push(`delete:${id}`),
   };
 }
 

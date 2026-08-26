@@ -1,6 +1,7 @@
-import { beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { render } from 'preact';
 import { Board } from '../../src/ui/slices/board/Board.tsx';
+import { disposeDnd } from '../../src/ui/slices/board/dnd.ts';
 import { Banners } from '../../src/ui/slices/board/Banners.tsx';
 import { NoteCapture } from '../../src/ui/slices/board/NoteCapture.tsx';
 import { navigate, startRouter } from '../../src/ui/router.ts';
@@ -13,6 +14,7 @@ import { installDom } from './dom.ts';
 // the Board registers pdd listeners on first mount (see dnd.test.tsx).
 
 let win: ReturnType<typeof installDom>;
+const mountedHosts: HTMLElement[] = []; // unmounted in afterAll — see disposeDnd
 
 const verb = (id: string, title: string, done: number, total: number, lane: Required<UiCard>['lane']): UiCard => ({
   id,
@@ -64,6 +66,10 @@ function makeApi(doc: BoardDoc, digest?: unknown): { api: BoardApi; calls: strin
     unblock: () => Promise.resolve({ id: 'u', title: 'u' }),
     tweak: () => Promise.resolve({ id: 't', title: 't' }),
     demote: () => Promise.resolve({ id: 'd', title: 'd' }),
+    fetchGit: () => Promise.resolve({ repo: false, recent: [] }),
+    updateCard: (_p: string, id: string, title: string) => Promise.resolve({ id, title }),
+    deleteCard: () => Promise.resolve(),
+    updateGroom: (_p: string, id: string) => Promise.resolve({ id, title: 'g' }),
   };
   return { api, calls };
 }
@@ -88,6 +94,7 @@ async function mountBoard(doc: BoardDoc, digest?: unknown): Promise<{ host: HTML
   const { api, calls } = makeApi(doc, digest);
   const sse = controllableSubscribe();
   const host = win.document.createElement('div') as unknown as HTMLElement;
+  mountedHosts.push(host);
   host.setAttribute('data-liveness-mount', String(mountSeq));
   win.document.body.appendChild(host as unknown as Parameters<typeof win.document.body.appendChild>[0]);
   navigate(`/p${mountSeq}/`);
@@ -104,6 +111,13 @@ beforeAll(() => {
   startRouter();
 });
 
+afterAll(() => {
+  // orphaned Boards re-render when later files navigate — unmount first, then
+  // zero pdd's usage ledger (see disposeDnd in dnd.ts)
+  for (const host of mountedHosts) render(null, host);
+  disposeDnd();
+});
+
 describe('WIP meter and deck next (task 8.1)', () => {
   test('at limit: meter shows the at-limit state and next returns remaining tasks', async () => {
     const digest = {
@@ -117,6 +131,7 @@ describe('WIP meter and deck next (task 8.1)', () => {
     const wip = host.querySelector('.lane[data-lane="active"] .wip')!;
     expect(wip.className).toContain('is-at-limit');
     expect(wip.textContent).toContain('3/3');
+    expect(wip.textContent).toContain('at limit'); // the state is named, not just "3/3"
 
     // open deck next from the groomed card detail
     const card = host.querySelector('[data-id="g1"]') as unknown as HTMLElement;
@@ -129,6 +144,14 @@ describe('WIP meter and deck next (task 8.1)', () => {
     expect(dialog.textContent).toContain('WIP limit reached');
     expect(dialog.textContent).toContain('finish first');
     expect(dialog.textContent).toContain('Remaining tasks');
+
+    // the at-limit meter is also a direct route to the deck-next panel
+    (host.querySelector('[role="dialog"] .dialog-close') as unknown as HTMLElement | null)?.click();
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    (wip as unknown as HTMLElement).click();
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    const viaWip = host.querySelector('[role="dialog"]');
+    expect(viaWip?.textContent).toContain('WIP limit reached');
   });
 
   test('progress meter animates in place on card.tasks.updated (no reload)', () => {
@@ -172,14 +195,17 @@ describe('connectivity and exposure banners (task 8.2)', () => {
 });
 
 describe('note capture (task 8.3)', () => {
-  test('appears in todo without a manual refresh; empty title rejected inline', async () => {
+  test('the single ghost card: Enter POSTs, empty rejected inline, note appears in todo', async () => {
     const doc = atLimitDoc();
     const { host, calls } = await mountBoard(doc);
-    const input = host.querySelector('.add-note input') as unknown as HTMLInputElement;
-    const button = [...host.querySelectorAll('.add-note button')].find((b) => b.textContent?.includes('Note')) as unknown as HTMLElement;
+    // ONE affordance — the ghost card at the top of the todo lane; no FilterBar button
+    const capture = host.querySelector('.note-capture') as unknown as HTMLElement;
+    expect(capture).not.toBeNull();
+    expect([...host.querySelectorAll('.filterbar button')].some((b) => b.textContent?.includes('Note'))).toBe(false);
+    const input = capture.querySelector('input') as unknown as HTMLInputElement;
 
     // empty title: inline validation, nothing sent
-    button.click();
+    input.dispatchEvent(new win.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }) as unknown as Event);
     await new Promise((resolve) => setTimeout(resolve, 30));
     expect(host.textContent).toContain('a note needs a title');
     expect(calls.some((call) => call.startsWith('addNote:'))).toBe(false);
@@ -188,13 +214,13 @@ describe('note capture (task 8.3)', () => {
     input.value = 'captured from the ui';
     input.dispatchEvent(new win.Event('input', { bubbles: true }) as unknown as Event);
     await new Promise((resolve) => setTimeout(resolve, 30));
-    button.click();
+    input.dispatchEvent(new win.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }) as unknown as Event);
     await new Promise((resolve) => setTimeout(resolve, 80));
     expect(calls).toContain('addNote:captured from the ui');
     expect(host.querySelector('.lane[data-lane="todo"]')!.textContent).toContain('captured from the ui');
   });
 
-  test('N key focuses the capture field; NoteCapture standalone behavior', async () => {
+  test('N key focuses the capture field; Esc cancels the draft', async () => {
     const added: string[] = [];
     const host = win.document.createElement('div');
     win.document.body.appendChild(host as unknown as Parameters<typeof win.document.body.appendChild>[0]);
@@ -202,10 +228,8 @@ describe('note capture (task 8.3)', () => {
     await new Promise((resolve) => setTimeout(resolve, 30));
     const input = host.querySelector('input') as unknown as HTMLInputElement;
     win.document.body.dispatchEvent(new win.KeyboardEvent('keydown', { key: 'n', bubbles: true }) as unknown as Parameters<typeof win.document.body.dispatchEvent>[0]);
-    // multiple Boards are mounted in this shared window; the contract is
-    // that N focuses a note-capture input (the latest registered wins)
     const active = win.document.activeElement as unknown as HTMLInputElement;
-    expect(active.matches('.add-note input')).toBe(true);
+    expect(active.matches('.note-capture input')).toBe(true);
     input.value = 'via keyboard';
     input.dispatchEvent(new win.Event('input', { bubbles: true }) as unknown as Event);
     await new Promise((resolve) => setTimeout(resolve, 30)); // state flush
@@ -213,5 +237,14 @@ describe('note capture (task 8.3)', () => {
     await new Promise((resolve) => setTimeout(resolve, 40));
     expect(added).toEqual(['via keyboard']);
     expect(input.value).toBe(''); // cleared after success
+
+    // Esc cancels a draft without sending
+    input.value = 'a draft';
+    input.dispatchEvent(new win.Event('input', { bubbles: true }) as unknown as Event);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    input.dispatchEvent(new win.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }) as unknown as Event);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(input.value).toBe('');
+    expect(added).toEqual(['via keyboard']);
   });
 });

@@ -7,15 +7,18 @@ import {
   FileText,
   ListChecks,
   OctagonPause,
+  Pencil,
   Play,
   Search,
   Send,
+  Trash2,
   TriangleAlert,
   Zap,
 } from 'lucide-preact';
 import { Dialog, DialogHead } from '../../components/Dialog.tsx';
 import { TextField } from '../../components/TextField.tsx';
 import { cardKind, progressParts } from './Card.tsx';
+import { VerbIcon } from './verbIcon.tsx';
 import { SpecView } from './specView.tsx';
 import type { UiCard } from './api.ts';
 
@@ -34,6 +37,9 @@ export interface DetailActions {
   onTweak(id: string): void;
   onDemote(id: string): void;
   onNext(id: string): void;
+  onEditTitle(id: string): void;
+  onEditGroom(id: string): void;
+  onDelete(id: string): void;
 }
 
 function TaskRow({ title, done, addedByVerify }: { title: string; done: boolean; addedByVerify?: boolean }): VNode {
@@ -58,6 +64,9 @@ export function CardDetail(props: { card: UiCard; actions: DetailActions; specMa
   const [copied, setCopied] = useState(false);
   const kind = cardKind(card);
   const progress = progressParts(card);
+  // notes in the board document carry no lane field — undefined means todo
+  const lane = card.lane ?? 'todo';
+  const manualLane = lane === 'todo' || lane === 'groomed';
 
   const copyId = async () => {
     try {
@@ -75,7 +84,11 @@ export function CardDetail(props: { card: UiCard; actions: DetailActions; specMa
         title={card.title}
         meta={
           <span>
-            {kind === 'verb' ? <span class="verb-chip">{card.verb}</span> : null}
+            {kind === 'verb' ? (
+              <span class="verb-chip">
+                <VerbIcon verb={card.verb} /> {card.verb}
+              </span>
+            ) : null}
             {kind === 'tweak' ? <span class="type-tweak"><Zap size={11} /> tweak</span> : null}
             {kind === 'note' ? <span class="type-note">note</span> : null}
             <span class="badge b-primary">{card.lane ?? 'todo'}</span>
@@ -194,6 +207,27 @@ export function CardDetail(props: { card: UiCard; actions: DetailActions; specMa
       ) : null}
 
       <div class="dialog-actions">
+        {manualLane ? (
+          card.verb !== undefined ? (
+            <button class="btn btn-outline" onClick={() => actions.onEditGroom(card.id)}>
+              <Pencil size={13} /> Edit groom…
+            </button>
+          ) : (
+            <button class="btn btn-outline" onClick={() => actions.onEditTitle(card.id)}>
+              <Pencil size={13} /> Rename…
+            </button>
+          )
+        ) : null}
+        {manualLane ? (
+          <button
+            class="btn btn-ghost"
+            style="color:var(--danger)"
+            title="delete this card — cannot be undone"
+            onClick={() => actions.onDelete(card.id)}
+          >
+            <Trash2 size={13} /> Delete…
+          </button>
+        ) : null}
         {card.lane === 'groomed' ? (
           <button class="btn btn-outline" onClick={() => actions.onMoveToTodo(card.id)}>
             <ArchiveRestore size={13} /> Move to todo

@@ -4,6 +4,7 @@ import { ArrowRightLeft, RadioTower } from 'lucide-preact';
 import { signal } from '@preact/signals';
 import { boardApi, type BoardApi, type GroomInput, type UiCard } from './api.ts';
 import { registerDragMonitor, type DragCallbacks } from './dnd.ts';
+import { captureFlip, playFlip } from './flip.ts';
 import { createBoardStore } from './store.ts';
 import { subscribeBoardEvents, type SseSubscription } from './sse.ts';
 import { route, setParam } from '../../router.ts';
@@ -15,6 +16,9 @@ import { GroomForm } from './GroomForm.tsx';
 import { NoteCapture } from './NoteCapture.tsx';
 import { Banners } from './Banners.tsx';
 import { NextPanel } from './NextPanel.tsx';
+import { ProjectSidebar } from './ProjectSidebar.tsx';
+import { RenameDialog } from './RenameDialog.tsx';
+import { DeleteConfirm } from './DeleteConfirm.tsx';
 import { ToastHost } from '../../components/Toast.tsx';
 
 // Board view: one signals store per project, SSE deltas applied in batches,
@@ -31,6 +35,9 @@ export function Board({ project, api = boardApi, subscribe = subscribeBoardEvent
   const store = useMemo(() => createBoardStore(project, api), [project, api]);
   const containerRef = useRef<HTMLElement | null>(null);
   const [groomingId, setGroomingId] = useState<string | null>(null);
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [regroomId, setRegroomId] = useState<string | null>(null);
   const [nextOpen, setNextOpen] = useState(false);
   // Lane pinning (design D3): while a drag is active, SSE deltas re-render
   // other lanes; the dragged lane shows its drag-start snapshot until drop.
@@ -38,8 +45,16 @@ export function Board({ project, api = boardApi, subscribe = subscribeBoardEvent
   const dragCallbacks: DragCallbacks = {
     onIntent: (intent) => {
       pinnedLane.value = null;
-      if (intent.kind === 'move') void store.move(intent.id, intent.to);
-      else void store.reorder(intent.id, intent.afterId);
+      // FLIP (D-UI-005): snapshot pre-drop rects, animate the user-initiated
+      // reorder back from the inverted position once the response lands.
+      const flip = captureFlip(containerRef.current);
+      const applied =
+        intent.kind === 'move'
+          ? store.move(intent.id, intent.to)
+          : store.reorder(intent.id, intent.afterId);
+      void applied.then((ok) => {
+        if (ok) playFlip(containerRef.current, flip);
+      });
     },
     onDragState: (active, lane) => {
       pinnedLane.value = active ? { lane, cards: store.laneCards(lane as 'todo') } : null;
@@ -67,6 +82,11 @@ export function Board({ project, api = boardApi, subscribe = subscribeBoardEvent
     onTweak: (id: string) => void store.tweak(id),
     onMove: (id: string, to: 'todo' | 'groomed') => void store.move(id, to),
     onKeyboardReorder: (id: string, afterId: string | undefined) => void store.reorder(id, afterId),
+    onEditTitle: (id: string) => setRenamingId(id),
+    onEditGroom: (id: string) => setRegroomId(id),
+    onDelete: (id: string) => setDeletingId(id),
+    onBlock: (id: string) => void store.block(id, ''),
+    onUnblock: (id: string) => void store.unblock(id),
   };
 
   const detailActions: DetailActions = {
@@ -77,11 +97,37 @@ export function Board({ project, api = boardApi, subscribe = subscribeBoardEvent
     onTweak: (id) => void store.tweak(id),
     onDemote: (id) => void store.demote(id),
     onNext: () => setNextOpen(true),
+    onEditTitle: (id) => {
+      setParam('card', null); // editors replace the detail dialog, not stack
+      setRenamingId(id);
+    },
+    onEditGroom: (id) => {
+      setParam('card', null);
+      setRegroomId(id);
+    },
+    onDelete: (id) => {
+      setParam('card', null);
+      setDeletingId(id);
+    },
   };
 
   const view = route.value.view;
   const detailCard = route.value.card !== null ? store.cardById(route.value.card) : undefined;
   const groomNote = groomingId !== null ? store.cardById(groomingId) : undefined;
+  const renameCard = renamingId !== null ? store.cardById(renamingId) : undefined;
+  const deleteCard = deletingId !== null ? store.cardById(deletingId) : undefined;
+  const regroomCard = regroomId !== null ? store.cardById(regroomId) : undefined;
+
+  // kanban↔todo toggle rides the View Transition API when available
+  // (D-UI-005); the plain swap is the fallback.
+  const switchView = (next: 'kanban' | 'todo') => {
+    const go = () => setParam('view', next === 'kanban' ? null : 'todo');
+    if (typeof document !== 'undefined' && typeof document.startViewTransition === 'function') {
+      document.startViewTransition(go);
+    } else {
+      go();
+    }
+  };
 
   const onGroomAccept = (input: GroomInput) => {
     if (groomingId === null) return;
@@ -92,11 +138,19 @@ export function Board({ project, api = boardApi, subscribe = subscribeBoardEvent
   const pinned = pinnedLane.value;
   const laneCardsOf = (lane: (typeof LANE_ORDER)[number]) =>
     pinned !== null && pinned.lane === lane ? pinned.cards : store.filtered(lane);
+  const flashIds = store.remoteMoved.value;
+
+  // ONE note-capture affordance: the ghost card at the top of the todo lane
+  // (kanban) / inbox group (todo view) — same card visual language as the
+  // notes it creates. `N` focuses it from anywhere outside a field.
+  const capture = <NoteCapture onAdd={(title) => store.addNote(title)} />;
 
   return (
-    <section ref={containerRef}>
+    <div class="board-shell">
+      <ProjectSidebar project={project} view={view} onNavigate={switchView} onNext={() => setNextOpen(true)} api={api} />
+      <section ref={containerRef}>
       <h1 class="page">
-        {project} <span class="grad-text">{view === 'todo' ? 'todo' : 'board'}</span>
+        {project} · {view === 'todo' ? 'todo' : 'board'}
       </h1>
       <p class="subtitle">
         Capture → groom → prioritize. The engine owns everything after <code>groomed</code>.
@@ -116,12 +170,7 @@ export function Board({ project, api = boardApi, subscribe = subscribeBoardEvent
       <FilterBar
         filter={store.filter.value}
         onFilter={(partial) => store.setFilter(partial)}
-        view={view}
-        onView={(next) => setParam('view', next === 'kanban' ? null : 'todo')}
-        onNote={() => window.dispatchEvent(new CustomEvent('deck:focus-note'))}
       />
-
-      <NoteCapture onAdd={(title) => store.addNote(title)} />
 
       {view === 'kanban' ? (
         <div class="board">
@@ -132,13 +181,16 @@ export function Board({ project, api = boardApi, subscribe = subscribeBoardEvent
               cards={laneCardsOf(lane)}
               actions={actions}
               wip={store.wip.value}
+              onWipOpen={() => setNextOpen(true)}
               dnd={{ callbacks: dragCallbacks }}
-              emptyHint={lane === 'todo' ? 'inbox zero — capture a note below' : 'engine moves cards here via deck next'}
+              lead={lane === 'todo' ? capture : undefined}
+              flashIds={flashIds}
+              emptyHint={lane === 'todo' ? 'inbox zero — capture a note above' : 'engine moves cards here via deck next'}
             />
           ))}
         </div>
       ) : (
-        <TodoView store={{ filtered: store.filtered }} actions={actions} />
+        <TodoView store={{ filtered: store.filtered }} actions={actions} lead={capture} />
       )}
 
       <div class="callout c-info" style="margin-top:14px">
@@ -171,7 +223,56 @@ export function Board({ project, api = boardApi, subscribe = subscribeBoardEvent
           onReject={() => setGroomingId(null)}
         />
       ) : null}
+
+      {renameCard !== undefined ? (
+        <RenameDialog
+          card={renameCard}
+          onAccept={(title) => {
+            void store.updateCard(renameCard.id, title);
+            setRenamingId(null);
+          }}
+          onClose={() => setRenamingId(null)}
+        />
+      ) : null}
+
+      {deleteCard !== undefined ? (
+        <DeleteConfirm
+          card={deleteCard}
+          onConfirm={() => {
+            void store.deleteCard(deleteCard.id);
+            setDeletingId(null);
+          }}
+          onClose={() => setDeletingId(null)}
+        />
+      ) : null}
+
+      {regroomCard !== undefined ? (
+        <GroomForm
+          mode="edit"
+          noteTitle={regroomCard.title}
+          initial={{
+            proposedVerb: regroomCard.verb ?? 'chore',
+            refinedTitle: regroomCard.title,
+            research: {
+              codebaseFindings: regroomCard.research?.codebaseFindings ?? [],
+              ...(regroomCard.research?.rca !== undefined ? { rca: regroomCard.research.rca } : {}),
+              ...(regroomCard.research?.blastRadius !== undefined
+                ? { blastRadius: regroomCard.research.blastRadius }
+                : {}),
+            },
+            specDeltas: [],
+            tasks: (regroomCard.tasks ?? []).map((task) => task.title),
+            openQuestions: [],
+          }}
+          onAccept={(input) => {
+            void store.updateGroom(regroomCard.id, input);
+            setRegroomId(null);
+          }}
+          onReject={() => setRegroomId(null)}
+        />
+      ) : null}
       <ToastHost />
-    </section>
+      </section>
+    </div>
   );
 }

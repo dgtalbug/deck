@@ -1,22 +1,17 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import type { VNode } from 'preact';
-import { Plus } from 'lucide-preact';
+import { CornerDownLeft, StickyNote } from 'lucide-preact';
 
-// One-action note capture: text entry + submit → POST /notes. Empty titles
-// are rejected client-side (inline validation, nothing sent). `N` (or `+`)
-// focuses the field from anywhere outside an input.
+// ONE note-capture affordance (D-UI-…): a ghost .kcard at the top of the
+// todo lane / todo-view inbox group — the same card visual language the
+// captured note will use. Click or `N` focuses it; Enter POSTs /notes;
+// Esc and blur cancel; empty titles are rejected inline (nothing sent).
 
 export function NoteCapture({ onAdd }: { onAdd: (title: string) => Promise<boolean> | boolean }): VNode {
   const [title, setTitle] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    const onFocusRequest = () => inputRef.current?.focus();
-    window.addEventListener('deck:focus-note', onFocusRequest);
-    return () => window.removeEventListener('deck:focus-note', onFocusRequest);
-  }, []);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -32,6 +27,11 @@ export function NoteCapture({ onAdd }: { onAdd: (title: string) => Promise<boole
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
+  const cancel = () => {
+    setTitle('');
+    setError(null);
+  };
+
   const submit = async () => {
     const trimmed = title.trim();
     if (trimmed === '') {
@@ -41,14 +41,17 @@ export function NoteCapture({ onAdd }: { onAdd: (title: string) => Promise<boole
     setBusy(true);
     const ok = await onAdd(trimmed);
     setBusy(false);
-    if (ok) {
-      setTitle('');
-      setError(null);
-    }
+    if (ok) cancel();
   };
 
   return (
-    <div class="add-note" style="margin-bottom:14px">
+    <div
+      class={`kcard note-capture${error !== null ? ' has-error' : ''}`}
+      onClick={() => inputRef.current?.focus()}
+    >
+      <span class="note-capture-icon">
+        <StickyNote size={14} />
+      </span>
       <input
         ref={inputRef}
         type="text"
@@ -64,13 +67,17 @@ export function NoteCapture({ onAdd }: { onAdd: (title: string) => Promise<boole
         }}
         onKeyDown={(event) => {
           if (event.key === 'Enter') void submit();
+          if (event.key === 'Escape') cancel();
+        }}
+        onBlur={() => {
+          if (!busy) cancel(); // blur cancels the draft — capture is one gesture
         }}
       />
-      <button class="btn btn-primary" onClick={() => void submit()} disabled={busy} aria-label="add note">
-        <Plus size={14} /> Note
-      </button>
+      <span class="note-capture-hint" title="Enter to capture · Esc to cancel">
+        <CornerDownLeft size={12} />
+      </span>
       {error !== null ? (
-        <p id="note-error" role="alert" style="color:var(--danger);font-size:12px;margin:0">
+        <p id="note-error" role="alert" class="note-capture-error">
           {error}
         </p>
       ) : null}

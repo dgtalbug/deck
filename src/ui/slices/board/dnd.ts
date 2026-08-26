@@ -32,21 +32,47 @@ export function isManualLane(lane: string): boolean {
   return lane === 'todo' || lane === 'groomed';
 }
 
+// pdd mounts its document-level adapter listeners ONCE per process (usage
+// ledger): the document global at the first registration wins. In tests,
+// every Board-mounting file swaps in a fresh happy-dom window — so each
+// file must return the usage count to zero or the NEXT file's drag events
+// are unheard. Every registration's disposer is tracked here; test files
+// call disposeDnd() in afterAll. In the app there is one document for the
+// process lifetime, so this never runs there.
+const disposers = new Set<() => void>();
+function tracked(cleanup: () => void): () => void {
+  disposers.add(cleanup);
+  return cleanup;
+}
+
+export function disposeDnd(): void {
+  for (const dispose of disposers) dispose();
+  disposers.clear();
+  // WeakSet has no clear — swap fresh sets so later remounts re-register
+  registeredCards = new WeakSet();
+  registeredBodies = new WeakSet();
+}
+
+// once-per-element registration marks (keyed diffs reuse DOM nodes; see
+// Card.tsx / Lane.tsx) — swapped by disposeDnd so remounts re-register.
+export let registeredCards: WeakSet<HTMLElement> = new WeakSet();
+export let registeredBodies: WeakSet<HTMLElement> = new WeakSet();
+
 // Draggable per card (todo/groomed only — engine cards never register).
 export function registerCardDrag(element: HTMLElement, card: UiCard, lane: 'todo' | 'groomed', callbacks: DragCallbacks): () => void {
   if (!isManualLane(lane)) return () => {};
-  return draggable({
+  return tracked(draggable({
     element,
     getInitialData: () => ({ id: card.id, lane }),
     onDragStart: () => callbacks.onDragState(true, lane),
     onDrop: () => callbacks.onDragState(false, lane),
-  });
+  }));
 }
 
 // Same-lane reorder slot: dropping ON a card reorders after it.
 export function registerCardDrop(element: HTMLElement, lane: 'todo' | 'groomed', callbacks: DragCallbacks): () => void {
   if (!isManualLane(lane)) return () => {};
-  return dropTargetForElements({
+  return tracked(dropTargetForElements({
     element,
     canDrop: ({ source }) => dataOf(source).lane === lane,
     onDragEnter: ({ self, source }) => {
@@ -58,13 +84,13 @@ export function registerCardDrop(element: HTMLElement, lane: 'todo' | 'groomed',
       const data = dataOf(source);
       callbacks.onIntent({ kind: 'reorder', id: data.id, afterId: self.element.getAttribute('data-id') ?? undefined });
     },
-  });
+  }));
 }
 
 // Lane body droppable: the cross-lane todo ↔ groomed move target.
 export function registerLaneDrop(element: HTMLElement, lane: 'todo' | 'groomed', callbacks: DragCallbacks): () => void {
   if (!isManualLane(lane)) return () => {};
-  return dropTargetForElements({
+  return tracked(dropTargetForElements({
     element,
     canDrop: ({ source }) => dataOf(source).lane !== lane,
     onDragEnter: ({ self, source }) => {
@@ -78,13 +104,13 @@ export function registerLaneDrop(element: HTMLElement, lane: 'todo' | 'groomed',
         callbacks.onIntent({ kind: 'move', id: data.id, to: lane });
       }
     },
-  });
+  }));
 }
 
 // `.is-dragging` on the source card; `.is-drop-forbidden` paints engine
 // lanes while a drag hovers them (they have no droppable — visual only).
 export function registerDragMonitor(root: () => HTMLElement | null): () => void {
-  return monitorForElements({
+  return tracked(monitorForElements({
     onDragStart: ({ source, location }) => {
       (source.element as HTMLElement).classList.add('is-dragging');
       paintForbidden(root(), location.current.input.clientX, location.current.input.clientY);
@@ -96,7 +122,7 @@ export function registerDragMonitor(root: () => HTMLElement | null): () => void 
       (source.element as HTMLElement).classList.remove('is-dragging');
       for (const lane of root()?.querySelectorAll('.lane') ?? []) lane.classList.remove('is-drop-forbidden');
     },
-  });
+  }));
 }
 
 function paintForbidden(root: HTMLElement | null, x: number, y: number): void {

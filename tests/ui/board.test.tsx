@@ -1,6 +1,7 @@
-import { describe, expect, test } from 'bun:test';
+import { afterAll, describe, expect, test } from 'bun:test';
 import { render } from 'preact';
 import { Board } from '../../src/ui/slices/board/Board.tsx';
+import { disposeDnd } from '../../src/ui/slices/board/dnd.ts';
 import { boardPath, navigate, route, startRouter } from '../../src/ui/router.ts';
 import type { BoardApi, BoardDoc, UiCard } from '../../src/ui/slices/board/api.ts';
 import type { HTMLDivElement as HdomDiv } from 'happy-dom';
@@ -35,6 +36,10 @@ function makeApi(doc: BoardDoc): BoardApi {
     unblock: () => Promise.resolve(note('u', 'unblocked')),
     tweak: () => Promise.resolve({ id: 't', title: 't', lane: 'active', requirement: 'r' }),
     demote: () => Promise.resolve(note('d', 'demoted')),
+    fetchGit: () => Promise.resolve({ repo: false, recent: [] }),
+    updateCard: (_p: string, id: string, title: string) => Promise.resolve({ id, title }),
+    deleteCard: () => Promise.resolve(),
+    updateGroom: (_p: string, id: string) => Promise.resolve({ id, title: 'g' }),
   };
 }
 
@@ -50,18 +55,28 @@ const DOC: BoardDoc = {
 
 const silentSubscribe = (() => ({ stop() {} })) as unknown as typeof import('../../src/ui/slices/board/sse.ts').subscribeBoardEvents;
 
+const mountedContainers: HdomDiv[] = [];
+
 async function renderBoard(doc: BoardDoc = DOC, path = '/proj/'): Promise<{ win: ReturnType<typeof installDom>; container: HdomDiv; api: BoardApi }> {
   const win = installDom();
   const stop = startRouter();
   const api = makeApi(doc);
   const container = win.document.createElement('div');
   win.document.body.appendChild(container);
+  mountedContainers.push(container);
   navigate(path);
   render(<Board project="proj" api={api} subscribe={silentSubscribe} />, container);
   await new Promise((resolve) => setTimeout(resolve, 80));
   stop();
   return { win, container, api };
 }
+
+afterAll(() => {
+  // orphaned Boards re-render when later files navigate — unmount first, then
+  // zero pdd's usage ledger (see disposeDnd in dnd.ts)
+  for (const container of mountedContainers) render(null, container);
+  disposeDnd();
+});
 
 describe('Board kanban view (task 6.1)', () => {
   test('renders five lanes, server order, types, blocked state, engine lock', async () => {
@@ -72,7 +87,7 @@ describe('Board kanban view (task 6.1)', () => {
     expect(lanes.filter((lane) => lane.classList.contains('is-engine')).length).toBe(3);
     const todoTitles = [...win.document.querySelectorAll('.lane[data-lane="todo"] .kcard-title')].map((el) => el.textContent);
     expect(todoTitles).toContain('empty states feel dead');
-    expect(win.document.querySelector('.verb-chip')?.textContent).toBe('feat');
+    expect(win.document.querySelector('.verb-chip')?.textContent?.trim()).toBe('feat');
     expect(win.document.querySelector('.type-note')).not.toBeNull();
     expect(win.document.querySelector('.type-tweak')).not.toBeNull();
     const progress = win.document.querySelector('.kcard-progress .fill') as unknown as HTMLElement;
@@ -99,7 +114,7 @@ describe('view toggle (task 6.2/6.3)', () => {
     void api;
     fetches = 1;
 
-    const todoButton = [...win.document.querySelectorAll('.mode-toggle button')].find((button) => button.textContent?.includes('Todo')) as unknown as HTMLElement;
+    const todoButton = win.document.querySelector('.sidebar-nav a[href*="view=todo"]') as unknown as HTMLElement;
     todoButton.click();
     await new Promise((resolve) => setTimeout(resolve, 60));
 

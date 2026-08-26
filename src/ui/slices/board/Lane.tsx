@@ -10,7 +10,7 @@ import {
 } from 'lucide-preact';
 import { LANES, type Lane as LaneName, type UiCard } from './api.ts';
 import { Card, type CardActions, type CardDndProps } from './Card.tsx';
-import { registerLaneDrop, type DragCallbacks } from './dnd.ts';
+import { registerLaneDrop, registeredBodies, type DragCallbacks } from './dnd.ts';
 
 // Five Lane columns per §13 mapping: todo muted, groomed primary (the
 // subject), active accent-1 + WIP meter, verify accent-3, done success.
@@ -32,29 +32,49 @@ export interface WipDisplay {
   atLimit: boolean;
 }
 
-function WipMeter({ wip }: { wip: WipDisplay }): VNode {
+function WipMeter({ wip, onOpen }: { wip: WipDisplay; onOpen: (() => void) | undefined }): VNode {
   const pct = wip.limit === 0 ? 0 : Math.min(100, Math.round((wip.active / wip.limit) * 100));
   const state = wip.active > wip.limit ? 'is-over' : wip.atLimit ? 'is-at-limit' : '';
+  // "3/3" alone reads as an error — name the state and where it leads. The
+  // limit itself is the documented board/api default (the board document
+  // exposes no wipLimit — FILED API GAP); at-limit is confirmed via
+  // GET /next's wipBlockedBy, shown in the deck-next panel this opens.
+  const title = wip.atLimit
+    ? `WIP ${wip.active}/${wip.limit} — at limit. deck next returns the remaining tasks of the most-advanced active card instead of starting new work. Click for the deck-next panel.`
+    : `WIP ${wip.active}/${wip.limit} — engine-owned lane, limit is the documented default of ${wip.limit}`;
   return (
-    <span class={`wip ${state}`.trim()} title={`WIP limit ${wip.limit} — engine-owned lane`}>
+    <button
+      type="button"
+      class={`wip ${state}`.trim()}
+      title={title}
+      aria-label={`work in progress ${wip.active} of ${wip.limit}${wip.atLimit ? ', at limit — open deck next' : ''}`}
+      onClick={(event) => {
+        event.stopPropagation();
+        onOpen?.();
+      }}
+    >
       <Gauge size={13} />
       <span class="track">
         <span class="fill" style={`width:${pct}%`}></span>
       </span>
-      {wip.active}/{wip.limit}
-    </span>
+      WIP {wip.active}/{wip.limit}
+      {wip.atLimit ? <span class="wip-at-limit">· at limit</span> : null}
+    </button>
   );
 }
 
-// Lane-body drop registration is once-per-element (see Card.tsx note).
-const bodyRegistered = new WeakSet<HTMLElement>();
+// Lane-body drop registration is once-per-element (see Card.tsx note —
+// the marks live in dnd.ts so disposeDnd can swap them between windows).
 
 export function Lane(props: {
   lane: LaneName;
   cards: UiCard[];
   actions: CardActions;
   wip?: WipDisplay;
-  emptyHint?: string;
+  onWipOpen?: (() => void) | undefined;
+  emptyHint?: string | undefined;
+  lead?: VNode | undefined;
+  flashIds?: ReadonlySet<string> | undefined;
   dnd?: { callbacks: DragCallbacks };
 }): VNode {
   const meta = LANE_META[props.lane];
@@ -68,7 +88,7 @@ export function Lane(props: {
             <Lock size={12} />
           </span>
         ) : null}
-        {props.lane === 'active' && props.wip !== undefined ? <WipMeter wip={props.wip} /> : null}
+        {props.lane === 'active' && props.wip !== undefined ? <WipMeter wip={props.wip} onOpen={props.onWipOpen} /> : null}
         <span class="count">{props.cards.length}</span>
       </div>
       <div
@@ -78,22 +98,24 @@ export function Lane(props: {
           const html = element as HTMLElement | null;
           // engine lanes structurally never register a droppable
           if (html === null || props.dnd === undefined || props.lane !== 'todo' && props.lane !== 'groomed') return;
-          if (bodyRegistered.has(html)) return;
-          bodyRegistered.add(html);
+          if (registeredBodies.has(html)) return;
+          registeredBodies.add(html);
           registerLaneDrop(html, props.lane, props.dnd.callbacks);
         }}
       >
+        {props.lead}
         {props.cards.map((card) => (
           <Card
             key={card.id}
             card={card}
             actions={props.actions}
+            flash={props.flashIds?.has(card.id) === true}
             {...(props.dnd === undefined
               ? {}
               : { dnd: { lane: props.lane, callbacks: props.dnd.callbacks, laneCards: props.cards } satisfies CardDndProps })}
           />
         ))}
-        {props.cards.length === 0 ? (
+        {props.cards.length === 0 && props.lead === undefined ? (
           <div class="lane-empty">{props.emptyHint ?? 'empty'}</div>
         ) : null}
       </div>

@@ -1302,17 +1302,149 @@ kbd {
   color: var(--danger);
 }
 
+/* dense flat rows — one line per card, full width */
 .todo-view {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+  display: block;
 }
-.todo-view .kcard {
-  display: grid;
-  grid-template-columns: 18px 1fr auto;
+.todo-view .todo-group {
+  margin-bottom: 16px;
+}
+.todo-row {
+  display: flex;
   align-items: center;
   gap: 10px;
-  cursor: default;
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--card-2);
+  font-size: 13px;
+  cursor: pointer;
+  transition: border-color 0.15s ease;
+}
+.todo-row + .todo-row {
+  margin-top: 4px;
+}
+.todo-row:hover,
+.todo-row:focus-visible {
+  border-color: var(--border-2);
+}
+.todo-row.is-blocked {
+  opacity: 0.6;
+  border-color: color-mix(in srgb, var(--warning) 45%, transparent);
+}
+.todo-row .todo-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 550;
+}
+.todo-row .todo-progress {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--muted);
+}
+.todo-row .todo-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.todo-row .btn {
+  padding: 2px 9px;
+  font-size: 11.5px;
+}
+.todo-row .verb-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--primary-vivid);
+  background: var(--primary-soft);
+  border: 1px solid var(--primary-border);
+  border-radius: var(--radius-pill);
+  padding: 1px 8px;
+}
+.todo-row .type-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 11.5px;
+}
+.todo-row .type-tweak {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--accent-4);
+  font-size: 11.5px;
+}
+
+/* note capture — the ONE affordance: a ghost kcard at the top of todo */
+.note-capture {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  cursor: text;
+  border-style: dashed;
+  background: transparent;
+}
+.note-capture:hover,
+.note-capture:focus-within {
+  border-color: var(--primary-border);
+  border-style: solid;
+  background: var(--card-2);
+}
+.note-capture input {
+  all: unset;
+  flex: 1;
+  min-width: 120px;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--foreground);
+}
+.note-capture input::placeholder {
+  color: var(--soft);
+}
+.note-capture .note-capture-icon {
+  color: var(--soft);
+  display: inline-flex;
+}
+.note-capture .note-capture-hint {
+  color: var(--soft);
+  display: inline-flex;
+  opacity: 0.7;
+}
+.note-capture.has-error {
+  border-color: color-mix(in srgb, var(--danger) 55%, transparent);
+}
+.note-capture .note-capture-error {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--danger);
+  font-size: 12px;
+}
+
+/* remote SSE move cue — 150ms fade-slide; FLIP is for user drops only */
+@keyframes remote-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.kcard.is-remote-in {
+  animation: remote-in 150ms ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .kcard.is-remote-in {
+    animation: none;
+  }
 }
 @media print {
   .board {

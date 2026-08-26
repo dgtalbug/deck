@@ -59,6 +59,18 @@ export interface NextDigest {
   wipBlockedBy?: string;
 }
 
+// GET /<project>/git — mirrors src/core/git/digest.ts (local facts only).
+export interface GitDigest {
+  repo: boolean;
+  branch?: string;
+  head?: string;
+  dirtyCount?: number;
+  ahead?: number;
+  behind?: number;
+  recent: { sha: string; subject: string }[];
+  origin?: string;
+}
+
 export interface GroomInput {
   proposedVerb: Verb;
   refinedTitle: string;
@@ -71,7 +83,16 @@ export interface GroomInput {
 // SSE envelope — the server frames `data: {"rowid":n,"type":t,"payload":p}`.
 export interface BoardEvent {
   rowid: number;
-  type: 'card.created' | 'card.groomed' | 'card.moved' | 'card.tasks.updated' | 'card.blocked' | 'card.unblocked' | 'card.done';
+  type:
+    | 'card.created'
+    | 'card.groomed'
+    | 'card.moved'
+    | 'card.tasks.updated'
+    | 'card.blocked'
+    | 'card.unblocked'
+    | 'card.done'
+    | 'card.updated'
+    | 'card.deleted';
   payload: Record<string, unknown>;
 }
 
@@ -109,6 +130,19 @@ function post<T>(base: string, path: string, body?: unknown): Promise<T> {
   return request<T>(base, path, { method: 'POST', body: JSON.stringify(body ?? {}) });
 }
 
+function patch<T>(base: string, path: string, body?: unknown): Promise<T> {
+  return request<T>(base, path, { method: 'PATCH', body: JSON.stringify(body ?? {}) });
+}
+
+// DELETE returns 204 with no body — its own path, not request<T>.
+async function del(base: string, path: string): Promise<void> {
+  const response = await fetch(`${base}${path}`, { method: 'DELETE' });
+  if (!response.ok) {
+    const body = (await response.json().catch(() => ({}))) as { error?: string; details?: Record<string, unknown> };
+    throw new ApiError(response.status, body.error ?? `request failed (${response.status})`, body.details);
+  }
+}
+
 function buildApi(base: string): BoardApi {
   return {
   listProjects: (): Promise<{ projects: ProjectSummary[] }> => request(base, '/'),
@@ -119,6 +153,16 @@ function buildApi(base: string): BoardApi {
     request(base, `/${project}/board?view=todo`),
 
   fetchNext: (project: string): Promise<NextDigest> => request(base, `/${project}/next`),
+
+  fetchGit: (project: string): Promise<GitDigest> => request(base, `/${project}/git`),
+
+  updateCard: (project: string, id: string, title: string): Promise<UiCard> =>
+    patch(base, `/${project}/cards/${id}`, { title }),
+
+  deleteCard: (project: string, id: string): Promise<void> => del(base, `/${project}/cards/${id}`),
+
+  updateGroom: (project: string, id: string, input: GroomInput): Promise<UiCard> =>
+    patch(base, `/${project}/cards/${id}/groom`, input),
 
   addNote: (project: string, title: string): Promise<UiCard> =>
     post(base, `/${project}/notes`, { title }),
@@ -153,6 +197,10 @@ export type BoardApi = {
   fetchBoard: (project: string) => Promise<BoardDoc>;
   fetchTodo: (project: string) => Promise<{ view: 'todo'; cards: UiCard[] }>;
   fetchNext: (project: string) => Promise<NextDigest>;
+  fetchGit: (project: string) => Promise<GitDigest>;
+  updateCard: (project: string, id: string, title: string) => Promise<UiCard>;
+  deleteCard: (project: string, id: string) => Promise<void>;
+  updateGroom: (project: string, id: string, input: GroomInput) => Promise<UiCard>;
   addNote: (project: string, title: string) => Promise<UiCard>;
   groom: (project: string, id: string, input: GroomInput) => Promise<UiCard>;
   move: (project: string, id: string, to: Lane) => Promise<UiCard>;

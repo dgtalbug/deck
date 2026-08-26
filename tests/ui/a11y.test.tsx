@@ -1,6 +1,7 @@
-import { beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { render } from 'preact';
 import { Board } from '../../src/ui/slices/board/Board.tsx';
+import { disposeDnd } from '../../src/ui/slices/board/dnd.ts';
 import { Home } from '../../src/ui/slices/home/Home.tsx';
 import { navigate, startRouter } from '../../src/ui/router.ts';
 import type { BoardApi, BoardDoc } from '../../src/ui/slices/board/api.ts';
@@ -14,6 +15,7 @@ import { installDom } from './dom.ts';
 // contrast-checked in the proposal).
 
 let win: ReturnType<typeof installDom>;
+const mountedHosts: HTMLElement[] = []; // unmounted in afterAll — see disposeDnd
 
 const DOC: BoardDoc = {
   lanes: {
@@ -39,6 +41,10 @@ function makeApi(doc: BoardDoc): BoardApi {
     unblock: () => Promise.resolve({ id: 'u', title: 'u' }),
     tweak: () => Promise.resolve({ id: 't', title: 't' }),
     demote: () => Promise.resolve({ id: 'd', title: 'd' }),
+    fetchGit: () => Promise.resolve({ repo: false, recent: [] }),
+    updateCard: (_p: string, id: string, title: string) => Promise.resolve({ id, title }),
+    deleteCard: () => Promise.resolve(),
+    updateGroom: (_p: string, id: string) => Promise.resolve({ id, title: 'g' }),
   };
 }
 
@@ -57,6 +63,13 @@ async function mountBoard(path: string): Promise<HTMLElement> {
   await new Promise((resolve) => setTimeout(resolve, 80));
   return host;
 }
+
+afterAll(() => {
+  // orphaned Boards re-render when later files navigate — unmount first, then
+  // zero pdd's usage ledger (see disposeDnd in dnd.ts)
+  for (const host of mountedHosts) render(null, host);
+  disposeDnd();
+});
 
 describe('keyboard walkthrough (task 9.1)', () => {
   test('board: interactive controls are reachable and labeled', async () => {
@@ -96,18 +109,22 @@ describe('keyboard walkthrough (task 9.1)', () => {
     }
   });
 
-  test('todo view is keyboard navigable and the view toggle updates the URL', async () => {
+  test('todo view is keyboard navigable and the sidebar nav updates the URL', async () => {
     const host = await mountBoard('/a11y/');
-    const toggle = [...host.querySelectorAll('button')].find((button) => button.textContent?.includes('Todo')) as unknown as HTMLElement;
-    toggle.click();
+    const nav = host.querySelector('.sidebar-nav a[href*="view=todo"]') as unknown as HTMLElement;
+    expect(nav).not.toBeNull();
+    nav.click();
     await new Promise((resolve) => setTimeout(resolve, 60));
     expect(win.location.search).toContain('view=todo');
+    const current = host.querySelector('.sidebar-nav a[aria-current="page"]');
+    expect(current?.textContent).toContain('Todo');
     const groups = [...host.querySelectorAll('.todo-group-head')];
     expect(groups.length).toBeGreaterThan(0);
   });
 
   test('home: cards are links with accessible names; empty state is text', async () => {
     const host = win.document.createElement('div') as unknown as HTMLElement;
+    mountedHosts.push(host);
     win.document.body.appendChild(host as unknown as Parameters<typeof win.document.body.appendChild>[0]);
     navigate('/');
     const original = globalThis.fetch;
@@ -118,23 +135,20 @@ describe('keyboard walkthrough (task 9.1)', () => {
     expect(host.textContent).toContain('deck init');
   });
 
-  test('mode toggle is a labeled group in both modes', async () => {
+  test('theme toggle is a labeled icon control in both modes', async () => {
     const host = await mountBoard('/a11y/');
-    const groups = [...host.querySelectorAll('.mode-toggle[role="group"]')];
-    expect(groups.length).toBeGreaterThan(0); // board view toggle
-    for (const group of groups) {
-      const buttons = [...group.querySelectorAll('button')];
-      expect(buttons.every((button) => button.getAttribute('aria-pressed') !== null)).toBe(true);
-    }
-    // the full shell (topbar theme toggle) — module import renders into #app
+    // the sidebar carries the project-page theme icon toggle
+    const sidebarToggle = host.querySelector('.sidebar .icon-toggle') as unknown as HTMLElement | null;
+    expect(sidebarToggle?.getAttribute('aria-pressed')).toBe('true'); // dark default
+    expect(sidebarToggle?.getAttribute('aria-label')).toContain('light');
+    // the full shell (topbar) — module import renders into #app
     const shell = win.document.createElement('div');
     shell.id = 'app';
     win.document.body.appendChild(shell as unknown as Parameters<typeof win.document.body.appendChild>[0]);
     await import('../../src/ui/app.tsx');
     await new Promise((resolve) => setTimeout(resolve, 80));
-    const themeGroup = win.document.querySelector('#app .mode-toggle[role="group"]');
-    expect(themeGroup?.getAttribute('aria-label')).toBe('theme mode');
-    const themeButtons = [...(themeGroup?.querySelectorAll('button') ?? [])];
-    expect(themeButtons.map((button) => button.getAttribute('aria-pressed'))).toEqual(['true', 'false']);
+    const topToggle = win.document.querySelector('#app .icon-toggle') as unknown as HTMLElement | null;
+    expect(topToggle?.getAttribute('aria-pressed')).toBe('true');
+    expect(topToggle?.getAttribute('aria-label')).toContain('light');
   });
 });

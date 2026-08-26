@@ -65,9 +65,7 @@ export function Home(): VNode {
 
   return (
     <section>
-      <h1 class="page">
-        deck <span class="grad-text">home</span>
-      </h1>
+      <h1 class="page">workspace</h1>
       <p class="subtitle">Every project running deck on this machine — one server, one control surface.</p>
       {projects === null ? (
         <p class="subtitle">loading projects…</p>
