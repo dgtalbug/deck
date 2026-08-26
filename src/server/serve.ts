@@ -46,7 +46,7 @@ export function buildServer(options: BuildOptions = {}): Server<undefined> {
   });
 }
 
-async function main(): Promise<void> {
+export async function serveMain(): Promise<void> {
   const args = parseServeArgs(process.argv.slice(2));
   const port = await resolvePort(args.port);
   try {
@@ -65,7 +65,7 @@ async function main(): Promise<void> {
 }
 
 if (import.meta.main) {
-  void main();
+  void serveMain();
 }
 
 export { DEFAULT_PORT };
