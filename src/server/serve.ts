@@ -8,15 +8,20 @@ import { notesRoutes } from './routes/notes.ts';
 import { sseRoutes } from './sse.ts';
 import { openApiRoutes } from './openapi.ts';
 import { handleError, type RouteTable } from './http.ts';
+import { withPages, type EmbeddedLookup } from './static.ts';
 
 export interface BuildOptions {
   port?: number;
   hostname?: string;
   registry?: ProjectRegistry;
+  // Root owning public/ and dist/ for the UI shell; defaults to cwd.
+  staticRoot?: string;
+  // Embedded asset source override (tests); defaults to the compiled-in map.
+  embedded?: EmbeddedLookup;
 }
 
-export function buildRoutes(registry: ProjectRegistry): RouteTable {
-  return {
+export function buildRoutes(registry: ProjectRegistry, staticRoot?: string, embedded?: EmbeddedLookup): RouteTable {
+  const routes: RouteTable = {
     ...openApiRoutes,
     ...homeRoutes(registry),
     ...boardRoutes(registry),
@@ -24,6 +29,7 @@ export function buildRoutes(registry: ProjectRegistry): RouteTable {
     ...cardsRoutes(registry),
     ...(DECK_FEATURE_SSE ? sseRoutes(registry) : {}),
   };
+  return withPages(routes, staticRoot ?? process.cwd(), embedded);
 }
 
 export function buildServer(options: BuildOptions = {}): Server<undefined> {
@@ -31,7 +37,7 @@ export function buildServer(options: BuildOptions = {}): Server<undefined> {
   return Bun.serve({
     port: options.port ?? 0,
     hostname: options.hostname ?? '127.0.0.1',
-    routes: buildRoutes(registry),
+    routes: buildRoutes(registry, options.staticRoot, options.embedded),
     error(error) {
       return handleError(error);
     },
