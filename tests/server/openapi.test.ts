@@ -26,6 +26,7 @@ describe('API docs', () => {
     expect(response.status).toBe(200);
     const doc = (await response.json()) as {
       openapi: string;
+      info: { version: string };
       paths: Record<string, Record<string, unknown>>;
     };
     expect(doc.openapi).toBe('3.1.0');
@@ -46,9 +47,23 @@ describe('API docs', () => {
       '/{project}/cards/{id}/tweak',
       '/{project}/cards/{id}/verify',
       '/{project}/cards/{id}/demote',
+      // v0.3.0 git write surface
+      '/{project}/git/branch',
+      '/{project}/git/switch',
+      '/{project}/git/merge',
+      '/{project}/git/commit',
+      '/{project}/git/undo-commit',
+      '/{project}/git/stash',
+      '/{project}/git/stash/pop',
+      '/{project}/git/branch/delete',
+      '/{project}/git/fetch',
+      '/{project}/git/pull',
+      '/{project}/git/push',
+      '/{project}/git/pulls',
     ]) {
       expect(paths).toContain(required);
     }
+    expect(doc.info.version).toBe('0.3.0');
     // v0.2.0 additions carry their methods
     const card = doc.paths['/{project}/cards/{id}'] as Record<string, Record<string, unknown>>;
     expect(Object.keys(card)).toContain('patch');

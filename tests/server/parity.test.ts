@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import * as crud from '../../src/core/board/crud.ts';
 import * as git from '../../src/core/git/digest.ts';
+import * as gitops from '../../src/core/git/ops.ts';
 import * as groom from '../../src/core/board/groom.ts';
 import * as lanes from '../../src/core/board/lanes.ts';
 import * as next from '../../src/core/board/next.ts';
@@ -22,6 +23,7 @@ import { parity as sseParity } from '../../src/server/sse.ts';
 const functions: Record<string, unknown> = {
   ...crud,
   ...git,
+  ...gitops,
   ...groom,
   ...lanes,
   ...next,

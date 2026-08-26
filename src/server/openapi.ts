@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { join } from 'node:path';
 import { blockBody, groomBody, moveBody, reorderBody, updateBody, verifyBody } from './routes/cards.ts';
 import { noteBody } from './routes/notes.ts';
+import { branchBody, commitBody, mergeBody, pullsBody, stashBody, switchBody } from './routes/git.ts';
 
 // OpenAPI 3.1 document generated from the same zod schemas that validate
 // request bodies — one source of truth, no doc drift, no extra dependency.
@@ -22,10 +23,13 @@ function requestBody(body: z.ZodType): Record<string, unknown> {
 }
 
 const errorResponses = {
-  '400': { description: 'LaneViolation or invalid body (details in message)' },
+  '400': { description: 'LaneViolation, GitOpError/InvalidBranchError, or invalid body (details in message)' },
   '404': { description: 'Unknown project or card id' },
   '409': { description: 'WipLimitError — active lane is at its WIP limit' },
+  '503': { description: 'GhUnavailableError — gh CLI missing or unauthenticated (PR routes only)' },
 } as const;
+
+const emptyBody = z.object({});
 
 function post(summary: string, body: z.ZodType, parameters: Record<string, unknown>[] = []): Record<string, unknown> {
   return {
@@ -58,18 +62,23 @@ function cardPath(id: string, summary: string, body: z.ZodType): [string, Record
   return [`/{project}/cards/{id}/${id}`, post(summary, body, [projectParam, idParam])];
 }
 
+function gitPath(id: string, summary: string, body: z.ZodType): [string, Record<string, unknown>] {
+  return [`/{project}/git/${id}`, post(summary, body, [projectParam])];
+}
+
 export function openApiDocument(): Record<string, unknown> {
   return {
     openapi: '3.1.0',
     info: {
       title: 'deck board API',
-      version: '0.2.0',
+      version: '0.3.0',
       description:
         'One deck server hosts every project. Cards move into active/verify/done ' +
         'only through engine events; human moves are todo ↔ groomed only. ' +
-        'v0.2.0 adds card CRUD on the human lanes (PATCH/DELETE card, PATCH groom re-edit), ' +
-        'the card.updated/card.deleted events, and GET /{project}/git — all additive; ' +
-        'no v0.1.0 route, payload, or event changed.',
+        'v0.3.0 adds the guarded git write routes (branch/switch/merge/commit/' +
+        'undo-commit/stash/stash pop/branch delete/fetch/pull/push) and PR create/' +
+        'list via gh — all additive; no v0.1/v0.2 route, payload, or event changed, ' +
+        'and git operations emit no SSE events.',
     },
     servers: [{ url: 'http://127.0.0.1:3325' }],
     paths: {
@@ -126,7 +135,28 @@ export function openApiDocument(): Record<string, unknown> {
         get: {
           summary: 'Local git facts for the project path (read-only; { repo: false } when not a git repo)',
           parameters: [projectParam],
-          responses: { '200': jsonResponse('GitDigest'), '404': errorResponses['404'] },
+          responses: { '200': jsonResponse('GitDigest with branches, stashCount, gh status'), '404': errorResponses['404'] },
+        },
+      },
+      ...Object.fromEntries([
+        gitPath('branch', 'Create a branch (validated name; optional base, optional switch-after-create)', branchBody),
+        gitPath('switch', 'Switch to an existing local branch (clean tree required)', switchBody),
+        gitPath('merge', 'Merge a branch into the current branch (clean tree; auto merge --abort on conflict)', mergeBody),
+        gitPath('commit', 'Commit all changes as WIP (default message when empty)', commitBody),
+        gitPath('undo-commit', 'Undo the last commit with a soft reset (changes stay staged)', emptyBody),
+        gitPath('stash', 'Stash push with an optional message', stashBody),
+        gitPath('stash/pop', 'Stash pop (clean tree + non-empty stash required)', emptyBody),
+        gitPath('branch/delete', 'Delete a branch with git -d only (never the current branch)', switchBody),
+        gitPath('fetch', 'git fetch --prune from origin', emptyBody),
+        gitPath('pull', 'git pull --ff-only (clean tree required)', emptyBody),
+        gitPath('push', 'git push -u origin HEAD', emptyBody),
+        gitPath('pulls', 'Create a pull request on the current branch via gh', pullsBody),
+      ]),
+      '/{project}/git/pulls': {
+        get: {
+          summary: 'List open pull requests via gh (503 when gh is missing or unauthenticated)',
+          parameters: [projectParam],
+          responses: { '200': jsonResponse('Open pull requests'), '404': errorResponses['404'], '503': errorResponses['503'] },
         },
       },
       '/{project}/cards/{id}/groom': {
