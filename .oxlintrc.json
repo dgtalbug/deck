@@ -1,0 +1,6 @@
+{
+  "rules": {
+    "typescript/no-explicit-any": "error",
+    "max-lines": ["error", 400]
+  }
+}

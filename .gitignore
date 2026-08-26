@@ -1,0 +1,33 @@
+# Allowlist mode: ignore everything at the repo root except what's listed below.
+# Only source code and project manifests belong in version control — everything
+# else (local notes, generated files, editor/agent state) stays local.
+/*
+
+# Tracked
+!/.gitignore
+!/src/
+!/tests/
+!/scripts/
+!/public/
+!/package.json
+!/tsconfig.json
+!/bunfig.toml
+!/.oxlintrc.json
+!/drizzle.config.ts
+!/drizzle/
+!/bun.lockb
+!/bun.lock
+
+# Build & runtime artifacts (also ignored inside tracked dirs)
+node_modules/
+dist/
+build/
+coverage/
+.deck/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+.env
+.env.*
+.DS_Store
+*.log

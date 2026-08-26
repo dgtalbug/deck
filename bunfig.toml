@@ -1,0 +1,8 @@
+[define]
+DECK_FEATURE_GROOMING = "true"
+DECK_FEATURE_SSE = "true"
+DECK_FEATURE_TWEAK = "true"
+
+[test]
+preload = ["./tests/setup.ts"]
+coverage = true
