@@ -21,6 +21,10 @@ if (!existsSync(shell)) {
 }
 
 const assets: Record<string, string> = { '/': readFileSync(shell, 'utf8') };
+// Brand icons ride at the root so compiled binaries serve them without public/
+for (const name of readdirSync(join(root, 'public'))) {
+  if (name.endsWith('.svg')) assets[`/${name}`] = readFileSync(join(root, 'public', name), 'utf8');
+}
 for (const name of readdirSync(uiDir)) {
   assets[`/ui/${name}`] = readFileSync(join(uiDir, name), 'utf8');
 }

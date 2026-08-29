@@ -107,7 +107,16 @@ export function pageHandler(
 }
 
 export function staticRoutes(root: string, embedded: EmbeddedLookup = embeddedAssets): RouteTable {
+  // Brand icons (brand artifact set §2): served from public/ on disk, with
+  // the embedded copy keeping compiled binaries self-contained.
+  const iconRoute = (name: string): RouteHandler => async () =>
+    (await serveFile(root, `public/${name}`)) ??
+    (await embeddedResponse(`/${name}`, embedded)) ??
+    Response.json({ error: 'not found' }, { status: 404 });
   return {
+    '/favicon.svg': { GET: iconRoute('favicon.svg') },
+    '/favicon-16.svg': { GET: iconRoute('favicon-16.svg') },
+    '/icon-maskable.svg': { GET: iconRoute('icon-maskable.svg') },
     '/ui/*': {
       GET: async (req) => {
         // Bun 1.4 does not expose wildcard params — slice the URL instead.
