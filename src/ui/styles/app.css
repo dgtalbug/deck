@@ -880,3 +880,76 @@ button.wip.is-over {
     grid-template-columns: 1fr;
   }
 }
+
+/* ── boot splash — brand §3 spade draw, home boot only ─────────────── */
+.boot-splash {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  background: var(--background);
+}
+
+.boot-spade path {
+  fill: none;
+  stroke: var(--primary);
+  stroke-width: 1.4;
+  stroke-linejoin: round;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: boot-spade-draw 1.7s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+@keyframes boot-spade-draw {
+  0% {
+    stroke-dashoffset: 1;
+    opacity: 1;
+  }
+  55% {
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+  80% {
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+  100% {
+    stroke-dashoffset: 0;
+    opacity: 0;
+  }
+}
+
+.boot-word {
+  font-family: var(--font-display);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--muted);
+  animation: boot-word-fade 1.7s ease-in-out infinite;
+}
+
+@keyframes boot-word-fade {
+  0%,
+  100% {
+    opacity: 0.4;
+  }
+  55% {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .boot-spade path {
+    animation: none;
+    stroke: none;
+    fill: var(--primary);
+    opacity: 0.8;
+  }
+  .boot-word {
+    animation: none;
+    opacity: 0.8;
+  }
+}

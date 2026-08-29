@@ -158,7 +158,7 @@ describe('keyboard walkthrough (task 9.1)', () => {
     const shell = win.document.createElement('div');
     shell.id = 'app';
     win.document.body.appendChild(shell as unknown as Parameters<typeof win.document.body.appendChild>[0]);
-    await import('../../src/ui/app.tsx');
+    (await import('../../src/ui/app.tsx')).mountApp();
     await new Promise((resolve) => setTimeout(resolve, 80));
     const topToggle = win.document.querySelector('#app .icon-toggle') as unknown as HTMLElement | null;
     expect(topToggle?.getAttribute('aria-pressed')).toBe('true');

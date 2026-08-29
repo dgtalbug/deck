@@ -26,6 +26,7 @@ beforeAll(() => {
   writeFileSync(join(staticRoot, 'secret.txt'), 'must stay unreachable');
   mkdirSync(join(staticRoot, 'public'), { recursive: true });
   writeFileSync(join(staticRoot, 'public', 'index.html'), SHELL);
+  writeFileSync(join(staticRoot, 'public', 'favicon.svg'), '<svg>spade</svg>');
   mkdirSync(join(staticRoot, 'dist', 'ui'), { recursive: true });
   writeFileSync(join(staticRoot, 'dist', 'ui', 'app.js'), 'console.log("deck ui")');
   writeFileSync(join(staticRoot, 'dist', 'ui', 'app.css'), 'body{}');
@@ -53,6 +54,20 @@ async function post(path: string, body: unknown): Promise<Response> {
     body: JSON.stringify(body),
   });
 }
+
+describe('brand icons are served from public/', () => {
+  test('GET /favicon.svg returns the svg with the right type', async () => {
+    const response = await fetch(`${baseUrl}/favicon.svg`);
+    expect(response.status).toBe(200);
+    expect(response.headers.get('content-type')).toBe('image/svg+xml');
+    expect(await response.text()).toBe('<svg>spade</svg>');
+  });
+
+  test('missing icon is a 404, not a fallback page', async () => {
+    const response = await fetch(`${baseUrl}/icon-maskable.svg`);
+    expect(response.status).toBe(404);
+  });
+});
 
 describe('page routes serve the shell to browsers', () => {
   test('GET / with Accept: text/html returns the shell', async () => {
