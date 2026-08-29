@@ -26,6 +26,35 @@ const LANE_META: Record<LaneName, { label: string; icon: () => VNode; engine: bo
 
 export const LANE_ORDER: LaneName[] = [...LANES];
 
+// Loading skeleton (brand §4): the lane head renders REAL (icon, label,
+// engine lock) — only the data shimmers. Bone cards use the .skel-card box;
+// counts are fixed ragged values, never derived from a request.
+export function LaneSkeleton(props: { lane: LaneName; bones: number }): VNode {
+  const meta = LANE_META[props.lane];
+  return (
+    <div class={`lane l-${props.lane}${meta.engine ? ' is-engine' : ''}`} data-lane={props.lane} aria-hidden="true">
+      <div class="lane-head">
+        {meta.icon()}
+        {meta.label}
+        {meta.engine ? (
+          <span class="lock">
+            <Lock size={12} />
+          </span>
+        ) : null}
+        <span class="skel skel-chip" style="width:20px;padding:0" />
+      </div>
+      <div class="lane-body">
+        {Array.from({ length: props.bones }, (_, i) => (
+          <div key={i} class="skel-card" style={i === 1 && props.bones > 2 ? 'min-height:52px' : undefined}>
+            <div class="skel skel-line" style={`width:${[82, 64, 90, 55, 74][(i + props.bones) % 5]}%`} />
+            <div class="skel skel-chip" style="width:44px" />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export interface WipDisplay {
   active: number;
   limit: number;

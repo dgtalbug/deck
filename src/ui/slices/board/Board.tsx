@@ -8,11 +8,11 @@ import { captureFlip, playFlip } from './flip.ts';
 import { createBoardStore } from './store.ts';
 import { subscribeBoardEvents, type SseSubscription } from './sse.ts';
 import { route, setParam } from '../../router.ts';
-import { Lane, LANE_ORDER } from './Lane.tsx';
+import { Lane, LANE_ORDER, LaneSkeleton } from './Lane.tsx';
 import { FilterBar } from './FilterBar.tsx';
 import { TodoView } from './TodoView.tsx';
 import { GitPage } from './GitPage.tsx';
-import { CardDetail, type DetailActions } from './CardDetail.tsx';
+import { CardDetail, CardDetailSkeleton, type DetailActions } from './CardDetail.tsx';
 import { GroomForm } from './GroomForm.tsx';
 import { NoteCapture } from './NoteCapture.tsx';
 import { Banners } from './Banners.tsx';
@@ -182,6 +182,14 @@ export function Board({ project, api = boardApi, subscribe = subscribeBoardEvent
 
       {view === 'git' ? (
         <GitPage project={project} api={api} />
+      ) : view === 'kanban' && !store.loaded.value ? (
+        // board skeleton (brand §4): real chrome — sidebar, lane heads,
+        // semantic top-borders — only the card data shimmers
+        <div class="board" role="status" aria-label="loading board">
+          {LANE_ORDER.map((lane, index) => (
+            <LaneSkeleton key={lane} lane={lane} bones={[3, 2, 1, 2, 1][index] ?? 2} />
+          ))}
+        </div>
       ) : view === 'kanban' ? (
         <div class="board">
           {LANE_ORDER.map((lane) => (
@@ -220,7 +228,9 @@ export function Board({ project, api = boardApi, subscribe = subscribeBoardEvent
         onClose={() => setNextOpen(false)}
       />
 
-      {detailCard !== undefined ? (
+      {detailCard === undefined && route.value.card !== null && !store.loaded.value ? (
+        <CardDetailSkeleton />
+      ) : detailCard !== undefined ? (
         <CardDetail
           card={detailCard}
           actions={detailActions}

@@ -56,6 +56,26 @@ function TaskRow({ title, done, addedByVerify }: { title: string; done: boolean;
   );
 }
 
+// Loading skeleton (brand §4): real dialog chrome, bones for the data —
+// title line, meta chip row, body lines at ragged widths.
+export function CardDetailSkeleton(): VNode {
+  return (
+    <Dialog open onClose={() => undefined} label="card detail loading">
+      <DialogHead title="" onClose={() => undefined} />
+      <div style="display:flex;flex-direction:column;gap:12px;padding:4px 2px" aria-hidden="true">
+        <div style="display:flex;gap:6px;align-items:center">
+          <span class="skel skel-chip" style="width:96px" />
+          <span class="skel skel-chip" style="width:44px" />
+        </div>
+        <div class="skel" style="width:60%;height:20px" />
+        <div class="skel skel-line" />
+        <div class="skel skel-line" style="width:92%" />
+        <div class="skel skel-line" style="width:75%" />
+      </div>
+    </Dialog>
+  );
+}
+
 export function CardDetail(props: { card: UiCard; actions: DetailActions; specMarkdown: string }): VNode {
   const { card, actions } = props;
   const [tab, setTab] = useState<Tab>('tasks');

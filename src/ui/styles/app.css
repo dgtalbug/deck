@@ -953,3 +953,73 @@ button.wip.is-over {
     opacity: 0.8;
   }
 }
+
+/* ── skel — loading bones (brand §4, locked) ───────────────────────── */
+/* One class does all skeletons: shimmer sweep on --chip, pulse under
+   reduced motion. Never --primary — color arrives with the data. */
+.skel {
+  position: relative;
+  overflow: hidden;
+  border-radius: 6px;
+  background: var(--chip);
+}
+
+.skel::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(100deg, transparent 25%, var(--grid-line) 50%, transparent 75%);
+  animation: skel-sweep 1.8s linear infinite;
+}
+
+@keyframes skel-sweep {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(100%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skel::after {
+    animation: skel-pulse 2.4s ease-in-out infinite;
+  }
+}
+
+@keyframes skel-pulse {
+  0%,
+  100% {
+    opacity: 0;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* skeleton layouts — bones mirror the real geometry they replace */
+.skel-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px;
+}
+
+.skel-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--card);
+}
+
+.skel-chip {
+  height: 20px;
+  border-radius: 999px;
+}
+
+.skel-line {
+  height: 11px;
+}
