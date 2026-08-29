@@ -68,7 +68,24 @@ export function Home(): VNode {
       <h1 class="page">workspace</h1>
       <p class="subtitle">Every project running deck on this machine — one server, one control surface.</p>
       {projects === null ? (
-        <p class="subtitle">loading projects…</p>
+        <div class="grid-2" style="margin-top:18px" role="status" aria-label="loading projects">
+          {[64, 128, 80, 110].map((pathWidth) => (
+            <div class="card skel-card" aria-hidden="true">
+              <div class="skel-row">
+                <div class="skel" style="width:16px;height:16px" />
+                <div class="skel skel-line" style="width:120px" />
+                <div class="spacer" />
+                <div class="skel skel-chip" style="width:64px" />
+              </div>
+              <div class="skel skel-line" style={`width:${pathWidth}%`} />
+              <div class="skel-row" style="gap:6px;padding:0">
+                <div class="skel skel-chip" style="width:96px" />
+                <div class="skel skel-chip" style="width:72px" />
+                <div class="skel skel-chip" style="width:84px" />
+              </div>
+            </div>
+          ))}
+        </div>
       ) : projects.length === 0 ? (
         <div class="callout c-info" style="margin-top:18px">
           <Info size={16} />
