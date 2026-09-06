@@ -33,5 +33,32 @@
     "oxlint": "latest",
     "swagger-ui-dist": "^5.32.14",
     "typescript": "^5"
-  }
+  },
+  "version": "0.6.0",
+  "description": "The SDD engine board: deck-born spec-driven development with verbs, verify convergence, hooks, and memory \u2014 one sqlite board, GitHub publication, zero ceremony.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dgtalbug/deck.git"
+  },
+  "engines": {
+    "bun": ">=1.4"
+  },
+  "files": [
+    "src/",
+    "drizzle/",
+    "bin/",
+    "deck",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "sdd",
+    "spec-driven",
+    "kanban",
+    "board",
+    "agent-tools",
+    "bun"
+  ]
 }
