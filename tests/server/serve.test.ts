@@ -1,3 +1,4 @@
+import { DECK_VERSION } from '../../src/version.ts';
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -57,6 +58,6 @@ describe('startup banner', () => {
       rows: 40,
     });
     expect(out.split('\n').length).toBe(8);
-    expect(stripSgr(out)).toContain(`deck v0.5.0`);
+    expect(stripSgr(out)).toContain(`deck v${DECK_VERSION}`);
   });
 });

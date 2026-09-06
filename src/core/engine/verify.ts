@@ -224,6 +224,27 @@ function changelogEntry(card: VerbItem, issueNumber: number, prUrl: string): str
   return `- ${date} — ${card.verb}: ${card.title} (#${issueNumber}, ${prUrl})`;
 }
 
+// The new version when the archived change bumps it (package.json version
+// or src/version.ts), else null. HEAD^1..HEAD is the archived change both
+// before the merge (the branch tip's last commit) and after (--no-ff merge
+// against the prior main).
+export async function versionBumpedInDiff(projectPath: string, _card: VerbItem): Promise<string | null> {
+  const diff = await runGit(
+    projectPath,
+    ['diff', 'HEAD^1', 'HEAD', '--', 'package.json', 'src/version.ts'],
+    10_000,
+  );
+  if (diff.code !== 0 || !diff.stdout.includes('+')) return null;
+  const added = diff.stdout
+    .split('\n')
+    .filter((line) => line.startsWith('+') && !line.startsWith('+++'))
+    .join('\n');
+  const pkg = /"version"\s*:\s*"(\d+\.\d+\.\d+)"/.exec(added);
+  if (pkg !== null) return pkg[1]!;
+  const src = /DECK_VERSION = '(\d+\.\d+\.\d+)'/.exec(added);
+  return src !== null ? src[1]! : null;
+}
+
 // Best-effort by construction: changelog append + tagged release; failures
 // warn and never undo the archive.
 export async function archiveTail(
@@ -241,9 +262,29 @@ export async function archiveTail(
   await Bun.write(changelogPath, next);
 
   let release: string | null = null;
-  const tag = await runGit(store.projectPath, ['tag', '--points-at', 'HEAD'], 5000);
-  if (tag.code === 0 && tag.stdout.trim() !== '') {
-    const name = tag.stdout.trim().split('\n')[0]!;
+  let name = (await runGit(store.projectPath, ['tag', '--points-at', 'HEAD'], 5000)).stdout
+    .trim()
+    .split('\n')[0];
+  if (name === undefined || name.length === 0) {
+    // Release slice: a version bump in the archived diff names the release
+    // itself — tag HEAD v<version>, push the tag, release from it. All
+    // best-effort, like everything in the tail.
+    const bumped = await versionBumpedInDiff(store.projectPath, card);
+    if (bumped !== null) {
+      try {
+        const created = await runGit(
+          store.projectPath,
+          ['tag', '-a', `v${bumped}`, '-m', `deck release ${bumped}`],
+          5000,
+        );
+        if (created.code === 0) await runGit(store.projectPath, ['push', 'origin', `v${bumped}`], 30_000);
+        name = `v${bumped}`;
+      } catch (error) {
+        warnings.push(`tag v${bumped} failed: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+  }
+  if (name !== undefined && name.length > 0) {
     const version = newestSpecVersion(store, id);
     try {
       const result = await runGh(store.projectPath, [

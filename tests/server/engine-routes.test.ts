@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import type { Server } from 'bun';
 import { ProjectRegistry } from '../../src/core/projects/registry.ts';
 import { buildServer } from '../../src/server/serve.ts';
+import { DECK_VERSION } from '../../src/version.ts';
 import { convertToVerbItem } from '../../src/core/board/groom.ts';
 import type { Verb as VerbType } from '../../src/core/board/types.ts';
 import { openStore, type DocumentStore } from '../../src/core/board/store.ts';
@@ -169,7 +170,7 @@ describe('engine routes (v0.5.0)', () => {
       info: { version: string };
       paths: Record<string, unknown>;
     };
-    expect(doc.info.version).toBe('0.5.0');
+    expect(doc.info.version).toBe(DECK_VERSION);
     expect(doc.paths['/{project}/cards/{id}/start']).toBeDefined();
     expect(doc.paths['/{project}/cards/{id}/archive']).toBeDefined();
   });
