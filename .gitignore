@@ -18,6 +18,7 @@
 !/bun.lockb
 !/bun.lock
 !/LICENSE
+!/README.md
 
 # Build & runtime artifacts (also ignored inside tracked dirs)
 node_modules/
