@@ -9,6 +9,7 @@ import { assertUnderWip, moveLane } from '../board/lanes.ts';
 import { applyVerifyResult } from '../board/verify.ts';
 import { newestSpecVersion, getIssueMap } from '../board/specstore.ts';
 import { publishSpec } from '../board/publish.ts';
+import { listQueue } from '../board/specstore.ts';
 import { closeIssue } from '../git/issues.ts';
 import { GhUnavailableError } from '../git/errors.ts';
 import { runGit } from '../git/digest.ts';
@@ -151,6 +152,13 @@ export async function archiveVerb(store: DocumentStore, id: string): Promise<Arc
   }
   const map = getIssueMap(store, id);
   if (map === undefined) {
+    // The start ran; the publish may simply still be queued (gh offline).
+    if (listQueue(store).some((entry: { cardId: string }) => entry.cardId === id)) {
+      throw new DeckError(
+        `card ${id}'s issue publish is still queued (gh was offline at start) — run deck sync to flush it, then archive`,
+        { cardId: id },
+      );
+    }
     throw new DeckError(`card ${id} has no published issue — run its verb start first`, { cardId: id });
   }
   const version = newestSpecVersion(store, id);

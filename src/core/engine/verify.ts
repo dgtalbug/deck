@@ -8,6 +8,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { DeckError } from '../board/errors.ts';
 import { applyVerifyResult } from '../board/verify.ts';
+import { moveLane } from '../board/lanes.ts';
 import { newestSpecVersion } from '../board/specstore.ts';
 import { getIssueMap } from '../board/specstore.ts';
 import type { DocumentStore } from '../board/store.ts';
@@ -68,6 +69,14 @@ function testFileExists(projectPath: string, slug: string): boolean {
 // Pure data out — no mutations, no network. (a) unchecked tasks enumerate as
 // gaps; (b) a spec requirement with neither a referencing task nor a paired
 // test file in the worktree is itself a gap.
+// The documented contract ('deck verify <id> closes the loop') is reachable:
+// verify on an ACTIVE card transitions it into verify first — the engine
+// owns active→verify, archive is not the only door.
+export function ensureVerifyLane(store: DocumentStore, id: string): void {
+  const card = store.getVerbItem(id); // typed 404 for non-verb ids
+  if (card.lane === 'active') moveLane(store, id, 'verify', 'engine');
+}
+
 export function computeGaps(store: DocumentStore, id: string): Gap[] {
   const card = store.getVerbItem(id); // typed 404 for non-verb ids
   if (card.lane !== 'verify') {
@@ -109,6 +118,7 @@ export interface ConvergeOutcome {
 // The driver computes, then hands the outcome to applyVerifyResult — the
 // ONLY mutation path (gaps → active + tasks appended; clean → done).
 export async function runVerification(store: DocumentStore, id: string): Promise<ConvergeOutcome> {
+  ensureVerifyLane(store, id);
   const gaps = computeGaps(store, id);
   const result = gaps.length === 0 ? 'clean' as const : 'gaps' as const;
   applyVerifyResult(store, id, result, gaps.map((gap) => gap.taskTitle));
