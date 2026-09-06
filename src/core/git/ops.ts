@@ -3,6 +3,9 @@
 // here and are mirrored in GitPage. Never a force/rewrite flag; a failed
 // merge auto-aborts so the repo is never left mid-merge. Each op returns
 // git's captured output; refusals throw the typed errors from errors.ts.
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { runGit } from './digest.ts';
 import { runGh } from './gh.ts';
 import { GitOpError, InvalidBranchError, GhUnavailableError } from './errors.ts';
@@ -157,7 +160,11 @@ export async function stashPop(projectPath: string): Promise<GitOpResult> {
 
 // --- merge ---
 
-export async function mergeBranch(projectPath: string, from: string): Promise<GitOpResult> {
+export async function mergeBranch(
+  projectPath: string,
+  from: string,
+  opts: { noFf?: boolean | undefined; message?: string | undefined } = {},
+): Promise<GitOpResult> {
   validateBranchName(from);
   await assertCleanTree(projectPath, 'merge');
   const current = await currentBranch(projectPath);
@@ -167,7 +174,12 @@ export async function mergeBranch(projectPath: string, from: string): Promise<Gi
   if (!(await branchExists(projectPath, from))) {
     throw new GitOpError('merge', `branch '${from}' not found`, '');
   }
-  const merge = await runGit(projectPath, ['merge', '--no-edit', from]);
+  const merge = await runGit(projectPath, [
+    'merge',
+    ...(opts.message !== undefined && opts.message !== '' ? ['-m', opts.message] : ['--no-edit']),
+    ...(opts.noFf === true ? ['--no-ff'] : []),
+    from,
+  ]);
   if (merge.code !== 0) {
     await runGit(projectPath, ['merge', '--abort']); // never leave a repo mid-merge
     throw new GitOpError('merge', 'conflict — merge aborted, tree restored', `${merge.stdout}${merge.stderr}`.trim());
@@ -219,24 +231,36 @@ export async function listPullRequests(projectPath: string): Promise<PullRequest
 
 export async function createPullRequest(
   projectPath: string,
-  input: { title: string; base?: string | undefined; draft?: boolean | undefined },
+  input: { title: string; base?: string | undefined; draft?: boolean | undefined; body?: string | undefined },
 ): Promise<{ url: string }> {
   await requireGh(projectPath);
-  const result = await runGh(projectPath, [
-    'pr', 'create',
-    '--title', input.title,
-    '--body', '',
-    ...(input.base !== undefined && input.base !== '' ? ['--base', input.base] : []),
-    ...(input.draft === true ? ['--draft'] : []),
-  ]);
-  if (result === null) throw new GhUnavailableError();
-  const { code, stdout, stderr } = result;
-  if (code !== 0) {
-    throw new GitOpError('pr create', `exit ${code}`, `${stdout}${stderr}`.trim());
+  // Spec-generated bodies can be long markdown — pass via a temp file so the
+  // content never sits in an argv slot (--body-file, mirroring issue ops).
+  let bodyFile: string | undefined;
+  if (input.body !== undefined && input.body !== '') {
+    const dir = mkdtempSync(join(tmpdir(), 'deck-pr-'));
+    bodyFile = join(dir, 'body.md');
+    writeFileSync(bodyFile, input.body, 'utf8');
   }
-  const url = stdout.trim().split('\n').pop() ?? '';
-  if (url === '') {
-    throw new GitOpError('pr create', 'gh printed no PR URL', stderr.trim());
+  try {
+    const result = await runGh(projectPath, [
+      'pr', 'create',
+      '--title', input.title,
+      ...(bodyFile !== undefined ? ['--body-file', bodyFile] : ['--body', '']),
+      ...(input.base !== undefined && input.base !== '' ? ['--base', input.base] : []),
+      ...(input.draft === true ? ['--draft'] : []),
+    ]);
+    if (result === null) throw new GhUnavailableError();
+    const { code, stdout, stderr } = result;
+    if (code !== 0) {
+      throw new GitOpError('pr create', `exit ${code}`, `${stdout}${stderr}`.trim());
+    }
+    const url = stdout.trim().split('\n').pop() ?? '';
+    if (url === '') {
+      throw new GitOpError('pr create', 'gh printed no PR URL', stderr.trim());
+    }
+    return { url };
+  } finally {
+    if (bodyFile !== undefined) rmSync(join(bodyFile, '..'), { recursive: true, force: true });
   }
-  return { url };
 }

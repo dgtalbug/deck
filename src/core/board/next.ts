@@ -5,6 +5,8 @@ import type { DocumentStore } from './store.ts';
 import type { NextDigest, TaskState, VerbItem } from './types.ts';
 import { mostAdvancedActive, topOfQueue } from './lanes.ts';
 import { isVerbItem, type Tweak } from './types.ts';
+import { getIssueMap } from './specstore.ts';
+import { branchFor } from '../engine/verbs.ts';
 
 // ≈2k tokens at ~4 chars per token (epic acceptance 9). The recall component
 // (memory) slots in later and is out of scope here.
@@ -50,8 +52,18 @@ export function nextDigest(store: DocumentStore): NextDigest {
     const remaining = isVerbItem(blockedOn)
       ? blockedOn.tasks.filter((task) => !task.done)
       : [{ id: 'tweak', title: (blockedOn as Tweak).requirement, done: false }];
+    // The at-limit digest is the build pack (feat-verb-gate D4): branch,
+    // mapped issue, and the checklist, within the same truncation budget —
+    // an agent resumes from `deck next` alone.
+    const header: string[] = [];
+    if (isVerbItem(blockedOn)) {
+      header.push(`branch: ${branchFor(blockedOn, blockedOn.verb)}`);
+      const map = getIssueMap(store, blockedOn.id);
+      header.push(`issue: ${map === undefined ? 'unpublished' : `#${map.issueNumber}`}`);
+    }
     const context = [
       `# finish first (WIP ${active}/${store.wipLimit}): ${blockedOn.title}`,
+      ...header,
       '## Remaining tasks',
       taskList(remaining),
     ].join('\n');
