@@ -677,6 +677,23 @@ button.wip.is-over {
   margin-left: auto;
 }
 
+/* git page redesign: the command bar — every digest fact as one chip row */
+.git-command-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 14px;
+  padding: 10px 16px;
+}
+
+.git-command-bar .git-branch {
+  font-weight: 600;
+}
+
+.git-command-bar .icon-btn {
+  margin-left: auto;
+}
+
 .git-status-grid {
   display: flex;
   flex-wrap: wrap;
@@ -797,6 +814,8 @@ button.wip.is-over {
 }
 
 .git-output {
+  position: sticky;
+  bottom: 12px;
   font-family: var(--font-mono);
   font-size: 12px;
   line-height: 1.5;
@@ -806,15 +825,33 @@ button.wip.is-over {
   border: 1px solid var(--border-2);
   background: var(--chip);
   color: var(--soft);
+  position: relative;
   white-space: pre-wrap;
   word-break: break-word;
   max-height: 220px;
   overflow: auto;
+  box-shadow: 0 4px 16px rgb(0 0 0 / 0.18);
 }
 
 .git-output[data-kind='err'] {
   border-color: var(--warning);
   color: var(--warning);
+}
+
+.git-output-dismiss {
+  position: absolute;
+  top: 4px;
+  right: 8px;
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1;
+  padding: 2px 4px;
+  border-radius: var(--radius-sm);
+}
+
+.git-output-dismiss:hover {
+  color: var(--foreground);
 }
 
 .git-gh-unavailable {
@@ -836,21 +873,18 @@ button.wip.is-over {
   border-bottom: none;
 }
 
-/* git panel two-pane layout + commit tree (v0.3.1) */
-
-.git-panel {
+/* git page redesign: self-sizing section grid — cells size to the viewport;
+   narrow order: working copy, branches, remote/PRs, merge, history */
+.git-section-grid {
   display: grid;
-  grid-template-columns: minmax(260px, 300px) 1fr;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
   gap: 14px;
   align-items: start;
 }
 
-.git-panel-actions,
-.git-panel-content {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
+.git-section-grid > * {
   min-width: 0;
+  margin: 0;
 }
 
 .git-status-card {
@@ -888,12 +922,6 @@ button.wip.is-over {
   align-items: center;
   gap: 6px;
   flex-wrap: wrap;
-}
-
-@media (max-width: 900px) {
-  .git-panel {
-    grid-template-columns: 1fr;
-  }
 }
 
 /* ── boot splash — brand §3 spade draw, home boot only ─────────────── */
