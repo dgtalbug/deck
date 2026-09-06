@@ -167,6 +167,25 @@ button.wip.is-over {
   gap: 8px;
 }
 
+/* ═══ responsive-ui: the viewport contract (pinned) ═══
+   1100px — kanban lanes become fixed-width scrollable columns (spade.css)
+   900px  — workspace shell + git page drop to a single column
+   640px  — small-screen tier: dialogs fit, inputs fill, nothing hover-only */
+@media (max-width: 640px) {
+  .scrim {
+    padding: 7vh 12px 24px;
+  }
+  .dialog {
+    width: calc(100vw - 24px);
+    max-height: 82vh;
+  }
+  .dialog input[type='text'],
+  .dialog textarea,
+  .dialog select {
+    width: 100%;
+  }
+}
+
 /* dialogs */
 .scrim {
   position: fixed;
@@ -436,6 +455,7 @@ button.wip.is-over {
   gap: 26px;
   align-items: start;
 }
+/* responsive-ui viewport contract: ≤900px the shell stacks (sidebar above) */
 @media (max-width: 900px) {
   .board-shell {
     grid-template-columns: 1fr;
