@@ -98,26 +98,16 @@ export function GitPage(props: { project: string; api?: BoardApi }): VNode {
 
   return (
     <div class="git-page" aria-label={`git panel for ${project}`}>
-      <section class="card git-card git-status-card" aria-label="git status">
-        <div class="git-card-head">
-          <h3>status</h3>
-          <button
-            type="button"
-            class="icon-btn"
-            aria-label="refresh git facts"
-            title="refresh git facts"
-            onClick={() => void refresh()}
-          >
-            <RefreshCw size={12} />
-          </button>
-        </div>
+      <section class="card git-card git-command-bar" aria-label="git status">
         {!repo ? (
-          <p class="hint">not a git repository</p>
+          <p class="hint" style="margin:0">
+            not a git repository
+          </p>
         ) : (
-          <div class="git-status-grid">
-            <div class="git-branch">
+          <>
+            <span class="git-branch">
               <GitBranch size={12} /> {digest?.branch} <span class="mono">@{digest?.head}</span>
-            </div>
+            </span>
             <span class="git-fact" title="uncommitted changes">
               <CircleDot size={11} /> {digest?.dirtyCount ?? 0} dirty
             </span>
@@ -133,29 +123,46 @@ export function GitPage(props: { project: string; api?: BoardApi }): VNode {
               gh {ghOn ? (digest?.gh?.account !== undefined ? `· ${digest.gh.account}` : '· ready') : 'unavailable'}
             </span>
             {digest?.origin !== undefined ? <span class="hint mono git-origin">{digest.origin}</span> : null}
-          </div>
+            <button
+              type="button"
+              class="icon-btn"
+              aria-label="refresh git facts"
+              title="refresh git facts"
+              onClick={() => void refresh()}
+            >
+              <RefreshCw size={12} />
+            </button>
+          </>
         )}
       </section>
 
-      {output !== null ? (
-        <pre class="git-output" data-kind={output.kind} data-testid="git-output">
-          {output.text === '' ? '(no output)' : output.text}
-        </pre>
+      {repo ? (
+        <div class="git-section-grid">
+          <GitChanges ctx={ctx} />
+          <GitBranches ctx={ctx} />
+          <GitRemote ctx={ctx} />
+          {ghOn ? <GitPullRequests ctx={ctx} pulls={pulls} /> : <GitLocalCard ctx={ctx} />}
+          <GitMergeCard ctx={ctx} />
+          <GitTree digest={digest} />
+        </div>
       ) : null}
 
-      {repo ? (
-        <div class="git-panel">
-          <div class="git-panel-actions">
-            <GitChanges ctx={ctx} />
-            <GitMergeCard ctx={ctx} />
-            <GitRemote ctx={ctx} />
-          </div>
-          <div class="git-panel-content">
-            <GitTree digest={digest} />
-            <GitBranches ctx={ctx} />
-            {ghOn ? <GitPullRequests ctx={ctx} pulls={pulls} /> : <GitLocalCard ctx={ctx} />}
-          </div>
-        </div>
+      {output !== null ? (
+        <pre class="git-output" data-kind={output.kind} data-testid="git-output">
+          <span
+            class="git-output-dismiss"
+            role="button"
+            tabindex={0}
+            aria-label="dismiss output"
+            onClick={() => setOutput(null)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' || event.key === ' ') setOutput(null);
+            }}
+          >
+            ×
+          </span>
+          {output.text === '' ? '(no output)' : output.text}
+        </pre>
       ) : null}
 
       {confirm !== null ? (

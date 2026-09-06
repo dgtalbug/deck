@@ -113,9 +113,9 @@ describe('GitPage', () => {
     expect(text).toContain('first');
     expect(text).toContain('#7');
     expect(text).toContain('do the thing');
-    // two-pane: tree on the content side, action cards on the rail
-    expect(win.document.querySelector('.git-panel-content .git-graph')?.textContent).toContain('(HEAD -> main)');
-    expect(win.document.querySelector('.git-panel-actions button[data-action="commit"]')).not.toBeNull();
+    // redesign: section grid carries the tree and the action cards side by side
+    expect(win.document.querySelector('.git-section-grid .git-graph')?.textContent).toContain('(HEAD -> main)');
+    expect(win.document.querySelector('.git-section-grid button[data-action="commit"]')).not.toBeNull();
   });
 
   test('branch list marks current; switch disabled on dirty tree with hint; delete disabled on current', async () => {
