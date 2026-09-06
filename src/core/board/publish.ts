@@ -121,7 +121,7 @@ export async function syncProject(store: DocumentStore): Promise<ReconcileReport
         issueNumber: getIssueMap(store, entry.cardId)?.issueNumber ?? 0,
         kind: 'missing',
         detail: `queue flush failed: ${error instanceof Error ? error.message : String(error)}`,
-        fix: 'inspect the card and publish manually',
+        fix: 're-run deck sync once gh can reach GitHub (check the git remote and gh auth)',
       });
     }
   }
