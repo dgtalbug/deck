@@ -78,8 +78,10 @@ export function openApiDocument(): Record<string, unknown> {
         'only through engine events; human moves are todo ↔ groomed only. ' +
         'v0.3.0 adds the guarded git write routes (branch/switch/merge/commit/' +
         'undo-commit/stash/stash pop/branch delete/fetch/pull/push) and PR create/' +
-        'list via gh — all additive; no v0.1/v0.2 route, payload, or event changed, ' +
-        'and git operations emit no SSE events.',
+        'list via gh. v0.4.0 adds the spec-store surface (publish a card spec as ' +
+        'a GitHub issue with offline queueing, spec version history, project ' +
+        'sync/reconcile, one-time backfill of existing specs) — all additive; no ' +
+        'earlier route, payload, or event changed, and publication emits no SSE events.',
     },
     servers: [{ url: 'http://127.0.0.1:3325' }],
     paths: {
@@ -182,7 +184,17 @@ export function openApiDocument(): Record<string, unknown> {
         cardPath('tweak', 'Fast lane: todo → active with one task', z.object({})),
         cardPath('verify', 'Apply a VerifyResult (clean → done, gaps → back to active)', verifyBody),
         cardPath('demote', 'Reject after groom: verb item reverts to a note in todo', z.object({})),
+        cardPath('publish', 'Publish the card spec as a GitHub issue (202 + queued when gh is offline)', z.object({})),
       ]),
+      '/{project}/cards/{id}/specs': {
+        get: {
+          summary: 'Spec version history for a card (newest-first markdown blobs + checksums)',
+          parameters: [projectParam, idParam],
+          responses: { '200': jsonResponse('SpecVersion[]'), '404': errorResponses['404'] },
+        },
+      },
+      '/{project}/sync': post('Flush the offline publish queue and report issue-map drift (reconcile never mutates cards)', z.object({}), [projectParam]),
+      '/{project}/backfill-specs': post('One-time import of openspec/specs/** into the spec store + issue publication (idempotent)', z.object({}), [projectParam]),
     },
   };
 }

@@ -54,7 +54,7 @@ describe('runDoctor', () => {
       const checks = await runDoctor(registry, proj.path);
       const failed = checks.filter((entry) => !entry.pass);
       expect(failed).toEqual([]);
-      expect(checks.length).toBe(7);
+      expect(checks.length).toBe(8); // +issue map (v0.4.0)
     } finally {
       server.stop(true);
     }
