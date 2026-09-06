@@ -63,17 +63,27 @@ export function Dialog({ open, label, onClose, children }: DialogProps): VNode |
         tabIndex={-1}
         ref={(element) => {
           const el = element as HTMLDivElement | null;
-          dialogRef.current = el;
-          if (el !== null && restoreFocus.current === null) {
-            restoreFocus.current = document.activeElement as HTMLElement | null;
-            // ref fires before the node is inserted — focus on the next tick
-            queueMicrotask(() => el.focus());
+          if (el !== null) {
+            dialogRef.current = el;
+            // Inline refs re-fire null→element on EVERY re-render (Preact);
+            // capture-and-focus must happen on the first attach only, or a
+            // keystroke's re-render steals focus from the field mid-typing.
+            if (restoreFocus.current === null) {
+              restoreFocus.current = document.activeElement as HTMLElement | null;
+              // ref fires before the node is inserted — focus on the next tick
+              queueMicrotask(() => el.focus());
+            }
+            return;
           }
-          if (el === null) {
-            // detach = unmount: return focus to the invoking element
+          // null = real unmount OR the re-render ref dance. Restoring now
+          // would yank focus to the invoking element mid-typing; restore on
+          // the next tick, and only if no element re-attached (genuine close).
+          dialogRef.current = null;
+          queueMicrotask(() => {
+            if (dialogRef.current !== null) return;
             restoreFocus.current?.focus?.();
             restoreFocus.current = null;
-          }
+          });
         }}
         onKeyDown={onKeyDown}
       >
