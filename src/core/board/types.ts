@@ -27,6 +27,10 @@ export const Verb = {
 } as const;
 export type Verb = (typeof Verb)[keyof typeof Verb];
 
+// A verb name at rest: a built-in from the Verb const, or a user verb
+// registered through `deck workflow` (same engine, same lanes).
+export type VerbName = Verb | (string & {});
+
 export const VerifyResult = { Clean: 'clean', Gaps: 'gaps' } as const;
 export type VerifyResult = (typeof VerifyResult)[keyof typeof VerifyResult];
 
@@ -60,7 +64,7 @@ export interface Research {
 export interface VerbItem {
   id: string;
   title: string;
-  verb: Verb;
+  verb: VerbName;
   lane: Lane;
   position: number;
   specPath: string;
@@ -106,7 +110,7 @@ export interface Delta {
 
 export interface GroomProposal {
   noteId: string;
-  proposedVerb: Verb;
+  proposedVerb: VerbName;
   refinedTitle: string;
   research: Research;
   specDeltas: Delta[];
@@ -117,7 +121,7 @@ export interface GroomProposal {
 export interface NextDigest {
   cardId: string;
   title: string;
-  verb?: Verb | undefined;
+  verb?: VerbName | undefined;
   context: string;
   wipBlockedBy?: string | undefined;
 }

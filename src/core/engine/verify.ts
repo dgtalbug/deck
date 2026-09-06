@@ -15,6 +15,7 @@ import type { VerbItem } from '../board/types.ts';
 import { runGit } from '../git/digest.ts';
 import { runGh } from '../git/gh.ts';
 import { branchFor } from './slug.ts';
+import { HookEvent, runHooks, type HookWarning } from './hooks.ts';
 
 // --- deterministic gap computation -------------------------------------------
 
@@ -102,14 +103,28 @@ export interface ConvergeOutcome {
   result: 'clean' | 'gaps';
   gaps: Gap[];
   card: VerbItem;
+  hookWarnings: HookWarning[];
 }
 
 // The driver computes, then hands the outcome to applyVerifyResult — the
 // ONLY mutation path (gaps → active + tasks appended; clean → done).
-export function runVerification(store: DocumentStore, id: string): ConvergeOutcome {
+export async function runVerification(store: DocumentStore, id: string): Promise<ConvergeOutcome> {
   const gaps = computeGaps(store, id);
-  applyVerifyResult(store, id, gaps.length === 0 ? 'clean' : 'gaps', gaps.map((gap) => gap.taskTitle));
-  return { result: gaps.length === 0 ? 'clean' : 'gaps', gaps, card: store.getVerbItem(id) };
+  const result = gaps.length === 0 ? 'clean' as const : 'gaps' as const;
+  applyVerifyResult(store, id, result, gaps.map((gap) => gap.taskTitle));
+  const card = store.getVerbItem(id);
+  // onVerifyResult fires on both outcomes (core, so both doors fire it).
+  const hookWarnings = await runHooks(store.projectPath, HookEvent.VerifyResult, {
+    event: HookEvent.VerifyResult,
+    cardId: id,
+    verb: card.verb,
+    lane: card.lane,
+    branch: branchFor(card, card.verb),
+    issueNumber: getIssueMap(store, id)?.issueNumber ?? null,
+    result,
+    timestamp: new Date().toISOString(),
+  });
+  return { result, gaps, card, hookWarnings };
 }
 
 // --- the lean review gate ------------------------------------------------------

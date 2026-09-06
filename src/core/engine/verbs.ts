@@ -21,12 +21,13 @@ import {
   switchBranch,
 } from '../git/ops.ts';
 import type { DocumentStore } from '../board/store.ts';
-import type { Verb, VerbItem } from '../board/types.ts';
+import type { VerbName, VerbItem } from '../board/types.ts';
 
 // The branch for a started verb is always re-derivable from the card
 // itself (engine lanes refuse title edits, so the slug cannot drift).
 import { branchFor } from './slug.ts';
 import { archiveTail, ReviewBlockedError, reviewGate } from './verify.ts';
+import { HookEvent, runHooks, type HookWarning } from './hooks.ts';
 export { branchFor };
 
 async function assertCleanTree(projectPath: string): Promise<void> {
@@ -60,6 +61,7 @@ export interface StartOutcome {
   branch: string;
   issueNumber: number | null;
   queued: boolean;
+  hookWarnings: HookWarning[];
 }
 
 // D2 order: transition → publish → branch. A refusal after the transition
@@ -67,7 +69,7 @@ export interface StartOutcome {
 export async function startVerb(
   store: DocumentStore,
   id: string,
-  verb: Verb,
+  verb: VerbName,
 ): Promise<StartOutcome> {
   const card = store.getVerbItem(id); // 404 contract
   if (card.lane !== 'groomed') {
@@ -100,11 +102,24 @@ export async function startVerb(
     moveLane(store, id, 'groomed', 'engine'); // compensate — no side effects
     throw error;
   }
+  const started = store.getVerbItem(id);
+  // onVerbStart fires only after the start has fully committed (post-event).
+  const hookWarnings = await runHooks(store.projectPath, HookEvent.VerbStart, {
+    event: HookEvent.VerbStart,
+    cardId: id,
+    verb: started.verb,
+    lane: started.lane,
+    branch,
+    issueNumber: publish.issueNumber,
+    result: null,
+    timestamp: new Date().toISOString(),
+  });
   return {
-    card: store.getVerbItem(id),
+    card: started,
     branch,
     issueNumber: publish.issueNumber,
     queued: publish.queued,
+    hookWarnings,
   };
 }
 
@@ -115,6 +130,7 @@ export interface ArchiveOutcome {
   prUrl: string;
   issueNumber: number;
   tail: { changelog: string; release: string | null; warnings: string[] };
+  hookWarnings: HookWarning[];
 }
 
 // Minimal archive: the PR body IS the spec (zero hand-written markdown),
@@ -186,7 +202,19 @@ export async function archiveVerb(store: DocumentStore, id: string): Promise<Arc
   await closeIssue(store.projectPath, map.issueNumber);
   await deleteBranch(store.projectPath, branch);
   const tail = await archiveTail(store, id, pr.url);
-  return { card: store.getVerbItem(id), prUrl: pr.url, issueNumber: map.issueNumber, tail };
+  const done = store.getVerbItem(id);
+  // onArchive fires after the loop has fully closed (post-event).
+  const hookWarnings = await runHooks(store.projectPath, HookEvent.Archive, {
+    event: HookEvent.Archive,
+    cardId: id,
+    verb: done.verb,
+    lane: done.lane,
+    branch,
+    issueNumber: map.issueNumber,
+    result: null,
+    timestamp: new Date().toISOString(),
+  });
+  return { card: done, prUrl: pr.url, issueNumber: map.issueNumber, tail, hookWarnings };
 }
 
 // Kept for the offline-at-archive refusal contract (design D5): callers
