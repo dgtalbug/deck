@@ -23,25 +23,11 @@ import {
 import type { DocumentStore } from '../board/store.ts';
 import type { Verb, VerbItem } from '../board/types.ts';
 
-function titleSlug(title: string): string {
-  return title
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .split('-')
-    .filter(Boolean)
-    .slice(0, 4)
-    .join('-')
-    .slice(0, 32);
-}
-
-// Deterministic per card: the branch for a started verb is always
-// re-derivable from the card itself (engine lanes refuse title edits, so
-// the slug cannot drift mid-build).
-export function branchFor(card: Pick<VerbItem, 'id' | 'title'>, verb: Verb): string {
-  const slug = titleSlug(card.title);
-  return slug.length > 0 ? `${verb}/${card.id}-${slug}` : `${verb}/${card.id}`;
-}
+// The branch for a started verb is always re-derivable from the card
+// itself (engine lanes refuse title edits, so the slug cannot drift).
+import { branchFor } from './slug.ts';
+import { archiveTail, ReviewBlockedError, reviewGate } from './verify.ts';
+export { branchFor };
 
 async function assertCleanTree(projectPath: string): Promise<void> {
   const status = await runGit(projectPath, ['status', '--porcelain']);
@@ -128,6 +114,7 @@ export interface ArchiveOutcome {
   card: VerbItem;
   prUrl: string;
   issueNumber: number;
+  tail: { changelog: string; release: string | null; warnings: string[] };
 }
 
 // Minimal archive: the PR body IS the spec (zero hand-written markdown),
@@ -159,6 +146,11 @@ export async function archiveVerb(store: DocumentStore, id: string): Promise<Arc
 
   const branch = branchFor(card, card.verb);
   const base = await defaultBranch(store.projectPath);
+
+  // The review gate blocks archive while any finding stands (P1c D5) —
+  // before any mutation, nothing to unwind.
+  const findings = await reviewGate(store, id);
+  if (findings.length > 0) throw new ReviewBlockedError(id, findings);
 
   // Guarded sequence on clean trees only. gh cannot open a PR for a branch
   // the remote has never seen — push the verb branch first, and push the
@@ -193,7 +185,8 @@ export async function archiveVerb(store: DocumentStore, id: string): Promise<Arc
 
   await closeIssue(store.projectPath, map.issueNumber);
   await deleteBranch(store.projectPath, branch);
-  return { card: store.getVerbItem(id), prUrl: pr.url, issueNumber: map.issueNumber };
+  const tail = await archiveTail(store, id, pr.url);
+  return { card: store.getVerbItem(id), prUrl: pr.url, issueNumber: map.issueNumber, tail };
 }
 
 // Kept for the offline-at-archive refusal contract (design D5): callers

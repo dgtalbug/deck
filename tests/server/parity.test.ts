@@ -3,6 +3,7 @@ import * as crud from '../../src/core/board/crud.ts';
 import * as publish from '../../src/core/board/publish.ts';
 import * as engineVerbs from '../../src/core/engine/verbs.ts';
 import * as gitIssues from '../../src/core/git/issues.ts';
+import * as engineVerify from '../../src/core/engine/verify.ts';
 import * as specstore from '../../src/core/board/specstore.ts';
 import * as git from '../../src/core/git/digest.ts';
 import * as gitops from '../../src/core/git/ops.ts';
@@ -35,6 +36,7 @@ const functions: Record<string, unknown> = {
   ...specstore,
   ...engineVerbs,
   ...gitIssues,
+  ...engineVerify,
   ...git,
   ...gitops,
   ...groom,

@@ -133,6 +133,8 @@ describe('engine routes (v0.5.0)', () => {
     stubGh();
     const id = await groomed('route archive card');
     await post(`/testproj/cards/${id}/start`, { verb: 'feat' });
+    const store = await openStore(project.path);
+    store.syncTasks(id, store.getVerbItem(id).tasks.map((task) => ({ ...task, done: true })), 'engine');
     writeFileSync(join(project.path, 'b.txt'), 'change\n');
     git('add .');
     git('commit -m "feat: change"');

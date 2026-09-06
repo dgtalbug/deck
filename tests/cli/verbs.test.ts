@@ -126,6 +126,7 @@ describe('deck archive', () => {
     stubGh();
     const id = groomed('cli archive card');
     await run(['feat', id]);
+    store.syncTasks(id, store.getVerbItem(id).tasks.map((task) => ({ ...task, done: true })), 'engine');
     writeFileSync(join(proj.path, 'b.txt'), 'the fix\n');
     git('add .');
     git('commit -m "feat: the fix"');
