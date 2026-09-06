@@ -7,7 +7,7 @@ import { DeckError } from '../core/board/errors.ts';
 import { tweak } from '../core/board/groom.ts';
 import { moveLane } from '../core/board/lanes.ts';
 import { nextDigest } from '../core/board/next.ts';
-import { backfillSpecs, syncProject } from '../core/board/publish.ts';
+import { syncProject } from '../core/board/publish.ts';
 import { applyVerifyResult } from '../core/board/verify.ts';
 import { archiveVerb } from '../core/engine/verbs.ts';
 import { renderHookWarnings } from '../core/engine/hooks.ts';
@@ -26,7 +26,7 @@ import { noteBody } from '../server/routes/notes.ts';
 import { serveMain } from '../server/serve.ts';
 import { flagString, flagStrings, parseArgs, UsageError, type ParsedArgs } from './args.ts';
 import { startCommand } from './start.ts';
-import { hooksCommand, userVerbCommand, workflowCommand } from './ext.ts';
+import { backfillCommand, hooksCommand, recallCommand, userVerbCommand, workflowCommand } from './ext.ts';
 import { ProjectResolutionError, resolveProject } from './context.ts';
 import { detectLevel, palette, type Palette } from './color.ts';
 import { withSpinner } from './spin.ts';
@@ -64,6 +64,7 @@ export const parity = {
   'deck revert': 'startVerb',
   'deck hooks': 'listHooks',
   'deck workflow': 'registerUserVerb',
+  'deck recall': 'recall',
   'deck archive': 'archiveVerb',
   'deck issue': 'viewIssue',
   'deck review': 'reviewGate',
@@ -102,6 +103,7 @@ commands:
                                     start a build: active + issue + branch
   workflow <new-verb>               register a user verb on the shared engine
   hooks                             list installed hooks (.deck/hooks/<event>/<name>)
+  recall <query>                    search session memory (FTS5)
   archive <id>                     merge the PR, close the issue, card → done
   issue <id>                       print the card's mapped GitHub issue
   serve [--port <n>] [--host <h>]   start the server (default when bare)`;
@@ -271,16 +273,7 @@ const commands: Record<string, Command> = {
     ctx.io.out(lines.join('\n'));
     return report.drift.length > 0 ? 1 : 0;
   },
-  'backfill-specs': async (args, ctx) => {
-    const project = resolveProject(ctx.registry, args, ctx.cwd);
-    const store = await getStore(project.path);
-    const report = await backfillSpecs(store);
-    const lines = [
-      `imported ${report.imported}  published ${report.published}  existing ${report.skippedExisting}`,
-    ];
-    for (const issue of report.issues) lines.push(`note  ${issue}`);
-    return lines.join('\n');
-  },
+  'backfill-specs': backfillCommand,
   feat: (args, ctx) => startCommand(args, ctx, 'feat'),
   issue: async (args, ctx) => {
     const id = requiredId(args, 'issue <id>');
@@ -326,6 +319,7 @@ const commands: Record<string, Command> = {
     );
   },
   hooks: hooksCommand,
+  recall: recallCommand,
   workflow: workflowCommand,
   serve: async () => {
     await serveMain();

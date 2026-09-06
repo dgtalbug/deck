@@ -7,11 +7,14 @@ import { mostAdvancedActive, topOfQueue } from './lanes.ts';
 import { isVerbItem, type Tweak } from './types.ts';
 import { getIssueMap } from './specstore.ts';
 import { branchFor } from '../engine/slug.ts';
+import { recall } from './memory.ts';
 
 // ≈2k tokens at ~4 chars per token (epic acceptance 9). The recall component
 // (memory) slots in later and is out of scope here.
 const MAX_CONTEXT_CHARS = 8000;
 const RULES_DIGEST_CHARS = 1500;
+// The recall (memory) digest sub-budget — pinned; the pack total stays 8000.
+const RECALL_DIGEST_CHARS = 1000;
 
 function readFileHead(path: string, maxChars: number): string | undefined {
   if (!existsSync(path)) return undefined;
@@ -39,6 +42,12 @@ export function buildContext(store: DocumentStore, card: VerbItem): string {
   if (checklist !== undefined) parts.push('', '## Checklist', checklist);
   const rules = readFileHead(join(store.projectPath, '.meta', 'project-rules.md'), RULES_DIGEST_CHARS);
   if (rules !== undefined) parts.push('', '## Project rules (digest)', rules);
+  const words = `${card.title} ${card.tasks.map((task) => task.title).join(' ')}`;
+  const hits = recall(store, words, 8);
+  if (hits.length > 0) {
+    const digest = hits.join('\n').slice(0, RECALL_DIGEST_CHARS);
+    parts.push('', '## Recall (memory)', digest);
+  }
   return parts.join('\n').slice(0, MAX_CONTEXT_CHARS);
 }
 
