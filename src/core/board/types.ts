@@ -9,7 +9,7 @@ export const Lane = {
 } as const;
 export type Lane = (typeof Lane)[keyof typeof Lane];
 
-export const CardType = { Note: 'note', VerbItem: 'verb', Tweak: 'tweak' } as const;
+export const CardType = { Note: 'note', VerbItem: 'verb', Tweak: 'tweak', Epic: 'epic' } as const;
 export type CardType = (typeof CardType)[keyof typeof CardType];
 
 export const Verb = {
@@ -48,6 +48,16 @@ export interface Note {
   createdAt: string;
 }
 
+// An epic is a planning container: title + rollup computed from the cards
+// attached to it. It never enters engine lanes (todo/groomed only).
+export interface Epic {
+  id: string;
+  title: string;
+  createdAt: string;
+  // discriminant: epics share Note's shape otherwise
+  type: 'epic';
+}
+
 export interface TaskState {
   id: string;
   title: string;
@@ -64,6 +74,7 @@ export interface Research {
 export interface VerbItem {
   id: string;
   title: string;
+  epicId?: string | undefined;
   verb: VerbName;
   lane: Lane;
   position: number;
@@ -78,6 +89,7 @@ export interface VerbItem {
 export interface Tweak {
   id: string;
   title: string;
+  epicId?: string | undefined;
   requirement: string;
   lane: Lane;
   position: number;
@@ -85,7 +97,7 @@ export interface Tweak {
   updatedAt: string;
 }
 
-export type Card = Note | VerbItem | Tweak;
+export type Card = Note | VerbItem | Tweak | Epic;
 
 // The epic's Card union carries no discriminant field; narrow structurally.
 export function isVerbItem(card: Card): card is VerbItem {
@@ -96,10 +108,15 @@ export function isTweak(card: Card): card is Tweak {
   return 'requirement' in card;
 }
 
+export function isEpic(card: Card): card is Epic {
+  const row = card as { type?: string };
+  return row.type === 'epic';
+}
+
 export function isNote(card: Card): card is Note {
   // VerbItem/Tweak are structurally assignable to Note, so the discriminant
-  // is the one field only lane-dwelling cards have.
-  return !('lane' in card);
+  // is the one field only lane-dwelling cards have; epics carry their own.
+  return !('lane' in card) && !isEpic(card);
 }
 
 export interface Delta {

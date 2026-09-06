@@ -34,12 +34,21 @@ export interface UiCard {
   research?: { codebaseFindings: string[]; rca?: string; blastRadius?: string[] };
   blocked?: BlockedView;
   requirement?: string;
+  epicId?: string;
   createdAt?: string;
   updatedAt?: string;
 }
 
+export interface EpicRollupView {
+  id: string;
+  title: string;
+  stories: number;
+  done: number;
+}
+
 export interface BoardDoc {
   lanes: Record<Lane, UiCard[]>;
+  epics?: EpicRollupView[];
 }
 
 export interface ProjectSummary {

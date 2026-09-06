@@ -27,9 +27,13 @@ import { flagString, flagStrings, parseArgs, UsageError, type ParsedArgs } from 
 import { startCommand } from './start.ts';
 import {
   backfillCommand,
+  epicCommand,
+  epicsCommand,
+  groomCommand,
   hooksCommand,
   recallCommand,
   setupCommand,
+  storyCommand,
   skillCommand,
   syncCommand,
   userVerbCommand,
@@ -77,6 +81,9 @@ export const parity = {
   'deck setup': 'initProject',
   'deck skill': 'scaffoldSkill',
   'deck mcp': 'runMcpLoop',
+  'deck epic': 'addEpic',
+  'deck epics': 'listEpics',
+  'deck story': 'addNote',
   'deck archive': 'archiveVerb',
   'deck issue': 'viewIssue',
   'deck review': 'reviewGate',
@@ -119,6 +126,9 @@ commands:
   setup                             onboard agent hosts (adapter table + detection)
   skill new <name>                 scaffold a skill pack from the pinned template
   mcp                              MCP stdio server (JSON-RPC 2.0, four tools)
+  epic "<title>" / epic <id>        create an epic, or print its story tree
+  epics                            list epics with done/total rollup
+  story <epicId> "<title>"          capture a story attached to an epic
   archive <id>                     merge the PR, close the issue, card → done
   issue <id>                       print the card's mapped GitHub issue
   serve [--port <n>] [--host <h>]   start the server (default when bare)`;
@@ -152,22 +162,7 @@ const commands: Record<string, Command> = {
       },
     );
   },
-  groom: async (args, ctx) => {
-    const id = requiredId(args, 'groom <id>');
-    const project = resolveProject(ctx.registry, args, ctx.cwd);
-    const store = await getStore(project.path);
-    store.getNote(id); // 404 contract when the id is not a note
-    const contract = {
-      noteId: id,
-      proposedVerb: 'feat',
-      refinedTitle: '<one-line imperative title>',
-      research: { codebaseFindings: ['<what you found in the code>'] },
-      specDeltas: [{ op: 'ADDED', requirement: '<Requirement: name>', text: '<text>' }],
-      tasks: ['<task>'],
-      openQuestions: [],
-    };
-    return `POST /:project/cards/${id}/groom with:\n${JSON.stringify(contract, null, 2)}`;
-  },
+  groom: groomCommand,
   move: async (args, ctx) => {
     const id = requiredId(args, 'move <id> --to <lane>');
     const body = moveBody.parse({ to: flagString(args.flags, 'to') });
@@ -318,6 +313,9 @@ const commands: Record<string, Command> = {
     );
   },
   hooks: hooksCommand,
+  epic: epicCommand,
+  epics: epicsCommand,
+  story: storyCommand,
   setup: setupCommand,
   skill: skillCommand,
   mcp: async (args, ctx) => {

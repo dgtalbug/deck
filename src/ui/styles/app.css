@@ -167,6 +167,15 @@ button.wip.is-over {
   gap: 8px;
 }
 
+.type-epic {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--accent-2);
+}
+
 /* ═══ split-screen fix: long unbroken text wraps instead of inflating layout ═══ */
 .kcard-title,
 .page,

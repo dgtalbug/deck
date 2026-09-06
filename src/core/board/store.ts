@@ -4,26 +4,21 @@ import { drizzle, type SQLiteBunDatabase } from 'drizzle-orm/bun-sqlite';
 import { migrate } from 'drizzle-orm/bun-sqlite/migrator';
 import { existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { z } from 'zod';
+
 import { readDeckConfig } from './config.ts';
 import { DeckError, NotFoundError } from './errors.ts';
 import { newCardId } from './ids.ts';
 import { endPosition, gapTooSmall, midpoint, renumberPositions } from './positions.ts';
 import { cards, tasks, userVerbs, type CardRow, type TaskRow } from './schema.ts';
 import { Verb } from './types.ts';
-import type { Card, Lane, Note, TaskState, Tweak, VerbItem } from './types.ts';
+import type { Card, Epic, Lane, Note, TaskState, VerbItem } from './types.ts';
+import { toEpic, toNote, toTweak, toVerbItem } from './mappers.ts';
 import { isNote } from './types.ts';
 import { emitEvent } from '../events/outbox.ts';
 
 // The board database filename inside a project's .deck/ — one constant shared
 // by the store, doctor, and the CLI's printed facts so they cannot drift.
 export const BOARD_DB_NAME = 'board.sqlite';
-
-const researchSchema = z.object({
-  codebaseFindings: z.array(z.string()),
-  rca: z.string().optional(),
-  blastRadius: z.array(z.string()).optional(),
-});
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -40,49 +35,6 @@ type SyncTxCallback = Parameters<SQLiteBunDatabase['transaction']>[0];
 // drizzle's conditional callback type.
 export function runTx(db: SQLiteBunDatabase, fn: (tx: Tx) => void): void {
   db.transaction(fn as unknown as SyncTxCallback, { behavior: 'immediate' });
-}
-
-function toTaskState(row: TaskRow): TaskState {
-  return {
-    id: row.id,
-    title: row.title,
-    done: row.done,
-    ...(row.addedByVerify === true ? { addedByVerify: true } : {}),
-  };
-}
-
-function toNote(row: CardRow): Note {
-  return { id: row.id, title: row.title, createdAt: row.createdAt };
-}
-
-function toTweak(row: CardRow): Tweak {
-  return {
-    id: row.id,
-    title: row.title,
-    requirement: row.requirement ?? row.title,
-    lane: row.lane,
-    position: row.position,
-    createdAt: row.createdAt,
-    updatedAt: row.updatedAt,
-  };
-}
-
-function toVerbItem(row: CardRow, taskRows: TaskRow[]): VerbItem {
-  return {
-    id: row.id,
-    title: row.title,
-    verb: row.verb ?? 'chore',
-    lane: row.lane,
-    position: row.position,
-    specPath: row.specPath ?? '',
-    tasks: taskRows.map(toTaskState),
-    research: researchSchema.parse(JSON.parse(row.research ?? '{"codebaseFindings":[]}')),
-    ...(row.blockedReason !== null && row.blockedAt !== null
-      ? { blocked: { reason: row.blockedReason, at: row.blockedAt } }
-      : {}),
-    createdAt: row.createdAt,
-    updatedAt: row.updatedAt,
-  };
 }
 
 export class DocumentStore {
@@ -139,6 +91,12 @@ export class DocumentStore {
         if (attempt >= 4) throw error;
         await Bun.sleep(50 * (attempt + 1));
       }
+    }
+    // Epic planning: cards.epic_id parent pointer (idempotent ALTER — the
+    // column is additive; drizzle migrations predate it).
+    const cols = sqlite.query("PRAGMA table_info('cards')").all() as Array<{ name: string }>;
+    if (!cols.some((col) => col.name === 'epic_id')) {
+      sqlite.exec('ALTER TABLE cards ADD COLUMN epic_id TEXT');
     }
     // User verbs ride raw DDL (migrations are generated for the core model;
     // this table is engine-registry state, idempotent on every open).
@@ -203,6 +161,7 @@ export class DocumentStore {
 
   private toCard(row: CardRow, taskRows: TaskRow[]): Card {
     if (row.type === 'note') return toNote(row);
+    if (row.type === 'epic') return toEpic(row);
     if (row.type === 'tweak') return toTweak(row);
     return toVerbItem(row, taskRows);
   }
@@ -226,6 +185,53 @@ export class DocumentStore {
     const row = this.cardRow(this.db, id);
     if (row.type !== 'verb') throw new NotFoundError('verb item', id);
     return toVerbItem(row, this.taskRows(this.db, id));
+  }
+
+  // --- epic planning ----------------------------------------------------------
+
+  addEpic(title: string): Epic {
+    const id = newCardId('epic');
+    const ts = nowIso();
+    runTx(this.db, (tx) => {
+      const position = endPosition(tx.select({ position: cards.position }).from(cards).where(eq(cards.lane, 'todo')).all().map((row) => row.position));
+      tx.insert(cards).values({ id, type: 'epic', title, lane: 'todo', position, createdAt: ts, updatedAt: ts }).run();
+      emitEvent(tx, 'card.created', { id, lane: 'todo', position });
+    });
+    return { id, title, createdAt: ts, type: 'epic' };
+  }
+
+  getEpic(id: string): Epic {
+    const row = this.cardRow(this.db, id);
+    if (row.type !== 'epic') throw new NotFoundError('epic', id);
+    return toEpic(row);
+  }
+
+  listEpics(): Epic[] {
+    return this.db.select().from(cards).where(eq(cards.type, 'epic')).orderBy(asc(cards.position), sql`rowid`).all().map(toEpic);
+  }
+
+  epicStories(epicId: string): Card[] {
+    return this.db.select().from(cards).where(eq(cards.epicId, epicId)).orderBy(asc(cards.createdAt)).all().map((row) => this.toCard(row, this.taskRows(this.db, row.id)));
+  }
+
+  // Attach/detach with typed refusals: unknown card/epic, non-epic parent,
+  // epic-on-epic nesting, self-attach.
+  setEpic(cardId: string, epicId: string | null): Card {
+    runTx(this.db, (tx) => {
+      const row = this.cardRow(tx, cardId);
+      if (row.type === 'epic') {
+        throw new DeckError(`card ${cardId} is an epic — epics cannot attach (no nesting in v1)`, { cardId });
+      }
+      if (epicId !== null) {
+        if (epicId === cardId) throw new DeckError(`card ${cardId} cannot attach to itself`, { cardId });
+        const parent = this.cardRow(tx, epicId);
+        if (parent.type !== 'epic') {
+          throw new DeckError(`card ${epicId} is not an epic — stories attach to epics only`, { cardId, epicId });
+        }
+      }
+      tx.update(cards).set({ epicId, updatedAt: nowIso() }).where(eq(cards.id, cardId)).run();
+    });
+    return this.getCard(cardId);
   }
 
   listCards(lane?: Lane): Card[] {

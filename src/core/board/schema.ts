@@ -18,6 +18,8 @@ export const cards = sqliteTable('cards', {
   position: real('position').notNull(),
   specPath: text('spec_path'),
   requirement: text('requirement'),
+  // epic planning: parent epic pointer (null = unattached)
+  epicId: text('epic_id'),
   research: text('research'), // JSON-encoded Research
   blockedReason: text('blocked_reason'),
   blockedAt: text('blocked_at'),

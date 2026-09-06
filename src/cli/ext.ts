@@ -6,6 +6,7 @@ import { resolveProject } from './context.ts';
 import { getStore } from '../core/projects/stores.ts';
 import { listHooks } from '../core/engine/hooks.ts';
 import { recall } from '../core/board/memory.ts';
+import { epicRollups } from '../core/board/views.ts';
 import { backfillSpecs, syncProject } from '../core/board/publish.ts';
 import { initProject } from '../core/projects/init.ts';
 import { detectHosts, listAgentHosts, scaffoldSkill, SkillNameError } from '../core/projects/harness.ts';
@@ -136,6 +137,87 @@ export async function skillCommand(args: ParsedArgs, ctx: RunContext): Promise<s
     if (error instanceof SkillNameError) throw new DeckError(error.message, { name });
     throw error;
   }
+}
+
+// `deck groom <id>` — prints the GroomProposal contract for a note.
+export async function groomCommand(args: ParsedArgs, ctx: RunContext): Promise<string> {
+  const id = args.positionals[0];
+  if (id === undefined || id.length === 0) throw new UsageError('usage: deck groom <id>');
+  const project = resolveProject(ctx.registry, args, ctx.cwd);
+  const store = await getStore(project.path);
+  store.getNote(id); // 404 contract when the id is not a note
+  const contract = {
+    noteId: id,
+    proposedVerb: 'feat',
+    refinedTitle: '<one-line imperative title>',
+    research: { codebaseFindings: ['<what you found in the code>'] },
+    specDeltas: [{ op: 'ADDED', requirement: '<Requirement: name>', text: '<text>' }],
+    tasks: ['<task>'],
+    openQuestions: [],
+  };
+  return `POST /:project/cards/${id}/groom with:\n${JSON.stringify(contract, null, 2)}`;
+}
+
+// `deck epic "<title>"` creates an epic; `deck epic <id>` prints its tree.
+export async function epicCommand(args: ParsedArgs, ctx: RunContext): Promise<string> {
+  const first = args.positionals[0];
+  if (first === undefined || first.length === 0) throw new UsageError('usage: deck epic "<title>" | deck epic <id>');
+  const project = resolveProject(ctx.registry, args, ctx.cwd);
+  const store = await getStore(project.path);
+  const p = ctx.pal;
+  if (/^[a-z0-9-]+-[a-z0-9]{4}$/.test(first)) {
+    // looks like an id — print the tree
+    const epic = store.getEpic(first);
+    const stories = store.epicStories(first);
+    const done = stories.filter((story) => 'lane' in story && story.lane === 'done').length;
+    const lines = [
+      `${p.color('primary', '♠')} ${p.bold(`epic — ${epic.title}`)}`,
+      '',
+      `  ${p.dim('id')}      ${epic.id}`,
+      `  ${p.dim('rollup')} ${done}/${stories.length} stories done`,
+      '',
+    ];
+    if (stories.length === 0) {
+      lines.push('  (no stories — deck story <epicId> "<title>" adds one)');
+    }
+    for (const story of stories) {
+      const lane = 'lane' in story ? story.lane : 'todo';
+      const tasks = 'tasks' in story ? ` ${story.tasks.filter((task) => task.done).length}/${story.tasks.length}` : '';
+      lines.push(`  ${story.id}  [${lane}]${tasks}  ${story.title}`);
+    }
+    return lines.join('\n');
+  }
+  const epic = store.addEpic(args.positionals.join(' '));
+  return [
+    `${p.color('primary', '♠')} epic created — ${epic.title}`,
+    '',
+    `  ${p.dim('id')}     ${epic.id}`,
+    `  ${p.dim('story')}  deck story ${epic.id} "<title>"`,
+  ].join('\n');
+}
+
+// `deck epics` — every epic with its rollup.
+export async function epicsCommand(args: ParsedArgs, ctx: RunContext): Promise<string> {
+  const project = resolveProject(ctx.registry, args, ctx.cwd);
+  const store = await getStore(project.path);
+  const rollups = epicRollups(store);
+  if (rollups.length === 0) return 'no epics — deck epic "<title>" creates one';
+  const p = ctx.pal;
+  return rollups
+    .map((epic) => `${p.dim(epic.id)}  ${epic.done}/${epic.stories} done  ${p.color('primary', epic.title)}`)
+    .join('\n');
+}
+
+// `deck story <epicId> "<title>"` — a note born attached to its epic.
+export async function storyCommand(args: ParsedArgs, ctx: RunContext): Promise<string> {
+  const [epicId, ...title] = args.positionals;
+  if (epicId === undefined || title.length === 0) throw new UsageError('usage: deck story <epicId> "<title>"');
+  const project = resolveProject(ctx.registry, args, ctx.cwd);
+  const store = await getStore(project.path);
+  const epic = store.getEpic(epicId); // typed 404 when not an epic
+  const note = store.addNote(title.join(' '));
+  store.setEpic(note.id, epic.id);
+  return [note.id, `story attached to epic ${epic.id}`].join('\n');
 }
 
 // A registered user verb dispatches through the shared start command exactly
