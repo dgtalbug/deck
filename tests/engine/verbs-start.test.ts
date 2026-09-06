@@ -9,6 +9,7 @@ import { archiveVerb, startVerb, branchFor } from '../../src/core/engine/verbs.t
 import { getIssueMap } from '../../src/core/board/specstore.ts';
 import { nextDigest } from '../../src/core/board/next.ts';
 import { DeckError, WipLimitError } from '../../src/core/board/errors.ts';
+import type { Verb as VerbType } from '../../src/core/board/types.ts';
 
 // Real tmp git repos + gh stub (ops.test.ts pattern): every guard runs
 // against git itself.
@@ -50,7 +51,7 @@ const GH_OK = `case "$1 $2" in
   *) echo ok ;;
 esac`;
 
-function groomed(title: string, verb: 'feat' | 'fix' = 'feat'): string {
+function groomed(title: string, verb: VerbType = 'feat'): string {
   const note = store.addNote(title);
   convertToVerbItem(store, {
     noteId: note.id,
@@ -160,8 +161,8 @@ describe('startVerb', () => {
     expect(outcome.issueNumber).toBeNull();
     expect(git('rev-parse --abbrev-ref HEAD').trim()).toBe(outcome.branch);
   });
-});
 
+});
 describe('context pack', () => {
   test('at-limit deck next carries branch + issue + checklist within budget', async () => {
     stubGh(GH_OK);

@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { archiveVerb, startVerb } from '../../core/engine/verbs.ts';
+import { Verb } from '../../core/board/types.ts';
 import { GitOpError } from '../../core/git/errors.ts';
 import type { ProjectRegistry } from '../../core/projects/registry.ts';
 import { projectStore } from '../stores.ts';
@@ -10,7 +11,7 @@ export const parity = {
   'POST /:project/cards/:id/archive': 'archiveVerb',
 };
 
-export const startBody = z.object({ verb: z.enum(['feat', 'fix']) });
+export const startBody = z.object({ verb: z.enum(Verb) });
 
 // Engine-event routes (v0.5.0, additive): verb start + archive over HTTP.
 // Guards map per the typed errors — verb/state refusals 400, WIP 409,
