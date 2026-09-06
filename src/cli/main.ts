@@ -7,6 +7,7 @@ import { DeckError } from '../core/board/errors.ts';
 import { tweak } from '../core/board/groom.ts';
 import { moveLane } from '../core/board/lanes.ts';
 import { nextDigest } from '../core/board/next.ts';
+import { backfillSpecs, syncProject } from '../core/board/publish.ts';
 import { applyVerifyResult } from '../core/board/verify.ts';
 import { boardView, todoView } from '../core/board/views.ts';
 import type { Lane } from '../core/board/types.ts';
@@ -41,6 +42,8 @@ export const parity = {
   'deck init': 'initProject',
   'deck doctor': 'runDoctor',
   'deck projects': 'projectSummary',
+  'deck sync': 'syncProject',
+  'deck backfill-specs': 'backfillSpecs',
 };
 
 export interface CliIo {
@@ -69,6 +72,8 @@ commands:
   init [--name <name>]              register + scaffold this project
   doctor                            report drift (all checks must pass)
   projects                          list registered projects
+  sync                              flush the publish queue + report issue drift
+  backfill-specs                   import existing specs + publish their issues
   serve [--port <n>] [--host <h>]   start the server (default when bare)`;
 
 type Command = (args: ParsedArgs, ctx: RunContext) => Promise<string | number>;
@@ -187,6 +192,39 @@ const commands: Record<string, Command> = {
       ctx.registry.list().map(async (project) => projectSummary(await getStore(project.path), project)),
     );
     return renderProjects(projects, ctx.pal);
+  },
+  sync: async (args, ctx) => {
+    const project = resolveProject(ctx.registry, args, ctx.cwd);
+    const store = await getStore(project.path);
+    const report = await syncProject(store);
+    const lines: string[] = [];
+    for (const flush of report.flushed) {
+      lines.push(
+        flush.queued
+          ? `flush  ${flush.cardId} — still queued (gh offline)`
+          : `flush  ${flush.cardId} — issue #${flush.issueNumber}`,
+      );
+    }
+    if (report.flushedPending > 0) lines.push(`queue  ${report.flushedPending} publish(es) still pending`);
+    if (report.gh === 'unavailable') lines.push('warn   gh unreachable — drift check skipped');
+    for (const drift of report.drift) {
+      lines.push(`drift  #${drift.issueNumber} [${drift.kind}] ${drift.detail}`);
+      lines.push(`       fix: ${drift.fix}`);
+    }
+    if (report.labelsRefreshed > 0) lines.push(`labels ${report.labelsRefreshed} refreshed to match lanes`);
+    if (lines.length === 0) return 'sync clean — queue empty, no drift';
+    ctx.io.out(lines.join('\n'));
+    return report.drift.length > 0 ? 1 : 0;
+  },
+  'backfill-specs': async (args, ctx) => {
+    const project = resolveProject(ctx.registry, args, ctx.cwd);
+    const store = await getStore(project.path);
+    const report = await backfillSpecs(store);
+    const lines = [
+      `imported ${report.imported}  published ${report.published}  existing ${report.skippedExisting}`,
+    ];
+    for (const issue of report.issues) lines.push(`note  ${issue}`);
+    return lines.join('\n');
   },
   serve: async () => {
     await serveMain();

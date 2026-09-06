@@ -57,6 +57,6 @@ describe('startup banner', () => {
       rows: 40,
     });
     expect(out.split('\n').length).toBe(8);
-    expect(stripSgr(out)).toContain(`deck v0.3.0`);
+    expect(stripSgr(out)).toContain(`deck v0.4.0`);
   });
 });

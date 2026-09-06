@@ -1,6 +1,10 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { issueMap } from '../board/schema.ts';
+import { newestSpecVersion } from '../board/specstore.ts';
 import { BOARD_DB_NAME } from '../board/store.ts';
+import { GhUnavailableError, GitOpError } from '../git/errors.ts';
+import { viewIssue } from '../git/issues.ts';
 import { runGit } from '../git/digest.ts';
 import { runGh } from '../git/gh.ts';
 import { AGENTS_END, AGENTS_START, agentsBlock, boardUrlFor } from './init.ts';
@@ -100,7 +104,55 @@ export async function runDoctor(
         : `dead entries: ${dead.map((entry) => entry.name).join(', ')}`,
   });
 
+  checks.push(await mapDriftCheck(projectPath));
+
   return checks;
+}
+
+// Spec-store map drift (v0.4.0): every mapped issue must exist on GitHub,
+// carry the state and checksum the map recorded. gh-down is a skip with a
+// warning, not a failure — absent tooling is not drift. Requires a board db;
+// doctor never creates one, so a missing db also skips.
+async function mapDriftCheck(projectPath: string): Promise<DoctorCheck> {
+  const dbPath = join(projectPath, '.deck', BOARD_DB_NAME);
+  if (!existsSync(dbPath)) {
+    return { name: 'issue map', pass: true, detail: 'skipped — no board db' };
+  }
+  const { openStore } = await import('../board/store.ts');
+  const store = await openStore(projectPath);
+  const mapped = store.db.select().from(issueMap).all();
+  if (mapped.length === 0) {
+    return { name: 'issue map', pass: true, detail: 'no mapped issues' };
+  }
+  const problems: string[] = [];
+  try {
+    for (const row of mapped) {
+      try {
+        const issue = await viewIssue(projectPath, row.issueNumber);
+        const card = store.getCard(row.cardId);
+        const done = 'lane' in card && card.lane === 'done';
+        if (issue.state === 'closed' && !done) problems.push(`#${row.issueNumber} closed but card not done`);
+        if (issue.state === 'open' && done) problems.push(`#${row.issueNumber} open but card done`);
+        const newest = newestSpecVersion(store, row.cardId);
+        if (newest !== undefined && newest.checksum !== row.checksum) {
+          problems.push(`#${row.issueNumber} spec version newer than published`);
+        }
+      } catch (error) {
+        if (error instanceof GitOpError) problems.push(`#${row.issueNumber} unreadable: ${error.message}`);
+        else throw error;
+      }
+    }
+  } catch (error) {
+    if (error instanceof GhUnavailableError) {
+      return { name: 'issue map', pass: true, detail: `skipped — gh unavailable (${mapped.length} mapped)` };
+    }
+    throw error;
+  }
+  return {
+    name: 'issue map',
+    pass: problems.length === 0,
+    detail: problems.length === 0 ? `${mapped.length} mapped, no drift` : problems.join('; '),
+  };
 }
 
 export function renderDoctor(checks: DoctorCheck[]): string {

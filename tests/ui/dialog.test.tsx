@@ -94,7 +94,7 @@ describe('Dialog focus stability across re-renders', () => {
       setter.call(typed, typed.value + ch);
       typed.dispatchEvent(new win.Event('input', { bubbles: true }) as unknown as Event);
       await new Promise((resolve) => setTimeout(resolve, 30)); // re-render + microtasks flush
-      expect(win.document.activeElement).toBe(typed); // focus must stay in the field
+      expect(win.document.activeElement).toBe(typed as unknown as Hdom); // focus must stay in the field
     }
     expect(typed.value).toBe('abc');
   });

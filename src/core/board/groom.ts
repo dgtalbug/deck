@@ -9,6 +9,7 @@ import { runTx, type DocumentStore } from './store.ts';
 import type { GroomProposal, Note, Tweak, VerbItem } from './types.ts';
 import { emitEvent } from '../events/outbox.ts';
 import { assertUnderWip } from './lanes.ts';
+import { recordSpecVersion, renderCardSpec } from './specstore.ts';
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -77,6 +78,7 @@ export function convertToVerbItem(store: DocumentStore, proposal: GroomProposal)
   });
   const item = store.getVerbItem(proposal.noteId);
   materializeSpec(store.projectPath, item.specPath, proposal);
+  recordSpecVersion(store, proposal.noteId, renderCardSpec(store, item));
   return item;
 }
 
