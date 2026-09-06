@@ -7,7 +7,8 @@ import { resolveProject } from './context.ts';
 import { getStore } from '../core/projects/stores.ts';
 import { startVerb } from '../core/engine/verbs.ts';
 import type { ProjectRegistry } from '../core/projects/registry.ts';
-import type { Verb } from '../core/board/types.ts';
+import type { VerbName } from '../core/board/types.ts';
+import { renderHookWarnings } from '../core/engine/hooks.ts';
 import { withSpinner } from './spin.ts';
 import type { Palette } from './color.ts';
 import type { CliIo } from './main.ts';
@@ -15,7 +16,7 @@ import type { CliIo } from './main.ts';
 export async function startCommand(
   args: ParsedArgs,
   options: { registry: ProjectRegistry; cwd: string; io: CliIo; pal: Palette },
-  verb: Verb,
+  verb: VerbName,
 ): Promise<string> {
   const id = args.positionals[0];
   if (id === undefined || id.length === 0) {
@@ -29,6 +30,7 @@ export async function startCommand(
     `starting ${verb}…`,
     async () => {
       const outcome = await startVerb(store, id, verb);
+      if (outcome.hookWarnings.length > 0) options.io.err(renderHookWarnings(outcome.hookWarnings).join('\n'));
       return [
         `${p.color('primary', '♠')} ${p.bold(`${verb} started — ${outcome.card.title}`)}`,
         '',

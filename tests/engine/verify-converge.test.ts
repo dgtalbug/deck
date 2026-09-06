@@ -82,7 +82,7 @@ describe('runVerification', () => {
   test('seeded gap loops the card to active with the task appended', async () => {
     stubGh();
     const id = await verifyCard('converge seeded', ['the unfinished work']);
-    const outcome = runVerification(store, id);
+    const outcome = await runVerification(store, id);
     expect(outcome.result).toBe('gaps');
     expect(outcome.gaps).toHaveLength(1);
     const card = store.getVerbItem(id);
@@ -95,7 +95,7 @@ describe('runVerification', () => {
     stubGh();
     const id = await verifyCard('converge clean', ['all done']);
     store.syncTasks(id, store.getVerbItem(id).tasks.map((task) => ({ ...task, done: true })), 'engine');
-    const outcome = runVerification(store, id);
+    const outcome = await runVerification(store, id);
     expect(outcome.result).toBe('clean');
     expect(store.getVerbItem(id).lane).toBe('done');
   });
@@ -103,12 +103,12 @@ describe('runVerification', () => {
   test('the loop converges: gap → fix → clean', async () => {
     stubGh();
     const id = await verifyCard('converge loop', ['first pass']);
-    runVerification(store, id); // gaps → active + appended
+    await runVerification(store, id); // gaps → active + appended
     const card = store.getVerbItem(id);
     expect(card.tasks).toHaveLength(2); // original + appended copy
     store.syncTasks(id, card.tasks.map((task) => ({ ...task, done: true })), 'engine');
     moveLane(store, id, 'verify', 'engine');
-    const second = runVerification(store, id);
+    const second = await runVerification(store, id);
     expect(second.result).toBe('clean');
     expect(store.getVerbItem(id).lane).toBe('done');
   });

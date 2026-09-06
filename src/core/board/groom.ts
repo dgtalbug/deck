@@ -37,6 +37,14 @@ export function materializeSpec(
 }
 
 export function convertToVerbItem(store: DocumentStore, proposal: GroomProposal): VerbItem {
+  // A card is born only on a verb the engine serves: built-in or registered
+  // through `deck workflow` (hooks-runner extension point).
+  if (!store.isRegisteredVerb(proposal.proposedVerb)) {
+    throw new DeckError(
+      `verb '${proposal.proposedVerb}' is not registered — built-ins or 'deck workflow <verb>' names only`,
+      { noteId: proposal.noteId, verb: proposal.proposedVerb },
+    );
+  }
   if (proposal.openQuestions.length > 0) {
     throw new DeckError(
       `groom proposal for ${proposal.noteId} has ${proposal.openQuestions.length} ` +

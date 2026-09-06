@@ -6,10 +6,11 @@ import { existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { z } from 'zod';
 import { readDeckConfig } from './config.ts';
-import { NotFoundError } from './errors.ts';
+import { DeckError, NotFoundError } from './errors.ts';
 import { newCardId } from './ids.ts';
 import { endPosition, gapTooSmall, midpoint, renumberPositions } from './positions.ts';
-import { cards, tasks, type CardRow, type TaskRow } from './schema.ts';
+import { cards, tasks, userVerbs, type CardRow, type TaskRow } from './schema.ts';
+import { Verb } from './types.ts';
 import type { Card, Lane, Note, TaskState, Tweak, VerbItem } from './types.ts';
 import { isNote } from './types.ts';
 import { emitEvent } from '../events/outbox.ts';
@@ -127,8 +128,40 @@ export class DocumentStore {
         await Bun.sleep(50 * (attempt + 1));
       }
     }
+    // User verbs ride raw DDL (migrations are generated for the core model;
+    // this table is engine-registry state, idempotent on every open).
+    sqlite.exec('CREATE TABLE IF NOT EXISTS user_verbs (name TEXT PRIMARY KEY NOT NULL, registered_at TEXT NOT NULL)');
     const config = await readDeckConfig(projectPath);
     return new DocumentStore(projectPath, dbPath, db, config.board?.wipLimit ?? 3);
+  }
+
+  // --- user verb registry (deck workflow) -----------------------------------
+
+  listUserVerbs(): string[] {
+    return this.db.select().from(userVerbs).all().map((row) => row.name).sort();
+  }
+
+  // Throws on invalid names, built-ins, and duplicates — the typed refusal
+  // the workflow command surfaces. Idempotent for an already-registered name.
+  registerUserVerb(name: string): string {
+    if (!/^[a-z][a-z0-9-]*$/.test(name)) {
+      throw new DeckError(
+        `verb name '${name}' is invalid — lower-case letters, digits, and dashes, starting with a letter`,
+        { name },
+      );
+    }
+    if ((Object.values(Verb) as string[]).includes(name)) {
+      throw new DeckError(`verb '${name}' is built-in — the shared engine already serves it`, { name });
+    }
+    const existing = this.db.select().from(userVerbs).all();
+    if (existing.some((row) => row.name === name)) return name;
+    this.db.insert(userVerbs).values({ name, registeredAt: new Date().toISOString() }).run();
+    return name;
+  }
+
+  isRegisteredVerb(name: string): boolean {
+    if ((Object.values(Verb) as string[]).includes(name)) return true;
+    return this.db.select().from(userVerbs).all().some((row) => row.name === name);
   }
 
   // --- reads ---------------------------------------------------------------

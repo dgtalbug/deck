@@ -24,9 +24,9 @@ export const parity = {
 };
 
 export const groomBody = z.object({
-  proposedVerb: z.enum([
-    'feat', 'fix', 'docs', 'style', 'refactor', 'perf', 'test', 'build', 'ci', 'chore', 'revert',
-  ]),
+  // Any well-formed verb name parses here; convertToVerbItem refuses names
+  // that are neither built-in nor registered through `deck workflow`.
+  proposedVerb: z.string().regex(/^[a-z][a-z0-9-]*$/),
   refinedTitle: z.string().min(1),
   research: z.object({
     codebaseFindings: z.array(z.string()),

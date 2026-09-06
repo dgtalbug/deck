@@ -10,6 +10,7 @@ import { nextDigest } from '../core/board/next.ts';
 import { backfillSpecs, syncProject } from '../core/board/publish.ts';
 import { applyVerifyResult } from '../core/board/verify.ts';
 import { archiveVerb } from '../core/engine/verbs.ts';
+import { renderHookWarnings } from '../core/engine/hooks.ts';
 import { renderFindings, reviewGate, runVerification } from '../core/engine/verify.ts';
 import { getIssueMap } from '../core/board/specstore.ts';
 import { viewIssue } from '../core/git/issues.ts';
@@ -25,6 +26,7 @@ import { noteBody } from '../server/routes/notes.ts';
 import { serveMain } from '../server/serve.ts';
 import { flagString, flagStrings, parseArgs, UsageError, type ParsedArgs } from './args.ts';
 import { startCommand } from './start.ts';
+import { hooksCommand, userVerbCommand, workflowCommand } from './ext.ts';
 import { ProjectResolutionError, resolveProject } from './context.ts';
 import { detectLevel, palette, type Palette } from './color.ts';
 import { withSpinner } from './spin.ts';
@@ -60,6 +62,8 @@ export const parity = {
   'deck ci': 'startVerb',
   'deck chore': 'startVerb',
   'deck revert': 'startVerb',
+  'deck hooks': 'listHooks',
+  'deck workflow': 'registerUserVerb',
   'deck archive': 'archiveVerb',
   'deck issue': 'viewIssue',
   'deck review': 'reviewGate',
@@ -96,13 +100,15 @@ commands:
   backfill-specs                   import existing specs + publish their issues
   feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert <id>
                                     start a build: active + issue + branch
+  workflow <new-verb>               register a user verb on the shared engine
+  hooks                             list installed hooks (.deck/hooks/<event>/<name>)
   archive <id>                     merge the PR, close the issue, card → done
   issue <id>                       print the card's mapped GitHub issue
   serve [--port <n>] [--host <h>]   start the server (default when bare)`;
 
-type Command = (args: ParsedArgs, ctx: RunContext) => Promise<string | number>;
+export type Command = (args: ParsedArgs, ctx: RunContext) => Promise<string | number>;
 
-interface RunContext {
+export interface RunContext {
   registry: ProjectRegistry;
   cwd: string;
   io: CliIo;
@@ -191,7 +197,8 @@ const commands: Record<string, Command> = {
     if (explicit === undefined) {
       // Computed convergence (P1c): deck enumerates the gaps itself and
       // feeds them through applyVerifyResult; gaps exit non-zero.
-      const outcome = runVerification(store, id);
+      const outcome = await runVerification(store, id);
+      if (outcome.hookWarnings.length > 0) ctx.io.err(renderHookWarnings(outcome.hookWarnings).join('\n'));
       if (outcome.result === 'gaps') {
         const lines = outcome.gaps.map((gap) => `gap  ${gap.taskTitle} (evidence: ${gap.evidence})`);
         ctx.io.out(lines.join('\n'));
@@ -307,6 +314,7 @@ const commands: Record<string, Command> = {
       'archiving…',
       async () => {
         const outcome = await archiveVerb(store, id);
+        if (outcome.hookWarnings.length > 0) ctx.io.err(renderHookWarnings(outcome.hookWarnings).join('\n'));
         return [
           `${p.color('primary', '♠')} ${p.bold(`archived — ${outcome.card.title}`)}`,
           '',
@@ -317,6 +325,8 @@ const commands: Record<string, Command> = {
       },
     );
   },
+  hooks: hooksCommand,
+  workflow: workflowCommand,
   serve: async () => {
     await serveMain();
     return 0;
@@ -350,10 +360,15 @@ export async function runCli(argv: string[], options: RunOptions = {}): Promise<
     await serveMain();
     return 0;
   }
-  const handler = commands[args.command];
+  let handler: Command | undefined = commands[args.command];
   if (handler === undefined) {
-    io.err(`deck: unknown command '${args.command}'\n\n${USAGE}`);
-    return 64;
+    // Registered user verbs (deck workflow) dispatch through the shared
+    // start command exactly as the built-ins do; anything else is usage.
+    handler = await userVerbCommand(args, ctx);
+    if (handler === undefined) {
+      io.err(`deck: unknown command '${args.command}'\n\n${USAGE}`);
+      return 64;
+    }
   }
   try {
     const result = await handler(args, ctx);

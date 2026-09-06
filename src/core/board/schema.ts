@@ -5,7 +5,7 @@ import {
   sqliteTable,
   text,
 } from 'drizzle-orm/sqlite-core';
-import type { CardType, Lane, Verb } from './types.ts';
+import type { CardType, Lane, VerbName } from './types.ts';
 
 // One cards table with a type discriminator: grooming converts the same row
 // (same id) from note → verb, per the epic's convertToVerbItem contract.
@@ -13,9 +13,7 @@ export const cards = sqliteTable('cards', {
   id: text('id').primaryKey(),
   type: text('type', { enum: ['note', 'verb', 'tweak'] }).$type<CardType>().notNull(),
   title: text('title').notNull(),
-  verb: text('verb', {
-    enum: ['feat', 'fix', 'docs', 'style', 'refactor', 'perf', 'test', 'build', 'ci', 'chore', 'revert'],
-  }).$type<Verb | null>(),
+  verb: text('verb').$type<VerbName | null>(),
   lane: text('lane', { enum: ['todo', 'groomed', 'active', 'verify', 'done'] }).$type<Lane>().notNull(),
   position: real('position').notNull(),
   specPath: text('spec_path'),
@@ -73,8 +71,16 @@ export const publishQueue = sqliteTable('publish_queue', {
   enqueuedAt: text('enqueued_at').notNull(),
 });
 
+// User verbs registered through `deck workflow` — same engine, same lanes;
+// one row per name, no config file.
+export const userVerbs = sqliteTable('user_verbs', {
+  name: text('name').primaryKey(),
+  registeredAt: text('registered_at').notNull(),
+});
+
 export type CardRow = typeof cards.$inferSelect;
 export type TaskRow = typeof tasks.$inferSelect;
 export type SpecRow = typeof specs.$inferSelect;
 export type IssueMapRow = typeof issueMap.$inferSelect;
 export type PublishQueueRow = typeof publishQueue.$inferSelect;
+export type UserVerbRow = typeof userVerbs.$inferSelect;
