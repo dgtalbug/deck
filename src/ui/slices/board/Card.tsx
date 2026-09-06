@@ -1,5 +1,5 @@
 import type { VNode } from 'preact';
-import { GripVertical, OctagonPause, OctagonX, StickyNote, TriangleAlert, Zap } from 'lucide-preact';
+import { GripVertical, OctagonPause, OctagonX, StickyNote, Target, TriangleAlert, Zap } from 'lucide-preact';
 import type { UiCard } from './api.ts';
 import { VerbIcon } from './verbIcon.tsx';
 import { Menu } from '../../components/Menu.tsx';
@@ -129,6 +129,11 @@ export function Card({ card, actions, dnd, flash }: { card: UiCard; actions: Car
         {kind === 'tweak' ? (
           <span class="type-tweak">
             <Zap size={12} /> tweak
+          </span>
+        ) : null}
+        {card.epicId !== undefined ? (
+          <span class="type-epic" title={`story of epic ${card.epicId}`}>
+            <Target size={12} /> epic
           </span>
         ) : null}
         {progress !== null ? <span class="kcard-progress frac">{card.progress}</span> : null}

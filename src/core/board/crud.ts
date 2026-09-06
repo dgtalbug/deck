@@ -40,6 +40,10 @@ export function deleteCard(store: DocumentStore, id: string): void {
     const row = tx.select().from(cards).where(eq(cards.id, id)).get();
     if (!row) throw new NotFoundError('card', id);
     assertManualLane(id, row.lane, 'delete');
+    // Deleting an epic detaches its stories — children survive parentless.
+    if (row.type === 'epic') {
+      tx.update(cards).set({ epicId: null, updatedAt: new Date().toISOString() }).where(eq(cards.epicId, id)).run();
+    }
     tx.delete(tasks).where(eq(tasks.cardId, id)).run();
     tx.delete(cards).where(eq(cards.id, id)).run();
     emitEvent(tx, 'card.deleted', { id, lane: row.lane });

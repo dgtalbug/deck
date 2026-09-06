@@ -20,6 +20,24 @@ const LANES: Lane[] = ['todo', 'groomed', 'active', 'verify', 'done'];
 
 export interface BoardView {
   lanes: Record<Lane, CardView[]>;
+  epics: EpicRollup[];
+}
+
+// Per-epic rollup: stories done/total, computed live from card state —
+// no counters to drift.
+export interface EpicRollup {
+  id: string;
+  title: string;
+  stories: number;
+  done: number;
+}
+
+export function epicRollups(store: DocumentStore): EpicRollup[] {
+  return store.listEpics().map((epic) => {
+    const stories = store.epicStories(epic.id);
+    const done = stories.filter((story) => 'lane' in story && story.lane === 'done').length;
+    return { id: epic.id, title: epic.title, stories: stories.length, done };
+  });
 }
 
 export function boardView(store: DocumentStore): BoardView {
@@ -29,14 +47,19 @@ export function boardView(store: DocumentStore): BoardView {
   for (const lane of LANES) {
     lanes[lane] = store.listCards(lane).map(cardView);
   }
-  return { lanes };
+  return { lanes, epics: epicRollups(store) };
 }
 
 export interface TodoView {
   view: 'todo';
   cards: CardView[];
+  epics: EpicRollup[];
 }
 
 export function todoView(store: DocumentStore): TodoView {
-  return { view: 'todo', cards: [...store.listCards('todo'), ...store.listCards('groomed')].map(cardView) };
+  return {
+    view: 'todo',
+    cards: [...store.listCards('todo'), ...store.listCards('groomed')].map(cardView),
+    epics: epicRollups(store),
+  };
 }

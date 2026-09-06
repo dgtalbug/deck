@@ -31,6 +31,7 @@ import { parity as gitParity } from '../../src/server/routes/git.ts';
 import { parity as homeParity } from '../../src/server/routes/home.ts';
 import { parity as notesParity } from '../../src/server/routes/notes.ts';
 import { parity as sseParity } from '../../src/server/sse.ts';
+import { parity as epicsParity } from '../../src/server/routes/epics.ts';
 
 // Route → core parity (epic rule): every route maps to exactly one core
 // function with the same name — endpoint tests double as CLI tests.
@@ -46,6 +47,11 @@ const functions: Record<string, unknown> = {
   ...projectsHarness,
   ...serverMcp,
   registerUserVerb: DocumentStore.prototype.registerUserVerb,
+  addEpic: DocumentStore.prototype.addEpic,
+  listEpics: DocumentStore.prototype.listEpics,
+  getEpic: DocumentStore.prototype.getEpic,
+  epicStories: DocumentStore.prototype.epicStories,
+  setEpic: DocumentStore.prototype.setEpic,
   isRegisteredVerb: DocumentStore.prototype.isRegisteredVerb,
   listUserVerbs: DocumentStore.prototype.listUserVerbs,
   ...git,
@@ -65,7 +71,7 @@ const functions: Record<string, unknown> = {
   list: ProjectRegistry.prototype.list,
 };
 
-const parityTables = [homeParity, boardParity, notesParity, cardsParity, specsParity, engineParity, gitParity, sseParity];
+const parityTables = [homeParity, boardParity, notesParity, cardsParity, specsParity, engineParity, gitParity, sseParity, epicsParity];
 
 describe('route-to-core parity', () => {
   test('every declared route maps to an existing core function', () => {
