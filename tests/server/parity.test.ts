@@ -7,6 +7,7 @@ import * as engineVerify from '../../src/core/engine/verify.ts';
 import * as engineHooks from '../../src/core/engine/hooks.ts';
 import * as boardMemory from '../../src/core/board/memory.ts';
 import * as projectsHarness from '../../src/core/projects/harness.ts';
+import * as serverMcp from '../../src/server/mcp.ts';
 import * as specstore from '../../src/core/board/specstore.ts';
 import * as git from '../../src/core/git/digest.ts';
 import * as gitops from '../../src/core/git/ops.ts';
@@ -43,6 +44,7 @@ const functions: Record<string, unknown> = {
   ...engineHooks,
   ...boardMemory,
   ...projectsHarness,
+  ...serverMcp,
   registerUserVerb: DocumentStore.prototype.registerUserVerb,
   isRegisteredVerb: DocumentStore.prototype.isRegisteredVerb,
   listUserVerbs: DocumentStore.prototype.listUserVerbs,
