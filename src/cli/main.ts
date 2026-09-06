@@ -10,6 +10,8 @@ import { nextDigest } from '../core/board/next.ts';
 import { backfillSpecs, syncProject } from '../core/board/publish.ts';
 import { applyVerifyResult } from '../core/board/verify.ts';
 import { archiveVerb, startVerb } from '../core/engine/verbs.ts';
+import { getIssueMap } from '../core/board/specstore.ts';
+import { viewIssue } from '../core/git/issues.ts';
 import { boardView, todoView } from '../core/board/views.ts';
 import type { Lane } from '../core/board/types.ts';
 import { initProject } from '../core/projects/init.ts';
@@ -48,6 +50,7 @@ export const parity = {
   'deck feat': 'startVerb',
   'deck fix': 'startVerb',
   'deck archive': 'archiveVerb',
+  'deck issue': 'viewIssue',
 };
 
 export interface CliIo {
@@ -80,6 +83,7 @@ commands:
   backfill-specs                   import existing specs + publish their issues
   feat <id> / fix <id>             start a build: active + issue + branch
   archive <id>                     merge the PR, close the issue, card → done
+  issue <id>                       print the card's mapped GitHub issue
   serve [--port <n>] [--host <h>]   start the server (default when bare)`;
 
 type Command = (args: ParsedArgs, ctx: RunContext) => Promise<string | number>;
@@ -233,6 +237,18 @@ const commands: Record<string, Command> = {
     return lines.join('\n');
   },
   feat: (args, ctx) => startCommand(args, ctx, 'feat'),
+  issue: async (args, ctx) => {
+    const id = requiredId(args, 'issue <id>');
+    const project = resolveProject(ctx.registry, args, ctx.cwd);
+    const store = await getStore(project.path);
+    const map = getIssueMap(store, id);
+    if (map === undefined) {
+      throw new DeckError(`card ${id} has no mapped issue — publish it first`, { cardId: id });
+    }
+    const view = await viewIssue(project.path, map.issueNumber);
+    const p = ctx.pal;
+    return `${p.dim('#' + view.number)} ${view.state === 'open' ? p.color('primary', view.url) : view.url}`;
+  },
   fix: (args, ctx) => startCommand(args, ctx, 'fix'),
   archive: async (args, ctx) => {
     const id = requiredId(args, 'archive <id>');

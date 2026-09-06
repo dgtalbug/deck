@@ -70,10 +70,13 @@ beforeEach(async () => {
   git('init --initial-branch=main');
   git('config user.email t@t');
   git('config user.name t');
-  writeFileSync(join(dir, '.gitignore'), 'bin/\n.deck/\nspecs/\n');
+  writeFileSync(join(dir, '.gitignore'), 'bin/\n.deck/\nspecs/\norigin.git/\n');
+  git('init --bare origin.git');
+  git('remote add origin ./origin.git');
   writeFileSync(join(dir, 'a.txt'), 'one\n');
   git('add .');
   git('commit -m "c1"');
+  git('push -u origin main');
   store = await openStore(dir);
 });
 
