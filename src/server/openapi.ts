@@ -4,6 +4,7 @@ import { DECK_VERSION } from '../version.ts';
 import { blockBody, groomBody, moveBody, reorderBody, updateBody, verifyBody } from './routes/cards.ts';
 import { noteBody } from './routes/notes.ts';
 import { branchBody, commitBody, mergeBody, pullsBody, stashBody, switchBody } from './routes/git.ts';
+import { startBody } from './routes/engine.ts';
 
 // OpenAPI 3.1 document generated from the same zod schemas that validate
 // request bodies — one source of truth, no doc drift, no extra dependency.
@@ -80,8 +81,10 @@ export function openApiDocument(): Record<string, unknown> {
         'undo-commit/stash/stash pop/branch delete/fetch/pull/push) and PR create/' +
         'list via gh. v0.4.0 adds the spec-store surface (publish a card spec as ' +
         'a GitHub issue with offline queueing, spec version history, project ' +
-        'sync/reconcile, one-time backfill of existing specs) — all additive; no ' +
-        'earlier route, payload, or event changed, and publication emits no SSE events.',
+        'sync/reconcile, one-time backfill of existing specs). v0.5.0 adds the ' +
+        'engine verb routes (start a feat/fix build: active + issue + guarded ' +
+        'branch; archive: spec-generated PR merged, card done, issue closed) — ' +
+        'all additive; no earlier route, payload, or event changed.',
     },
     servers: [{ url: 'http://127.0.0.1:3325' }],
     paths: {
@@ -193,6 +196,8 @@ export function openApiDocument(): Record<string, unknown> {
           responses: { '200': jsonResponse('SpecVersion[]'), '404': errorResponses['404'] },
         },
       },
+      '/{project}/cards/{id}/start': post('Start a verb build: engine transition to active, spec published as an issue at start, guarded branch created', startBody),
+      '/{project}/cards/{id}/archive': post('Minimal archive: spec-generated PR merged --no-ff, card done, mapped issue closed, branch deleted', z.object({})),
       '/{project}/sync': post('Flush the offline publish queue and report issue-map drift (reconcile never mutates cards)', z.object({}), [projectParam]),
       '/{project}/backfill-specs': post('One-time import of openspec/specs/** into the spec store + issue publication (idempotent)', z.object({}), [projectParam]),
     },

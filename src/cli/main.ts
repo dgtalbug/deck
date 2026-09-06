@@ -9,6 +9,7 @@ import { moveLane } from '../core/board/lanes.ts';
 import { nextDigest } from '../core/board/next.ts';
 import { backfillSpecs, syncProject } from '../core/board/publish.ts';
 import { applyVerifyResult } from '../core/board/verify.ts';
+import { archiveVerb, startVerb } from '../core/engine/verbs.ts';
 import { boardView, todoView } from '../core/board/views.ts';
 import type { Lane } from '../core/board/types.ts';
 import { initProject } from '../core/projects/init.ts';
@@ -44,6 +45,9 @@ export const parity = {
   'deck projects': 'projectSummary',
   'deck sync': 'syncProject',
   'deck backfill-specs': 'backfillSpecs',
+  'deck feat': 'startVerb',
+  'deck fix': 'startVerb',
+  'deck archive': 'archiveVerb',
 };
 
 export interface CliIo {
@@ -74,6 +78,8 @@ commands:
   projects                          list registered projects
   sync                              flush the publish queue + report issue drift
   backfill-specs                   import existing specs + publish their issues
+  feat <id> / fix <id>             start a build: active + issue + branch
+  archive <id>                     merge the PR, close the issue, card → done
   serve [--port <n>] [--host <h>]   start the server (default when bare)`;
 
 type Command = (args: ParsedArgs, ctx: RunContext) => Promise<string | number>;
@@ -226,6 +232,28 @@ const commands: Record<string, Command> = {
     for (const issue of report.issues) lines.push(`note  ${issue}`);
     return lines.join('\n');
   },
+  feat: (args, ctx) => startCommand(args, ctx, 'feat'),
+  fix: (args, ctx) => startCommand(args, ctx, 'fix'),
+  archive: async (args, ctx) => {
+    const id = requiredId(args, 'archive <id>');
+    const project = resolveProject(ctx.registry, args, ctx.cwd);
+    const store = await getStore(project.path);
+    const p = ctx.pal;
+    return withSpinner(
+      { isatty: Boolean(process.stdout.isTTY), dumb: Bun.env['TERM'] === 'dumb', io: ctx.io },
+      'archiving…',
+      async () => {
+        const outcome = await archiveVerb(store, id);
+        return [
+          `${p.color('primary', '♠')} ${p.bold(`archived — ${outcome.card.title}`)}`,
+          '',
+          `  ${p.dim('card')}   ${outcome.card.id} → done`,
+          `  ${p.dim('pr')}     ${p.color('primary', outcome.prUrl)}`,
+          `  ${p.dim('issue')}  #${outcome.issueNumber} closed`,
+        ].join('\n');
+      },
+    );
+  },
   serve: async () => {
     await serveMain();
     return 0;
@@ -236,6 +264,36 @@ function requiredId(args: ParsedArgs, usage: string): string {
   const id = args.positionals[0];
   if (id === undefined || id.length === 0) throw new UsageError(`usage: deck ${usage}`);
   return id;
+}
+
+// feat/fix are one dispatch entry each over the shared engine — the verb is
+// data (decision #8). The start output doubles as the build's context-pack
+// header: card, branch, issue, and the deck next pointer.
+async function startCommand(
+  args: ParsedArgs,
+  ctx: RunContext,
+  verb: 'feat' | 'fix',
+): Promise<string> {
+  const id = requiredId(args, `${verb} <id>`);
+  const project = resolveProject(ctx.registry, args, ctx.cwd);
+  const store = await getStore(project.path);
+  const p = ctx.pal;
+  return withSpinner(
+    { isatty: Boolean(process.stdout.isTTY), dumb: Bun.env['TERM'] === 'dumb', io: ctx.io },
+    `starting ${verb}…`,
+    async () => {
+      const outcome = await startVerb(store, id, verb);
+      return [
+        `${p.color('primary', '♠')} ${p.bold(`${verb} started — ${outcome.card.title}`)}`,
+        '',
+        `  ${p.dim('card')}   ${outcome.card.id} → active`,
+        `  ${p.dim('branch')} ${outcome.branch} (checked out)`,
+        `  ${p.dim('issue')}  ${outcome.queued ? 'pending (queued — gh offline)' : `#${outcome.issueNumber}`}`,
+        '',
+        `  ${p.dim('next')}   deck next`,
+      ].join('\n');
+    },
+  );
 }
 
 export async function runCli(argv: string[], options: RunOptions = {}): Promise<number> {

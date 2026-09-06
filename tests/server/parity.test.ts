@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import * as crud from '../../src/core/board/crud.ts';
 import * as publish from '../../src/core/board/publish.ts';
+import * as engineVerbs from '../../src/core/engine/verbs.ts';
 import * as specstore from '../../src/core/board/specstore.ts';
 import * as git from '../../src/core/git/digest.ts';
 import * as gitops from '../../src/core/git/ops.ts';
@@ -19,6 +20,7 @@ import { parity as cliParity } from '../../src/cli/main.ts';
 import { parity as boardParity } from '../../src/server/routes/board.ts';
 import { parity as cardsParity } from '../../src/server/routes/cards.ts';
 import { parity as specsParity } from '../../src/server/routes/specs.ts';
+import { parity as engineParity } from '../../src/server/routes/engine.ts';
 import { parity as gitParity } from '../../src/server/routes/git.ts';
 import { parity as homeParity } from '../../src/server/routes/home.ts';
 import { parity as notesParity } from '../../src/server/routes/notes.ts';
@@ -30,6 +32,7 @@ const functions: Record<string, unknown> = {
   ...crud,
   ...publish,
   ...specstore,
+  ...engineVerbs,
   ...git,
   ...gitops,
   ...groom,
@@ -47,7 +50,7 @@ const functions: Record<string, unknown> = {
   list: ProjectRegistry.prototype.list,
 };
 
-const parityTables = [homeParity, boardParity, notesParity, cardsParity, specsParity, gitParity, sseParity];
+const parityTables = [homeParity, boardParity, notesParity, cardsParity, specsParity, engineParity, gitParity, sseParity];
 
 describe('route-to-core parity', () => {
   test('every declared route maps to an existing core function', () => {

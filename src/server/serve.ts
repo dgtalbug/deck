@@ -6,6 +6,7 @@ import { detectLevel, palette } from '../cli/color.ts';
 import { DEFAULT_PORT, parseServeArgs, resolvePort } from './config.ts';
 import { boardRoutes } from './routes/board.ts';
 import { cardsRoutes } from './routes/cards.ts';
+import { engineRoutes } from './routes/engine.ts';
 import { gitRoutes } from './routes/git.ts';
 import { homeRoutes } from './routes/home.ts';
 import { notesRoutes } from './routes/notes.ts';
@@ -33,6 +34,7 @@ export function buildRoutes(registry: ProjectRegistry, staticRoot?: string, embe
     ...notesRoutes(registry),
     ...cardsRoutes(registry),
     ...specsRoutes(registry),
+    ...engineRoutes(registry),
     ...gitRoutes(registry),
     ...(DECK_FEATURE_SSE ? sseRoutes(registry) : {}),
   };
