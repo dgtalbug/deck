@@ -139,3 +139,66 @@ describe('deck archive', () => {
     expect(git('rev-parse --abbrev-ref HEAD').trim()).toBe('main');
   });
 });
+
+// verb-registrations — the 9 remaining verbs are one-line registrations over
+// the shared engine; the CLI door proves the parity with feat/fix.
+describe('registered verbs (docs … revert)', () => {
+  test('deck docs starts a build round-trip', async () => {
+    stubGh();
+    const note = store.addNote('docs the api');
+    convertToVerbItem(store, {
+      noteId: note.id,
+      proposedVerb: 'docs',
+      refinedTitle: 'docs the api',
+      research: { codebaseFindings: [] },
+      specDeltas: [],
+      tasks: ['write'],
+      openQuestions: [],
+    });
+    expect(await run(['docs', note.id])).toBe(0);
+    const text = out.join('\n');
+    expect(text).toContain('docs started — docs the api');
+    expect(text).toMatch(/branch\s+docs\//);
+    expect(store.getVerbItem(note.id).lane).toBe('active');
+  });
+
+  test('deck chore starts a build round-trip', async () => {
+    stubGh();
+    const note = store.addNote('chore the deps');
+    convertToVerbItem(store, {
+      noteId: note.id,
+      proposedVerb: 'chore',
+      refinedTitle: 'chore the deps',
+      research: { codebaseFindings: [] },
+      specDeltas: [],
+      tasks: ['tidy'],
+      openQuestions: [],
+    });
+    expect(await run(['chore', note.id])).toBe(0);
+    expect(out.join('\n')).toContain('chore started — chore the deps');
+    expect(git('rev-parse --abbrev-ref HEAD').trim()).toMatch(/^chore\//);
+  });
+
+  test('verb mismatch on a registered verb exits 1 with the typed message', async () => {
+    stubGh();
+    const note = store.addNote('chore mismatch card');
+    convertToVerbItem(store, {
+      noteId: note.id,
+      proposedVerb: 'chore',
+      refinedTitle: 'chore mismatch card',
+      research: { codebaseFindings: [] },
+      specDeltas: [],
+      tasks: ['tidy'],
+      openQuestions: [],
+    });
+    expect(await run(['feat', note.id])).toBe(1);
+    expect(err.join('\n')).toContain("groomed as 'chore'");
+    expect(store.getVerbItem(note.id).lane).toBe('groomed');
+  });
+
+  test('USAGE lists every registered verb', async () => {
+    expect(await run(['nope'])).toBe(64);
+    const usage = err.join('\n');
+    expect(usage).toContain('feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert');
+  });
+});

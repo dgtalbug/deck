@@ -7,6 +7,7 @@ import type { Server } from 'bun';
 import { ProjectRegistry } from '../../src/core/projects/registry.ts';
 import { buildServer } from '../../src/server/serve.ts';
 import { convertToVerbItem } from '../../src/core/board/groom.ts';
+import type { Verb as VerbType } from '../../src/core/board/types.ts';
 import { openStore, type DocumentStore } from '../../src/core/board/store.ts';
 import { tmpProject } from '../helpers.ts';
 
@@ -51,7 +52,7 @@ async function post(path: string, body: unknown): Promise<Response> {
   });
 }
 
-async function groomed(title: string, verb: 'feat' | 'fix' = 'feat'): Promise<string> {
+async function groomed(title: string, verb: VerbType = 'feat'): Promise<string> {
   const store = await openStore(project.path);
   const note = store.addNote(title);
   convertToVerbItem(store, {
@@ -121,6 +122,23 @@ describe('engine routes (v0.5.0)', () => {
     const response = await post(`/testproj/cards/${id}/start`, { verb: 'feat' });
     expect(response.status).toBe(400);
     expect(((await response.json()) as { error: string }).error).toContain("groomed as 'fix'");
+  });
+
+  test('start over HTTP accepts a registered verb (docs)', async () => {
+    stubGh();
+    const id = await groomed('route docs card', 'docs');
+    const response = await post(`/testproj/cards/${id}/start`, { verb: 'docs' });
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { card: { lane: string }; branch: string };
+    expect(body.card.lane).toBe('active');
+    expect(body.branch).toMatch(/^docs\//);
+    git('switch main');
+  });
+
+  test('start with an unregistered verb name 400s', async () => {
+    stubGh();
+    const response = await post('/testproj/cards/ghost/start', { verb: 'ship' });
+    expect(response.status).toBe(400);
   });
 
   test('start on unknown card 404s; archive on unknown card 404s', async () => {

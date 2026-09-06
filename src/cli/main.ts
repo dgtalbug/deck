@@ -9,7 +9,7 @@ import { moveLane } from '../core/board/lanes.ts';
 import { nextDigest } from '../core/board/next.ts';
 import { backfillSpecs, syncProject } from '../core/board/publish.ts';
 import { applyVerifyResult } from '../core/board/verify.ts';
-import { archiveVerb, startVerb } from '../core/engine/verbs.ts';
+import { archiveVerb } from '../core/engine/verbs.ts';
 import { renderFindings, reviewGate, runVerification } from '../core/engine/verify.ts';
 import { getIssueMap } from '../core/board/specstore.ts';
 import { viewIssue } from '../core/git/issues.ts';
@@ -24,6 +24,7 @@ import { moveBody, reorderBody, verifyBody } from '../server/routes/cards.ts';
 import { noteBody } from '../server/routes/notes.ts';
 import { serveMain } from '../server/serve.ts';
 import { flagString, flagStrings, parseArgs, UsageError, type ParsedArgs } from './args.ts';
+import { startCommand } from './start.ts';
 import { ProjectResolutionError, resolveProject } from './context.ts';
 import { detectLevel, palette, type Palette } from './color.ts';
 import { withSpinner } from './spin.ts';
@@ -50,6 +51,15 @@ export const parity = {
   'deck backfill-specs': 'backfillSpecs',
   'deck feat': 'startVerb',
   'deck fix': 'startVerb',
+  'deck docs': 'startVerb',
+  'deck style': 'startVerb',
+  'deck refactor': 'startVerb',
+  'deck perf': 'startVerb',
+  'deck test': 'startVerb',
+  'deck build': 'startVerb',
+  'deck ci': 'startVerb',
+  'deck chore': 'startVerb',
+  'deck revert': 'startVerb',
   'deck archive': 'archiveVerb',
   'deck issue': 'viewIssue',
   'deck review': 'reviewGate',
@@ -84,7 +94,8 @@ commands:
   projects                          list registered projects
   sync                              flush the publish queue + report issue drift
   backfill-specs                   import existing specs + publish their issues
-  feat <id> / fix <id>             start a build: active + issue + branch
+  feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert <id>
+                                    start a build: active + issue + branch
   archive <id>                     merge the PR, close the issue, card → done
   issue <id>                       print the card's mapped GitHub issue
   serve [--port <n>] [--host <h>]   start the server (default when bare)`;
@@ -277,6 +288,15 @@ const commands: Record<string, Command> = {
     return `${p.dim('#' + view.number)} ${view.state === 'open' ? p.color('primary', view.url) : view.url}`;
   },
   fix: (args, ctx) => startCommand(args, ctx, 'fix'),
+  docs: (args, ctx) => startCommand(args, ctx, 'docs'),
+  style: (args, ctx) => startCommand(args, ctx, 'style'),
+  refactor: (args, ctx) => startCommand(args, ctx, 'refactor'),
+  perf: (args, ctx) => startCommand(args, ctx, 'perf'),
+  test: (args, ctx) => startCommand(args, ctx, 'test'),
+  build: (args, ctx) => startCommand(args, ctx, 'build'),
+  ci: (args, ctx) => startCommand(args, ctx, 'ci'),
+  chore: (args, ctx) => startCommand(args, ctx, 'chore'),
+  revert: (args, ctx) => startCommand(args, ctx, 'revert'),
   archive: async (args, ctx) => {
     const id = requiredId(args, 'archive <id>');
     const project = resolveProject(ctx.registry, args, ctx.cwd);
@@ -307,36 +327,6 @@ function requiredId(args: ParsedArgs, usage: string): string {
   const id = args.positionals[0];
   if (id === undefined || id.length === 0) throw new UsageError(`usage: deck ${usage}`);
   return id;
-}
-
-// feat/fix are one dispatch entry each over the shared engine — the verb is
-// data (decision #8). The start output doubles as the build's context-pack
-// header: card, branch, issue, and the deck next pointer.
-async function startCommand(
-  args: ParsedArgs,
-  ctx: RunContext,
-  verb: 'feat' | 'fix',
-): Promise<string> {
-  const id = requiredId(args, `${verb} <id>`);
-  const project = resolveProject(ctx.registry, args, ctx.cwd);
-  const store = await getStore(project.path);
-  const p = ctx.pal;
-  return withSpinner(
-    { isatty: Boolean(process.stdout.isTTY), dumb: Bun.env['TERM'] === 'dumb', io: ctx.io },
-    `starting ${verb}…`,
-    async () => {
-      const outcome = await startVerb(store, id, verb);
-      return [
-        `${p.color('primary', '♠')} ${p.bold(`${verb} started — ${outcome.card.title}`)}`,
-        '',
-        `  ${p.dim('card')}   ${outcome.card.id} → active`,
-        `  ${p.dim('branch')} ${outcome.branch} (checked out)`,
-        `  ${p.dim('issue')}  ${outcome.queued ? 'pending (queued — gh offline)' : `#${outcome.issueNumber}`}`,
-        '',
-        `  ${p.dim('next')}   deck next`,
-      ].join('\n');
-    },
-  );
 }
 
 export async function runCli(argv: string[], options: RunOptions = {}): Promise<number> {
