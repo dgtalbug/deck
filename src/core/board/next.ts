@@ -6,7 +6,7 @@ import type { NextDigest, TaskState, VerbItem } from './types.ts';
 import { mostAdvancedActive, topOfQueue } from './lanes.ts';
 import { isVerbItem, type Tweak } from './types.ts';
 import { getIssueMap } from './specstore.ts';
-import { branchFor } from '../engine/verbs.ts';
+import { branchFor } from '../engine/slug.ts';
 
 // ≈2k tokens at ~4 chars per token (epic acceptance 9). The recall component
 // (memory) slots in later and is out of scope here.

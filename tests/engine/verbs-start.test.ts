@@ -189,6 +189,7 @@ describe('archiveVerb', () => {
     stubGh(GH_OK);
     const id = groomed('archivable gate');
     const started = await startVerb(store, id, 'feat');
+    store.syncTasks(id, store.getVerbItem(id).tasks.map((task) => ({ ...task, done: true })), 'engine');
     writeFileSync(join(dir, 'c.txt'), 'the change\n');
     git('add .');
     git('commit -m "feat: the change"');
@@ -205,6 +206,7 @@ describe('archiveVerb', () => {
     stubGh(GH_OK);
     const id = groomed('dirty archive');
     await startVerb(store, id, 'feat');
+    store.syncTasks(id, store.getVerbItem(id).tasks.map((task) => ({ ...task, done: true })), 'engine');
     writeFileSync(join(dir, 'd.txt'), 'wip\n');
     await expect(archiveVerb(store, id)).rejects.toThrow(/not clean/);
     expect(store.getVerbItem(id).lane).toBe('active');
@@ -214,6 +216,7 @@ describe('archiveVerb', () => {
     stubGh(GH_OK);
     const id = groomed('unpublished archive');
     await startVerb(store, id, 'feat');
+    store.syncTasks(id, store.getVerbItem(id).tasks.map((task) => ({ ...task, done: true })), 'engine');
     // wipe the map to simulate a never-published card
     store.db.run('DELETE FROM issue_map');
     await expect(archiveVerb(store, id)).rejects.toThrow(/no published issue/);
