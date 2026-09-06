@@ -17,6 +17,7 @@
 !/drizzle/
 !/bun.lockb
 !/bun.lock
+!/LICENSE
 
 # Build & runtime artifacts (also ignored inside tracked dirs)
 node_modules/
