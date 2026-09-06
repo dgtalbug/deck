@@ -7,7 +7,6 @@ import { DeckError } from '../core/board/errors.ts';
 import { tweak } from '../core/board/groom.ts';
 import { moveLane } from '../core/board/lanes.ts';
 import { nextDigest } from '../core/board/next.ts';
-import { syncProject } from '../core/board/publish.ts';
 import { applyVerifyResult } from '../core/board/verify.ts';
 import { archiveVerb } from '../core/engine/verbs.ts';
 import { renderHookWarnings } from '../core/engine/hooks.ts';
@@ -26,7 +25,16 @@ import { noteBody } from '../server/routes/notes.ts';
 import { serveMain } from '../server/serve.ts';
 import { flagString, flagStrings, parseArgs, UsageError, type ParsedArgs } from './args.ts';
 import { startCommand } from './start.ts';
-import { backfillCommand, hooksCommand, recallCommand, userVerbCommand, workflowCommand } from './ext.ts';
+import {
+  backfillCommand,
+  hooksCommand,
+  recallCommand,
+  setupCommand,
+  skillCommand,
+  syncCommand,
+  userVerbCommand,
+  workflowCommand,
+} from './ext.ts';
 import { ProjectResolutionError, resolveProject } from './context.ts';
 import { detectLevel, palette, type Palette } from './color.ts';
 import { withSpinner } from './spin.ts';
@@ -65,6 +73,8 @@ export const parity = {
   'deck hooks': 'listHooks',
   'deck workflow': 'registerUserVerb',
   'deck recall': 'recall',
+  'deck setup': 'initProject',
+  'deck skill': 'scaffoldSkill',
   'deck archive': 'archiveVerb',
   'deck issue': 'viewIssue',
   'deck review': 'reviewGate',
@@ -104,6 +114,8 @@ commands:
   workflow <new-verb>               register a user verb on the shared engine
   hooks                             list installed hooks (.deck/hooks/<event>/<name>)
   recall <query>                    search session memory (FTS5)
+  setup                             onboard agent hosts (adapter table + detection)
+  skill new <name>                 scaffold a skill pack from the pinned template
   archive <id>                     merge the PR, close the issue, card → done
   issue <id>                       print the card's mapped GitHub issue
   serve [--port <n>] [--host <h>]   start the server (default when bare)`;
@@ -250,29 +262,7 @@ const commands: Record<string, Command> = {
     );
     return renderProjects(projects, ctx.pal);
   },
-  sync: async (args, ctx) => {
-    const project = resolveProject(ctx.registry, args, ctx.cwd);
-    const store = await getStore(project.path);
-    const report = await syncProject(store);
-    const lines: string[] = [];
-    for (const flush of report.flushed) {
-      lines.push(
-        flush.queued
-          ? `flush  ${flush.cardId} — still queued (gh offline)`
-          : `flush  ${flush.cardId} — issue #${flush.issueNumber}`,
-      );
-    }
-    if (report.flushedPending > 0) lines.push(`queue  ${report.flushedPending} publish(es) still pending`);
-    if (report.gh === 'unavailable') lines.push('warn   gh unreachable — drift check skipped');
-    for (const drift of report.drift) {
-      lines.push(`drift  #${drift.issueNumber} [${drift.kind}] ${drift.detail}`);
-      lines.push(`       fix: ${drift.fix}`);
-    }
-    if (report.labelsRefreshed > 0) lines.push(`labels ${report.labelsRefreshed} refreshed to match lanes`);
-    if (lines.length === 0) return 'sync clean — queue empty, no drift';
-    ctx.io.out(lines.join('\n'));
-    return report.drift.length > 0 ? 1 : 0;
-  },
+  sync: syncCommand,
   'backfill-specs': backfillCommand,
   feat: (args, ctx) => startCommand(args, ctx, 'feat'),
   issue: async (args, ctx) => {
@@ -319,6 +309,8 @@ const commands: Record<string, Command> = {
     );
   },
   hooks: hooksCommand,
+  setup: setupCommand,
+  skill: skillCommand,
   recall: recallCommand,
   workflow: workflowCommand,
   serve: async () => {
