@@ -237,10 +237,13 @@ button.wip.is-over {
 }
 .form-grid input[type='text'],
 .form-grid select,
-.form-grid textarea {
+.form-grid textarea,
+.git-row input[type='text'],
+.git-row select,
+.git-create-form input[type='text'],
+.git-create-form select {
   all: unset;
   box-sizing: border-box;
-  width: 100%;
   background: var(--card-2);
   border: 1px solid var(--border);
   border-radius: 10px;
@@ -249,13 +252,21 @@ button.wip.is-over {
   font-size: 13.5px;
   color: var(--foreground);
 }
+/* grid forms take the full cell; git fields keep their flex sizing */
+.form-grid input[type='text'],
+.form-grid select,
+.form-grid textarea {
+  width: 100%;
+}
 .form-grid textarea {
   min-height: 74px;
   resize: vertical;
   font-family: var(--font-mono);
   font-size: 12.5px;
 }
-.form-grid select {
+.form-grid select,
+.git-row select,
+.git-create-form select {
   cursor: pointer;
   appearance: none;
   background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%),
@@ -266,7 +277,11 @@ button.wip.is-over {
 }
 .form-grid input:focus-visible,
 .form-grid select:focus-visible,
-.form-grid textarea:focus-visible {
+.form-grid textarea:focus-visible,
+.git-row input:focus-visible,
+.git-row select:focus-visible,
+.git-create-form input:focus-visible,
+.git-create-form select:focus-visible {
   outline: 2px solid var(--primary-vivid);
   outline-offset: 2px;
 }
