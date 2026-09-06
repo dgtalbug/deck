@@ -93,11 +93,23 @@ export class DocumentStore {
   readonly wipLimit: number;
   readonly db: SQLiteBunDatabase;
 
-  private constructor(projectPath: string, dbPath: string, db: SQLiteBunDatabase, wipLimit: number) {
+  private constructor(
+    projectPath: string,
+    dbPath: string,
+    db: SQLiteBunDatabase,
+    wipLimit: number,
+    private readonly sqlite: Database,
+  ) {
     this.projectPath = projectPath;
     this.dbPath = dbPath;
     this.db = db;
     this.wipLimit = wipLimit;
+  }
+
+  // Raw handle for engine-owned state drizzle migrations cannot express
+  // (FTS5 virtual tables, user_verbs DDL).
+  raw(): Database {
+    return this.sqlite;
   }
 
   static async open(projectPath: string): Promise<DocumentStore> {
@@ -131,8 +143,13 @@ export class DocumentStore {
     // User verbs ride raw DDL (migrations are generated for the core model;
     // this table is engine-registry state, idempotent on every open).
     sqlite.exec('CREATE TABLE IF NOT EXISTS user_verbs (name TEXT PRIMARY KEY NOT NULL, registered_at TEXT NOT NULL)');
+    // FTS5 index over session-memory bullets (drizzle cannot manage virtual
+    // tables); idempotent on every open.
+    sqlite.exec(
+      'CREATE VIRTUAL TABLE IF NOT EXISTS session_memory USING fts5(line, cardId UNINDEXED, section UNINDEXED)',
+    );
     const config = await readDeckConfig(projectPath);
-    return new DocumentStore(projectPath, dbPath, db, config.board?.wipLimit ?? 3);
+    return new DocumentStore(projectPath, dbPath, db, config.board?.wipLimit ?? 3, sqlite);
   }
 
   // --- user verb registry (deck workflow) -----------------------------------

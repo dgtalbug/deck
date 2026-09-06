@@ -12,6 +12,7 @@ import { publishSpec } from '../board/publish.ts';
 import { closeIssue } from '../git/issues.ts';
 import { GhUnavailableError } from '../git/errors.ts';
 import { runGit } from '../git/digest.ts';
+import { rmSync } from 'node:fs';
 import {
   createBranch,
   createPullRequest,
@@ -26,6 +27,7 @@ import type { VerbName, VerbItem } from '../board/types.ts';
 // The branch for a started verb is always re-derivable from the card
 // itself (engine lanes refuse title edits, so the slug cannot drift).
 import { branchFor } from './slug.ts';
+import { scaffoldSession, sessionPath } from '../board/memory.ts';
 import { archiveTail, ReviewBlockedError, reviewGate } from './verify.ts';
 import { HookEvent, runHooks, type HookWarning } from './hooks.ts';
 export { branchFor };
@@ -98,8 +100,10 @@ export async function startVerb(
   try {
     await assertCleanTree(store.projectPath);
     await createBranch(store.projectPath, { name: branch, checkout: true });
+    scaffoldSession(store.projectPath, id, verb, branch); // the memory slot
   } catch (error) {
     moveLane(store, id, 'groomed', 'engine'); // compensate — no side effects
+    rmSync(sessionPath(store.projectPath, id), { force: true }); // ... including the session file
     throw error;
   }
   const started = store.getVerbItem(id);
