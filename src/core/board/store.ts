@@ -143,6 +143,9 @@ export class DocumentStore {
     // User verbs ride raw DDL (migrations are generated for the core model;
     // this table is engine-registry state, idempotent on every open).
     sqlite.exec('CREATE TABLE IF NOT EXISTS user_verbs (name TEXT PRIMARY KEY NOT NULL, registered_at TEXT NOT NULL)');
+    // Agent-host adapter registry (harness slice): raw DDL + pinned seed.
+    const { ensureAgentHosts } = await import('../projects/harness.ts');
+    ensureAgentHosts(sqlite);
     // FTS5 index over session-memory bullets (drizzle cannot manage virtual
     // tables); idempotent on every open.
     sqlite.exec(
