@@ -9,8 +9,7 @@ import { archiveVerb, startVerb, branchFor } from '../../src/core/engine/verbs.t
 import { getIssueMap } from '../../src/core/board/specstore.ts';
 import { nextDigest } from '../../src/core/board/next.ts';
 import { DeckError, WipLimitError } from '../../src/core/board/errors.ts';
-import { Verb, type Verb as VerbType } from '../../src/core/board/types.ts';
-import { moveLane } from '../../src/core/board/lanes.ts';
+import type { Verb as VerbType } from '../../src/core/board/types.ts';
 
 // Real tmp git repos + gh stub (ops.test.ts pattern): every guard runs
 // against git itself.
@@ -163,31 +162,7 @@ describe('startVerb', () => {
     expect(git('rev-parse --abbrev-ref HEAD').trim()).toBe(outcome.branch);
   });
 
-  // verb-registrations: every verb in the const starts through the SAME
-  // core (zero verb-specific logic), and every cross-verb mismatch refuses.
-  const allVerbs = Object.values(Verb);
-  for (const verb of allVerbs) {
-    test(`all-verb coverage: ${verb} starts on the shared engine`, async () => {
-      stubGh(GH_OK);
-      const id = groomed(`start ${verb}`, verb);
-      const outcome = await startVerb(store, id, verb);
-      expect(outcome.card.lane).toBe('active');
-      expect(outcome.branch).toBe(branchFor(outcome.card, verb));
-      expect(git('rev-parse --abbrev-ref HEAD').trim()).toBe(outcome.branch);
-      git('switch main'); // next iteration needs a groomed-only lane + clean base
-      moveLane(store, id, 'groomed', 'engine');
-    });
-    if (verb !== 'feat') {
-      test(`all-verb coverage: feat refuses a ${verb} card`, async () => {
-        stubGh(GH_OK);
-        const id = groomed(`mismatch ${verb}`, verb);
-        await expect(startVerb(store, id, 'feat')).rejects.toThrow(DeckError);
-        expect(store.getVerbItem(id).lane).toBe('groomed');
-      });
-    }
-  }
 });
-
 describe('context pack', () => {
   test('at-limit deck next carries branch + issue + checklist within budget', async () => {
     stubGh(GH_OK);

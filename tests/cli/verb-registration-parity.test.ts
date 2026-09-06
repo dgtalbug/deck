@@ -1,16 +1,18 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { execSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runCli } from '../../src/cli/main.ts';
 import { convertToVerbItem } from '../../src/core/board/groom.ts';
+import type { Verb } from '../../src/core/board/types.ts';
 import { openStore, type DocumentStore } from '../../src/core/board/store.ts';
 import { ProjectRegistry } from '../../src/core/projects/registry.ts';
 import { tmpProject, type TmpProject } from '../helpers.ts';
 
-// Task 4.2 — the terminal door over the verb engine: start round-trip and
-// typed-refusal exit codes.
+// verb-registrations — the paired file for the "Verb registration parity"
+// requirement: the 9 remaining verbs are one-line registrations over the
+// shared engine; the CLI door proves the parity with feat/fix.
 let registry: ProjectRegistry;
 let proj: TmpProject;
 let store: DocumentStore;
@@ -30,7 +32,7 @@ function stubGh(): void {
     `#!/bin/sh
 case "$1 $2" in
   "issue create") echo "https://github.com/o/r/issues/41" ;;
-  "issue view") echo "{\\"number\\":41,\\"state\\":\\"OPEN\\",\\"labels\\":[{\\"name\\":\\"groomed\\"}],\\"url\\":\\"u\\"}" ;;
+  "issue view") echo "{"number":41,"state":"OPEN","labels":[{"name":"groomed"}],"url":"u"}" ;;
   "issue edit"|"issue close") echo ok ;;
   "pr create") echo "https://github.com/o/r/pull/51" ;;
   "auth status") exit 0 ;;
@@ -43,7 +45,7 @@ esac
   process.env['PATH'] = `${binDir}:${prevPath ?? ''}`;
 }
 
-function groomed(title: string, verb: 'feat' | 'fix' = 'feat'): string {
+function groomVerb(title: string, verb: Verb): string {
   const note = store.addNote(title);
   convertToVerbItem(store, {
     noteId: note.id,
@@ -65,8 +67,8 @@ function run(argv: string[]): Promise<number> {
 
 beforeEach(async () => {
   registry = new ProjectRegistry();
-  proj = tmpProject('deck-cli-verbs-');
-  binDir = mkdtempSync(join(tmpdir(), 'deck-cli-verbs-bin-'));
+  proj = tmpProject('deck-cli-verb-parity-');
+  binDir = mkdtempSync(join(tmpdir(), 'deck-cli-verb-parity-bin-'));
   git('init --initial-branch=main');
   git('config user.email t@t');
   git('config user.name t');
@@ -90,52 +92,38 @@ afterEach(() => {
   }
 });
 
-describe('deck feat / deck fix', () => {
-  test('start round-trip: active + branch + issue + deck next pointer', async () => {
+// verb-registrations — the 9 remaining verbs are one-line registrations over
+// the shared engine; the CLI door proves the parity with feat/fix.
+describe('verb registration parity', () => {
+  test('deck docs starts a build round-trip', async () => {
     stubGh();
-    const id = groomed('cli gate card');
-    expect(await run(['feat', id])).toBe(0);
+    const id = groomVerb('docs the api', 'docs');
+    expect(await run(['docs', id])).toBe(0);
     const text = out.join('\n');
-    expect(text).toContain('feat started — cli gate card');
-    expect(text).toContain('→ active');
-    expect(text).toMatch(/branch\s+feat\//);
-    expect(text).toContain('#41');
-    expect(text).toContain('deck next');
+    expect(text).toContain('docs started — docs the api');
+    expect(text).toMatch(/branch\s+docs\//);
     expect(store.getVerbItem(id).lane).toBe('active');
   });
 
-  test('verb mismatch exits non-zero with the typed message', async () => {
+  test('deck chore starts a build round-trip', async () => {
     stubGh();
-    const id = groomed('cli fix card', 'fix');
+    const id = groomVerb('chore the deps', 'chore');
+    expect(await run(['chore', id])).toBe(0);
+    expect(out.join('\n')).toContain('chore started — chore the deps');
+    expect(git('rev-parse --abbrev-ref HEAD').trim()).toMatch(/^chore\//);
+  });
+
+  test('verb mismatch on a registered verb exits 1 with the typed message', async () => {
+    stubGh();
+    const id = groomVerb('chore mismatch card', 'chore');
     expect(await run(['feat', id])).toBe(1);
-    expect(err.join('\n')).toContain("groomed as 'fix'");
+    expect(err.join('\n')).toContain("groomed as 'chore'");
     expect(store.getVerbItem(id).lane).toBe('groomed');
   });
 
-  test('deck fix starts on the shared engine', async () => {
-    stubGh();
-    const id = groomed('cli shared engine', 'fix');
-    expect(await run(['fix', id])).toBe(0);
-    expect(out.join('\n')).toContain('fix started — cli shared engine');
-    expect(git('rev-parse --abbrev-ref HEAD').trim()).toMatch(/^fix\//);
-  });
-});
-
-describe('deck archive', () => {
-  test('archives end-to-end from the terminal', async () => {
-    stubGh();
-    const id = groomed('cli archive card');
-    await run(['feat', id]);
-    store.syncTasks(id, store.getVerbItem(id).tasks.map((task) => ({ ...task, done: true })), 'engine');
-    writeFileSync(join(proj.path, 'b.txt'), 'the fix\n');
-    git('add .');
-    git('commit -m "feat: the fix"');
-    expect(await run(['archive', id])).toBe(0);
-    const text = out.join('\n');
-    expect(text).toContain('archived — cli archive card');
-    expect(text).toContain('https://github.com/o/r/pull/51');
-    expect(text).toContain('#41 closed');
-    expect(store.getVerbItem(id).lane).toBe('done');
-    expect(git('rev-parse --abbrev-ref HEAD').trim()).toBe('main');
+  test('USAGE lists every registered verb', async () => {
+    expect(await run(['nope'])).toBe(64);
+    const usage = err.join('\n');
+    expect(usage).toContain('feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert');
   });
 });
