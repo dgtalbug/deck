@@ -14,6 +14,10 @@ import type { Card, Lane, Note, TaskState, Tweak, VerbItem } from './types.ts';
 import { isNote } from './types.ts';
 import { emitEvent } from '../events/outbox.ts';
 
+// The board database filename inside a project's .deck/ — one constant shared
+// by the store, doctor, and the CLI's printed facts so they cannot drift.
+export const BOARD_DB_NAME = 'board.sqlite';
+
 const researchSchema = z.object({
   codebaseFindings: z.array(z.string()),
   rca: z.string().optional(),
@@ -82,11 +86,15 @@ function toVerbItem(row: CardRow, taskRows: TaskRow[]): VerbItem {
 
 export class DocumentStore {
   readonly projectPath: string;
+  // The database file this store actually opened — the one source for
+  // doctor's check and init's printed facts.
+  readonly dbPath: string;
   readonly wipLimit: number;
   readonly db: SQLiteBunDatabase;
 
-  private constructor(projectPath: string, db: SQLiteBunDatabase, wipLimit: number) {
+  private constructor(projectPath: string, dbPath: string, db: SQLiteBunDatabase, wipLimit: number) {
     this.projectPath = projectPath;
+    this.dbPath = dbPath;
     this.db = db;
     this.wipLimit = wipLimit;
   }
@@ -94,7 +102,8 @@ export class DocumentStore {
   static async open(projectPath: string): Promise<DocumentStore> {
     const dir = join(projectPath, '.deck');
     mkdirSync(dir, { recursive: true });
-    const sqlite = new Database(join(dir, 'board.sqlite'));
+    const dbPath = join(dir, BOARD_DB_NAME);
+    const sqlite = new Database(dbPath);
     // busy_timeout MUST precede journal_mode: converting to WAL needs a brief
     // exclusive lock, which throws SQLITE_BUSY without the wait.
     sqlite.exec('PRAGMA busy_timeout = 5000');
@@ -119,7 +128,7 @@ export class DocumentStore {
       }
     }
     const config = await readDeckConfig(projectPath);
-    return new DocumentStore(projectPath, db, config.board?.wipLimit ?? 3);
+    return new DocumentStore(projectPath, dbPath, db, config.board?.wipLimit ?? 3);
   }
 
   // --- reads ---------------------------------------------------------------

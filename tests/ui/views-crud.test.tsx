@@ -259,3 +259,58 @@ describe('sidebar git section (v0.3.1)', () => {
   });
 });
 
+
+describe('rename keyboard contract', () => {
+  function keydown(el: Element, key: string): void {
+    el.dispatchEvent(
+      new win.KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }) as unknown as Event,
+    );
+  }
+
+  test('Enter accepts a valid title — same PATCH as Save, dialog closes', async () => {
+    const { host, calls } = await mount();
+    click(host.querySelector('[data-id="n1"]'));
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    click([...host.querySelectorAll('button')].find((b) => b.textContent?.includes('Rename…')));
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    const input = host.querySelector('#rename-title') as unknown as HTMLInputElement;
+    input.value = 'enter accepted';
+    input.dispatchEvent(new win.Event('input', { bubbles: true }) as unknown as Event);
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    keydown(input, 'Enter');
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    expect(calls).toContain('updateCard:n1:enter accepted');
+    expect(host.querySelector('#rename-title')).toBeNull(); // dialog closed on success
+  });
+
+  test('Enter on an empty title sends nothing and shows the inline error', async () => {
+    const { host, calls } = await mount();
+    click(host.querySelector('[data-id="n1"]'));
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    click([...host.querySelectorAll('button')].find((b) => b.textContent?.includes('Rename…')));
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    const input = host.querySelector('#rename-title') as unknown as HTMLInputElement;
+    input.value = '   ';
+    input.dispatchEvent(new win.Event('input', { bubbles: true }) as unknown as Event);
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    keydown(input, 'Enter');
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    expect(calls.filter((call) => call.startsWith('updateCard:'))).toEqual([]);
+    const dialog = host.querySelector('[role="dialog"]')!;
+    expect(dialog.textContent).toContain('at least one character');
+    expect(host.querySelector('#rename-title')).not.toBeNull(); // still open
+  });
+
+  test('Esc closes the rename dialog without sending', async () => {
+    const { host, calls } = await mount();
+    click(host.querySelector('[data-id="n1"]'));
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    click([...host.querySelectorAll('button')].find((b) => b.textContent?.includes('Rename…')));
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    const input = host.querySelector('#rename-title') as unknown as HTMLInputElement;
+    keydown(input, 'Escape');
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    expect(calls.filter((call) => call.startsWith('updateCard:'))).toEqual([]);
+    expect(host.querySelector('#rename-title')).toBeNull();
+  });
+});

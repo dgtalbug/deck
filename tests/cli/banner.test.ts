@@ -1,5 +1,11 @@
 import { describe, expect, test } from 'bun:test';
-import { bannerAscii, bannerBox, bannerCompact, pickBanner } from '../../src/cli/banner.ts';
+import {
+  bannerAscii,
+  bannerBox,
+  bannerCompact,
+  defaultBannerFacts,
+  pickBanner,
+} from '../../src/cli/banner.ts';
 import { palette, stripSgr } from '../../src/cli/color.ts';
 
 describe('banner selection', () => {
@@ -39,5 +45,29 @@ describe('banner rendering', () => {
     const lines = bannerCompact('0.3.0', p).split('\n');
     expect(lines.length).toBe(3);
     expect(stripSgr(bannerCompact('0.3.0', p))).toContain('♠ deck v0.3.0');
+  });
+});
+
+describe('banner facts derive from the shared resolution', () => {
+  const p = palette('off');
+
+  test('default facts carry the real default port and database name', () => {
+    expect(defaultBannerFacts()).toEqual({
+      boardUrl: 'http://127.0.0.1:3325',
+      dataPath: '.deck/board.sqlite',
+    });
+    expect(bannerCompact('0.3.0', p)).toContain('http://127.0.0.1:3325');
+    expect(bannerCompact('0.3.0', p)).toContain('.deck/board.sqlite');
+  });
+
+  test('DECK_PORT flows through the default facts', () => {
+    expect(defaultBannerFacts({ DECK_PORT: '4041' }).boardUrl).toBe('http://127.0.0.1:4041');
+  });
+
+  test('explicit facts win over defaults', () => {
+    const out = bannerCompact('0.3.0', p, { boardUrl: 'http://127.0.0.1:9000', dataPath: 'x/y.sqlite' });
+    expect(out).toContain('http://127.0.0.1:9000');
+    expect(out).toContain('x/y.sqlite');
+    expect(out).not.toContain('3325');
   });
 });

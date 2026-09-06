@@ -1,5 +1,8 @@
 import type { Server } from 'bun';
 import { ProjectRegistry } from '../core/projects/registry.ts';
+import { DECK_VERSION } from '../version.ts';
+import { bannerAscii, bannerBox, bannerCompact, defaultBannerFacts, pickBanner } from '../cli/banner.ts';
+import { detectLevel, palette } from '../cli/color.ts';
 import { DEFAULT_PORT, parseServeArgs, resolvePort } from './config.ts';
 import { boardRoutes } from './routes/board.ts';
 import { cardsRoutes } from './routes/cards.ts';
@@ -46,11 +49,43 @@ export function buildServer(options: BuildOptions = {}): Server<undefined> {
   });
 }
 
+// The banner block printed above the serving line at startup (identity §2):
+// the existing selection law picks the variant; facts carry the port this
+// server actually resolved. Injected env/size for tests; defaults are real.
+export function startupBanner(opts: {
+  port: number;
+  env?: Record<string, string | undefined>;
+  isTTY?: boolean;
+  cols?: number;
+  rows?: number;
+}): string {
+  const env = opts.env ?? Bun.env;
+  const level = detectLevel(env, opts.isTTY ?? Boolean(process.stdout.isTTY));
+  const kind = pickBanner({
+    locale: env['LANG'] ?? env['LC_ALL'] ?? '',
+    level,
+    cols: opts.cols ?? process.stdout.columns ?? Number.POSITIVE_INFINITY,
+    rows: opts.rows ?? process.stdout.rows ?? Number.POSITIVE_INFINITY,
+  });
+  const p = palette(level);
+  if (kind === 'compact') {
+    // facts state the port this server bound (flag > config > env > default),
+    // not a re-derivation — a config port can never disagree with the banner.
+    const facts = {
+      boardUrl: `http://127.0.0.1:${opts.port}`,
+      dataPath: defaultBannerFacts(env).dataPath,
+    };
+    return bannerCompact(DECK_VERSION, p, facts);
+  }
+  return kind === 'box' ? bannerBox(DECK_VERSION, p) : bannerAscii(DECK_VERSION, p);
+}
+
 export async function serveMain(): Promise<void> {
   const args = parseServeArgs(process.argv.slice(2));
   const port = await resolvePort(args.port);
   try {
     const server = buildServer({ port, hostname: args.host ?? '127.0.0.1' });
+    console.log(startupBanner({ port: server.port ?? port }));
     console.log(`deck serving on http://${server.hostname}:${server.port}`);
   } catch (error) {
     // Port collisions fail loudly with a suggestion — never a silent bump.

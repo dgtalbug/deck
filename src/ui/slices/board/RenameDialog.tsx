@@ -46,6 +46,14 @@ export function RenameDialog(props: {
               setTitle(value);
               if (touched) setTouched(false);
             }}
+            onKeyDown={(event) => {
+              // keyboard contract (spec: board/ui): Enter accepts through the
+              // same accept() as Save — one accept behavior, not two.
+              if (event.key === 'Enter') {
+                event.preventDefault();
+                accept();
+              }
+            }}
             error={error}
             placeholder="one line — what this card is"
           />

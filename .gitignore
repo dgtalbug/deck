@@ -35,3 +35,6 @@ coverage/
 .env.*
 .DS_Store
 *.log
+.deck/board.sqlite
+.deck/board.sqlite-wal
+.deck/board.sqlite-shm

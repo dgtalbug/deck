@@ -23,6 +23,7 @@ import { ProjectResolutionError, resolveProject } from './context.ts';
 import { detectLevel, palette, type Palette } from './color.ts';
 import { withSpinner } from './spin.ts';
 import { cardSummary, renderBoard, renderProjects, renderTodo } from './render.ts';
+import { DECK_VERSION } from '../version.ts';
 
 // Command → core function (route↔core↔CLI parity; the parity test walks
 // this table alongside the route tables).
@@ -170,7 +171,7 @@ const commands: Record<string, Command> = {
       `${p.color('primary', '♠')} ${p.bold(`deck initialized — ${result.project.name}`)}`,
       '',
       `  ${p.dim('board')}  ${p.color('primary', `${result.boardUrl}/`)}`,
-      `  ${p.dim('data')}   .deck/deck.db`,
+      `  ${p.dim('data')}   ${result.dbPath}`,
       `  ${p.dim('specs')}  specs/`,
       '',
       `  ${p.dim('next')}   deck note "your first thought"`,
@@ -200,17 +201,23 @@ function requiredId(args: ParsedArgs, usage: string): string {
 }
 
 export async function runCli(argv: string[], options: RunOptions = {}): Promise<number> {
-  const io = options.io ?? { out: (t) => console.log(t), err: (t) => console.error(t) };
+  const io = options.io ?? { out: (t: string) => console.log(t), err: (t: string) => console.error(t) };
   const ctx: RunContext = {
     registry: options.registry ?? new ProjectRegistry(),
     cwd: options.cwd ?? process.cwd(),
     io,
     pal: palette(detectLevel(Bun.env, Boolean(process.stdout.isTTY))),
   };
-  const args = parseArgs(argv);
+  // Bare `-v` is the short form of `--version`; everywhere else a short
+  // single-dash token is a positional, so only this exact argv is remapped.
+  const args = parseArgs(argv.length === 1 && argv[0] === '-v' ? ['--version'] : argv);
   if (args.command === undefined) {
-    // Bare/flag-only invocation: serve, exactly as before (spec: serve stays
-    // the default entry).
+    // Flag-only invocation: --version reports and exits; anything else serves,
+    // exactly as before (spec: serve stays the default entry).
+    if (args.flags['version'] !== undefined) {
+      io.out(`deck v${DECK_VERSION}`);
+      return 0;
+    }
     await serveMain();
     return 0;
   }

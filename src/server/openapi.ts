@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { join } from 'node:path';
+import { DECK_VERSION } from '../version.ts';
 import { blockBody, groomBody, moveBody, reorderBody, updateBody, verifyBody } from './routes/cards.ts';
 import { noteBody } from './routes/notes.ts';
 import { branchBody, commitBody, mergeBody, pullsBody, stashBody, switchBody } from './routes/git.ts';
@@ -71,7 +72,7 @@ export function openApiDocument(): Record<string, unknown> {
     openapi: '3.1.0',
     info: {
       title: 'deck board API',
-      version: '0.3.0',
+      version: DECK_VERSION,
       description:
         'One deck server hosts every project. Cards move into active/verify/done ' +
         'only through engine events; human moves are todo ↔ groomed only. ' +
