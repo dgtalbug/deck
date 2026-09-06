@@ -35,6 +35,7 @@ import {
   userVerbCommand,
   workflowCommand,
 } from './ext.ts';
+import { runMcpLoop, stdioIo } from '../server/mcp.ts';
 import { ProjectResolutionError, resolveProject } from './context.ts';
 import { detectLevel, palette, type Palette } from './color.ts';
 import { withSpinner } from './spin.ts';
@@ -75,6 +76,7 @@ export const parity = {
   'deck recall': 'recall',
   'deck setup': 'initProject',
   'deck skill': 'scaffoldSkill',
+  'deck mcp': 'runMcpLoop',
   'deck archive': 'archiveVerb',
   'deck issue': 'viewIssue',
   'deck review': 'reviewGate',
@@ -116,6 +118,7 @@ commands:
   recall <query>                    search session memory (FTS5)
   setup                             onboard agent hosts (adapter table + detection)
   skill new <name>                 scaffold a skill pack from the pinned template
+  mcp                              MCP stdio server (JSON-RPC 2.0, four tools)
   archive <id>                     merge the PR, close the issue, card → done
   issue <id>                       print the card's mapped GitHub issue
   serve [--port <n>] [--host <h>]   start the server (default when bare)`;
@@ -311,6 +314,10 @@ const commands: Record<string, Command> = {
   hooks: hooksCommand,
   setup: setupCommand,
   skill: skillCommand,
+  mcp: async (args, ctx) => {
+    await runMcpLoop(ctx.registry, stdioIo());
+    return 0;
+  },
   recall: recallCommand,
   workflow: workflowCommand,
   serve: async () => {
