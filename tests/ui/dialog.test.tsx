@@ -61,3 +61,41 @@ describe('Dialog keyboard walkthrough', () => {
     expect(win.document.activeElement).toBe(opener);
   });
 });
+
+describe('Dialog focus stability across re-renders', () => {
+  test('a keystroke re-render never steals focus from the field', async () => {
+    const win = installDom();
+    function TypedHarness(): VNode {
+      const [open, setOpen] = useState(false);
+      const [text, setText] = useState('');
+      return (
+        <div>
+          <button id="opener" onClick={() => setOpen(true)}>open</button>
+          <Dialog open={open} label="typing dialog" onClose={() => setOpen(false)}>
+            <input id="typed" value={text} onInput={(e) => setText((e.target as HTMLInputElement).value)} />
+          </Dialog>
+        </div>
+      );
+    }
+    const container = win.document.createElement('div');
+    win.document.body.appendChild(container);
+    render(<TypedHarness />, container);
+    const opener = win.document.querySelector('#opener') as unknown as Hdom;
+    opener.click();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    const typed = win.document.querySelector('#typed') as unknown as HTMLInputElement;
+    typed.focus();
+    const setter = Object.getOwnPropertyDescriptor(
+      (typed.constructor as typeof HTMLInputElement).prototype,
+      'value',
+    )!.set!;
+    for (const ch of ['a', 'b', 'c']) {
+      setter.call(typed, typed.value + ch);
+      typed.dispatchEvent(new win.Event('input', { bubbles: true }) as unknown as Event);
+      await new Promise((resolve) => setTimeout(resolve, 30)); // re-render + microtasks flush
+      expect(win.document.activeElement).toBe(typed); // focus must stay in the field
+    }
+    expect(typed.value).toBe('abc');
+  });
+});
