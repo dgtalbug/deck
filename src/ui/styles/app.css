@@ -167,6 +167,13 @@ button.wip.is-over {
   gap: 8px;
 }
 
+/* ═══ split-screen fix: long unbroken text wraps instead of inflating layout ═══ */
+.kcard-title,
+.page,
+.subtitle {
+  overflow-wrap: anywhere;
+}
+
 /* ═══ responsive-ui: the viewport contract (pinned) ═══
    1100px — kanban lanes become fixed-width scrollable columns (spade.css)
    900px  — workspace shell + git page drop to a single column
@@ -455,15 +462,20 @@ button.wip.is-over {
   gap: 26px;
   align-items: start;
 }
-/* responsive-ui viewport contract: ≤900px the shell stacks (sidebar above) */
+/* responsive-ui viewport contract: ≤900px the shell stacks (sidebar above).
+   minmax(0,1fr) — the track must shrink below the content's min-content or
+   the sidebar inflates it and the page scrolls sideways (split-screen fix). */
 @media (max-width: 900px) {
   .board-shell {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 .sidebar {
   position: sticky;
   top: 76px;
+  /* split-screen fix: the sidebar accepts widths narrower than its
+     content's min-content instead of inflating the grid track */
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 16px;

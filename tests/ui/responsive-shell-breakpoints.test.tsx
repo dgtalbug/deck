@@ -16,7 +16,7 @@ describe('responsive shell breakpoints', () => {
   });
 
   test('the shell drops the sidebar rail to one column at 900px', () => {
-    expect(app).toMatch(/@media \(max-width: 900px\) \{\s*\.board-shell \{\s*grid-template-columns: 1fr;\s*\}/m);
+    expect(app).toMatch(/@media \(max-width: 900px\) \{[\s\S]*?\.board-shell \{[\s\S]*?grid-template-columns: minmax\(0, 1fr\);[\s\S]*?\}\s*\}/);
   });
 
   test('no breakpoint outside the pinned set is introduced', () => {
