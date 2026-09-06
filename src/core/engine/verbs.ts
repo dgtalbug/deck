@@ -17,6 +17,7 @@ import {
   createPullRequest,
   deleteBranch,
   mergeBranch,
+  pushRemote,
   switchBranch,
 } from '../git/ops.ts';
 import type { DocumentStore } from '../board/store.ts';
@@ -159,12 +160,21 @@ export async function archiveVerb(store: DocumentStore, id: string): Promise<Arc
   const branch = branchFor(card, card.verb);
   const base = await defaultBranch(store.projectPath);
 
-  // Guarded sequence on clean trees only.
+  // Guarded sequence on clean trees only. gh cannot open a PR for a branch
+  // the remote has never seen — push the verb branch first, and push the
+  // merge after, so the loop closes on the remote too.
   await assertCleanTree(store.projectPath);
+  const remote = await runGit(store.projectPath, ['remote']);
+  if (remote.stdout.trim() === '') {
+    throw new DeckError('archive requires a git remote — push the repository to origin first', {
+      cardId: id,
+    });
+  }
   const current = await runGit(store.projectPath, ['rev-parse', '--abbrev-ref', 'HEAD']);
   if (current.stdout.trim() !== branch) {
     await switchBranch(store.projectPath, branch);
   }
+  await pushRemote(store.projectPath);
   const pr = await createPullRequest(store.projectPath, {
     title: `merge: ${branch} — ${card.title}`,
     base,
@@ -175,6 +185,7 @@ export async function archiveVerb(store: DocumentStore, id: string): Promise<Arc
     noFf: true,
     message: `merge: ${branch} — ${card.title}`,
   });
+  await pushRemote(store.projectPath);
 
   // Card → verify → done through the existing cores (never a raw lane write).
   if (card.lane === 'active') moveLane(store, id, 'verify', 'engine');
