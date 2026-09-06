@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { BOARD_DB_NAME } from '../board/store.ts';
 import { runGit } from '../git/digest.ts';
 import { runGh } from '../git/gh.ts';
 import { AGENTS_END, AGENTS_START, agentsBlock, boardUrlFor } from './init.ts';
@@ -44,7 +45,7 @@ export async function runDoctor(
     detail: serverUp ? boardUrl : `no server on ${boardUrl} — start one with \`deck serve\``,
   });
 
-  const dbPath = join(projectPath, '.deck', 'board.sqlite');
+  const dbPath = join(projectPath, '.deck', BOARD_DB_NAME);
   checks.push({
     name: 'board db',
     pass: existsSync(dbPath),

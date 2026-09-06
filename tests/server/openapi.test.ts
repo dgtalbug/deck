@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ProjectRegistry } from '../../src/core/projects/registry.ts';
 import { buildServer } from '../../src/server/serve.ts';
+import { DECK_VERSION } from '../../src/version.ts';
 
 let server: Server<undefined>;
 let home: string;
@@ -63,7 +64,7 @@ describe('API docs', () => {
     ]) {
       expect(paths).toContain(required);
     }
-    expect(doc.info.version).toBe('0.3.0');
+    expect(doc.info.version).toBe(DECK_VERSION);
     // v0.2.0 additions carry their methods
     const card = doc.paths['/{project}/cards/{id}'] as Record<string, Record<string, unknown>>;
     expect(Object.keys(card)).toContain('patch');

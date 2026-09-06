@@ -111,3 +111,11 @@ describe('initProject', () => {
     expect(result.boardUrl).toBe('http://127.0.0.1:4321');
   });
 });
+
+describe('init reports the real database path', () => {
+  test('dbPath is the file the store opened (what doctor checks)', async () => {
+    const result = await initProject(registry, proj.path);
+    expect(result.dbPath).toBe(join(proj.path, '.deck', 'board.sqlite'));
+    expect(existsSync(result.dbPath)).toBe(true);
+  });
+});

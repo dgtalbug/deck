@@ -3,6 +3,8 @@
 // never the borders. Art is exact strings from the artifact set.
 
 import { type Palette } from './color.ts';
+import { BOARD_DB_NAME } from '../core/board/store.ts';
+import { DEFAULT_PORT } from '../server/config.ts';
 
 const BANNER_ASCII = [
   '+--------+',
@@ -57,10 +59,29 @@ export function bannerBox(version: string, p: Palette): string {
   return renderBanner(BANNER_BOX.map((l) => l.replace('v0.2.0', `v${version}`)), version, p);
 }
 
-export function bannerCompact(version: string, p: Palette): string {
+// Facts the compact banner prints (board URL, data path) — derived from the
+// shared resolution, never a second hardcoded copy, so they cannot drift.
+// Callers that know the real values (serve startup) pass them; the default
+// resolves env port → default, same order as the server.
+export interface BannerFacts {
+  boardUrl: string;
+  dataPath: string;
+}
+
+export function defaultBannerFacts(env: Record<string, string | undefined> = {}): BannerFacts {
+  const envPort = Number.parseInt(env['DECK_PORT'] ?? '', 10);
+  const port = Number.isNaN(envPort) ? DEFAULT_PORT : envPort;
+  return { boardUrl: `http://127.0.0.1:${port}`, dataPath: `.deck/${BOARD_DB_NAME}` };
+}
+
+export function bannerCompact(
+  version: string,
+  p: Palette,
+  facts: BannerFacts = defaultBannerFacts(),
+): string {
   return [
     `${p.bold(p.color('primary', '♠'))} ${p.bold('deck')} ${p.dim(`v${version}`)} · local-first spec engine for coding agents`,
-    `  ${p.dim('board')} http://127.0.0.1:4711  ${p.dim('·  data .deck/deck.db')}`,
+    `  ${p.dim('board')} ${facts.boardUrl}  ${p.dim(`·  data ${facts.dataPath}`)}`,
     `  ${p.dim('less text, more work')}`,
   ].join('\n');
 }

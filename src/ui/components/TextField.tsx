@@ -12,9 +12,10 @@ export interface TextFieldProps {
   placeholder?: string | undefined;
   multiline?: boolean | undefined;
   mono?: boolean | undefined;
+  onKeyDown?: ((event: KeyboardEvent) => void) | undefined;
 }
 
-export function TextField({ id, label, value, onInput, error, placeholder, multiline, mono }: TextFieldProps): VNode {
+export function TextField({ id, label, value, onInput, error, placeholder, multiline, mono, onKeyDown }: TextFieldProps): VNode {
   const describedBy = error === undefined ? undefined : `${id}-error`;
   const common = {
     id,
@@ -23,6 +24,7 @@ export function TextField({ id, label, value, onInput, error, placeholder, multi
     'aria-invalid': error === undefined ? undefined : ('true' as const),
     'aria-describedby': describedBy,
     onInput: (event: Event) => onInput((event.target as HTMLInputElement | HTMLTextAreaElement).value),
+    onKeyDown,
   };
   return (
     <div>

@@ -76,6 +76,9 @@ export function upsertGitignore(projectPath: string): void {
 export interface InitResult {
   project: ProjectInfo;
   boardUrl: string;
+  // The database file the store actually opened — printed by the CLI and
+  // checked by doctor; one resolved value, no second path computation.
+  dbPath: string;
 }
 
 export async function initProject(
@@ -93,6 +96,6 @@ export async function initProject(
   await Bun.write(agentsPath, upsertAgentsBlock(agentsContent, agentsBlock(project.name, boardUrl)));
   // Open the board once: creates the DB and runs migrations so doctor and
   // the server see a ready board.
-  await openStore(projectPath);
-  return { project, boardUrl };
+  const store = await openStore(projectPath);
+  return { project, boardUrl, dbPath: store.dbPath };
 }

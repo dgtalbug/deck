@@ -5,6 +5,7 @@ import { moveLane } from '../../src/core/board/lanes.ts';
 import { openStore, type DocumentStore } from '../../src/core/board/store.ts';
 import { ProjectRegistry } from '../../src/core/projects/registry.ts';
 import { tmpProject, type TmpProject } from '../helpers.ts';
+import { DECK_VERSION } from '../../src/version.ts';
 
 let registry: ProjectRegistry;
 let proj: TmpProject;
@@ -203,5 +204,25 @@ describe('cli identity — plain-text equivalence', () => {
     store.addNote('quiet note');
     await run(['board']);
     expect(out.join('')).not.toMatch(/\x1b\[/);
+  });
+});
+
+describe('version flag', () => {
+  test('--version prints the version, exits 0, and never serves', async () => {
+    const code = await run(['--version']);
+    expect(code).toBe(0);
+    expect(out.join('')).toContain(`deck v${DECK_VERSION}`);
+  });
+
+  test('bare -v is the short form of --version', async () => {
+    const code = await run(['-v']);
+    expect(code).toBe(0);
+    expect(out.join('')).toContain(`deck v${DECK_VERSION}`);
+  });
+
+  test('-v inside a command stays a positional (note capture)', async () => {
+    const code = await run(['note', '-v']);
+    expect(code).toBe(0);
+    expect(out.join('')).not.toContain(DECK_VERSION);
   });
 });
