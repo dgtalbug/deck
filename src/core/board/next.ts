@@ -61,42 +61,52 @@ export function buildContext(store: DocumentStore, card: VerbItem): string {
 export function nextDigest(store: DocumentStore): NextDigest {
   const active = store.activeCount();
   if (active >= store.wipLimit) {
-    const blockedOn = mostAdvancedActive(store);
-    if (blockedOn === undefined) {
-      throw new NotFoundError('active card', 'wip-limit');
-    }
-    const remaining = isVerbItem(blockedOn)
-      ? blockedOn.tasks.filter((task) => !task.done)
-      : [{ id: 'tweak', title: (blockedOn as Tweak).requirement, done: false }];
-    // The at-limit digest is the build pack (feat-verb-gate D4): branch,
-    // mapped issue, and the checklist, within the same truncation budget —
-    // an agent resumes from `deck next` alone.
-    const header: string[] = [];
-    if (isVerbItem(blockedOn)) {
-      header.push(`branch: ${branchFor(blockedOn, blockedOn.verb)}`);
-      const map = getIssueMap(store, blockedOn.id);
-      header.push(`issue: ${map === undefined ? 'unpublished' : `#${map.issueNumber}`}`);
-    }
-    const context = [
-      `# finish first (WIP ${active}/${store.wipLimit}): ${blockedOn.title}`,
-      ...header,
-      '## Remaining tasks',
-      taskList(remaining),
-    ].join('\n');
-    return {
-      cardId: blockedOn.id,
-      title: blockedOn.title,
-      ...(isVerbItem(blockedOn) ? { verb: blockedOn.verb } : {}),
-      context: context.slice(0, MAX_CONTEXT_CHARS),
-      wipBlockedBy: blockedOn.id,
-    };
+    const digest = activePack(store, active);
+    return { ...digest, wipBlockedBy: digest.cardId };
   }
   const top = topOfQueue(store);
-  if (top === undefined) throw new NotFoundError('groomed card', 'top-of-queue');
+  if (top !== undefined) {
+    return {
+      cardId: top.id,
+      title: top.title,
+      verb: top.verb,
+      context: buildContext(store, top),
+    };
+  }
+  // Empty queue but an active card below the WIP limit: the digest is that
+  // card's build pack (resume), never a lookup failure — the single most
+  // common in-flight state (deck-next-breaks).
+  if (active > 0) return activePack(store, active);
+  throw new NotFoundError('groomed card', 'top-of-queue');
+}
+
+// The active card's build pack (feat-verb-gate D4): branch, mapped issue,
+// and the checklist, within the truncation budget — an agent resumes from
+// `deck next` alone.
+function activePack(store: DocumentStore, active: number): NextDigest {
+  const blockedOn = mostAdvancedActive(store);
+  if (blockedOn === undefined) {
+    throw new NotFoundError('active card', 'wip-limit');
+  }
+  const remaining = isVerbItem(blockedOn)
+    ? blockedOn.tasks.filter((task) => !task.done)
+    : [{ id: 'tweak', title: (blockedOn as Tweak).requirement, done: false }];
+  const header: string[] = [];
+  if (isVerbItem(blockedOn)) {
+    header.push(`branch: ${branchFor(blockedOn, blockedOn.verb)}`);
+    const map = getIssueMap(store, blockedOn.id);
+    header.push(`issue: ${map === undefined ? 'unpublished' : `#${map.issueNumber}`}`);
+  }
+  const context = [
+    `# finish first (WIP ${active}/${store.wipLimit}): ${blockedOn.title}`,
+    ...header,
+    '## Remaining tasks',
+    taskList(remaining),
+  ].join('\n');
   return {
-    cardId: top.id,
-    title: top.title,
-    verb: top.verb,
-    context: buildContext(store, top),
+    cardId: blockedOn.id,
+    title: blockedOn.title,
+    ...(isVerbItem(blockedOn) ? { verb: blockedOn.verb } : {}),
+    context: context.slice(0, MAX_CONTEXT_CHARS),
   };
 }
