@@ -155,7 +155,14 @@ export async function groomCommand(args: ParsedArgs, ctx: RunContext): Promise<s
     tasks: ['<task>'],
     openQuestions: [],
   };
-  return `POST /:project/cards/${id}/groom with:\n${JSON.stringify(contract, null, 2)}`;
+  return [
+    `POST /:project/cards/${id}/groom with:`,
+    JSON.stringify(contract, null, 2),
+    '',
+    'minimal spec is valid — title + tasks alone; research and specDeltas may',
+    'stay empty arrays for small changes. Branches name themselves',
+    'verb/first-four-title-words (duplicate names refuse with a retitle hint).',
+  ].join('\n');
 }
 
 // `deck epic "<title>"` creates an epic; `deck epic <id>` prints its tree.

@@ -17,5 +17,9 @@ function titleSlug(title: string): string {
 
 export function branchFor(card: Pick<VerbItem, 'id' | 'title'>, verb: VerbName): string {
   const slug = titleSlug(card.title);
-  return slug.length > 0 ? `${verb}/${card.id}-${slug}` : `${verb}/${card.id}`;
+  // Four-word law (v0.7.1): verb/slug, the conventional-commit shape — the
+  // title is said exactly once (the card id used to duplicate it). Git owns
+  // uniqueness: a same-titled second card refuses at start with a retitle
+  // hint (verbs.ts). Empty titles fall back to the id for uniqueness.
+  return slug.length > 0 ? `${verb}/${slug}` : `${verb}/${card.id}`;
 }

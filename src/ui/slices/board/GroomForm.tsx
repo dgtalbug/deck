@@ -144,6 +144,10 @@ export function GroomForm(props: {
           mono
           placeholder={'ADDED: board ui :: renders five lanes'}
         />
+        <p class="hint" data-testid="minimal-spec-hint" style="margin:0">
+          minimal spec is valid — title + tasks alone; research and deltas may stay empty for
+          small changes (the branch names itself <code>verb/first-four-title-words</code>)
+        </p>
         <TextField
           id="groom-tasks"
           label="tasks (one per line, from the plan)"
