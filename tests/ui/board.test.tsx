@@ -127,7 +127,7 @@ describe('view toggle (task 6.2/6.3)', () => {
     void api;
     fetches = 1;
 
-    const todoButton = win.document.querySelector('.sidebar-nav a[href*="view=todo"]') as unknown as HTMLElement;
+    const todoButton = win.document.querySelector('.view-switch-btn[data-view="todo"]') as unknown as HTMLElement;
     todoButton.click();
     await new Promise((resolve) => setTimeout(resolve, 60));
 
@@ -156,13 +156,13 @@ describe('view toggle (task 6.2/6.3)', () => {
 });
 
 describe('git view (v0.3.0)', () => {
-  test('deep link ?view=git renders GitPage; sidebar marks Git current', async () => {
+  test('deep link ?view=git renders GitPage; the view switcher marks git current', async () => {
     expect(boardPath('proj', 'git')).toBe('/proj/?view=git');
     const { win } = await renderBoard(DOC, '/proj/?view=git');
     expect(win.document.querySelector('.board')).toBeNull();
     expect(win.document.querySelector('.git-page')).not.toBeNull();
-    const current = win.document.querySelector('.sidebar-nav a[aria-current="page"]');
-    expect(current?.textContent).toContain('Git');
+    const current = win.document.querySelector('.view-switch-btn[aria-current="page"]');
+    expect(current?.textContent).toContain('git');
     // filter bar and note capture are hidden on the git view
     expect(win.document.querySelector('.filterbar')).toBeNull();
   });
@@ -180,7 +180,7 @@ describe('git view (v0.3.0)', () => {
     await new Promise((resolve) => setTimeout(resolve, 80));
     expect(boardFetches).toBe(1); // mount only
 
-    const gitLink = win.document.querySelector('.sidebar-nav a[href*="view=git"]') as unknown as HTMLElement;
+    const gitLink = win.document.querySelector('.view-switch-btn[data-view="git"]') as unknown as HTMLElement;
     gitLink.click();
     await new Promise((resolve) => setTimeout(resolve, 60));
     expect(route.value.view).toBe('git');

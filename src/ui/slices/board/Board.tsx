@@ -17,7 +17,6 @@ import { GroomForm } from './GroomForm.tsx';
 import { NoteCapture } from './NoteCapture.tsx';
 import { Banners } from './Banners.tsx';
 import { NextPanel } from './NextPanel.tsx';
-import { ProjectSidebar } from './ProjectSidebar.tsx';
 import { RenameDialog } from './RenameDialog.tsx';
 import { DeleteConfirm } from './DeleteConfirm.tsx';
 import { ToastHost } from '../../components/Toast.tsx';
@@ -147,13 +146,36 @@ export function Board({ project, api = boardApi, subscribe = subscribeBoardEvent
   // the git view along with the filter bar (spec: git view is git-only).
   const capture = <NoteCapture onAdd={(title) => store.addNote(title)} />;
 
+  // The project bar (top-bar merge, v0.7.0): the old sidebar's navigation
+  // lives in the header row now — segmented view switcher + deck next — so
+  // the board keeps the full viewport width for its five lanes. Workspace
+  // identity (home link, crumb, theme) stays in the global topbar.
+  const viewSwitch = (mode: 'kanban' | 'todo' | 'git', label: string): VNode => (
+    <button
+      type="button"
+      class="view-switch-btn"
+      aria-current={view === mode ? 'page' : undefined}
+      data-view={mode}
+      onClick={() => switchView(mode)}
+    >
+      {label}
+    </button>
+  );
+
   return (
-    <div class="board-shell">
-      <ProjectSidebar project={project} view={view} onNavigate={switchView} onNext={() => setNextOpen(true)} api={api} />
+    <div>
       <section ref={containerRef}>
-      <h1 class="page">
-        {project} · {view === 'todo' ? 'todo' : view === 'git' ? 'git' : 'board'}
-      </h1>
+      <div class="board-head-row">
+        <h1 class="page" style="margin:0">{project}</h1>
+        <nav class="view-switch" aria-label="board views">
+          {viewSwitch('kanban', 'board')}
+          {viewSwitch('todo', 'todo')}
+          {viewSwitch('git', 'git')}
+        </nav>
+        <button type="button" class="btn btn-outline" onClick={() => setNextOpen(true)} data-testid="deck-next">
+          deck next
+        </button>
+      </div>
       <p class="subtitle">
         {view === 'git' ? (
           'Branch, checkpoint, integrate, publish — guarded git for the SDD loop.'

@@ -76,8 +76,9 @@ export function GitPullRequests(props: { ctx: GitActionCtx; pulls: PullRequest[]
         </span>
       </div>
       {gh?.available !== true ? (
-        <p class="hint" style="margin:0">
-          gh became unavailable — refresh to re-check.
+        <p class="hint" style="margin:0" data-testid="gh-off-hint">
+          gh CLI is missing or not authenticated — pull request list and create are disabled. Local
+          sections (working tree, branches, sync, history) still work.
         </p>
       ) : (
         <>
