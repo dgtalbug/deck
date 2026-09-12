@@ -19,11 +19,11 @@ const skills = skillDirs.map((name) => ({
 }));
 
 describe('skill pack conformance', () => {
-  test('the pack is exactly the eleven skills', () => {
+  test('the pack is exactly the fourteen skills', () => {
     expect(skillDirs.sort()).toEqual([
       'deck-build', 'deck-capture', 'deck-continue', 'deck-explore', 'deck-finish',
-      'deck-git-conventions', 'deck-onboard', 'deck-plan', 'deck-spec-map',
-      'deck-sync', 'deck-types', 'deck-update',
+      'deck-git-conventions', 'deck-impact', 'deck-lens', 'deck-onboard',
+      'deck-plan', 'deck-spec-map', 'deck-sync', 'deck-types', 'deck-update',
     ].sort());
   });
 
