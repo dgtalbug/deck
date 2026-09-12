@@ -150,18 +150,24 @@ export async function groomCommand(args: ParsedArgs, ctx: RunContext): Promise<s
     noteId: id,
     proposedVerb: 'feat',
     refinedTitle: '<one-line imperative title>',
-    research: { codebaseFindings: ['<what you found in the code>'] },
+    research: {
+      story: '<what this is and why — the spec Story section; mermaid fences welcome>',
+      codebaseFindings: ['<what you found in the code>'],
+      blastRadius: ['<existing files/behaviors touched>'],
+    },
     specDeltas: [{ op: 'ADDED', requirement: '<Requirement: name>', text: '<text>' }],
-    tasks: ['<task>'],
+    tasks: ['<technical, code-level step>'],
     openQuestions: [],
   };
   return [
     `POST /:project/cards/${id}/groom with:`,
     JSON.stringify(contract, null, 2),
     '',
-    'minimal spec is valid — title + tasks alone; research and specDeltas may',
-    'stay empty arrays for small changes. Branches name themselves',
-    'verb/first-four-title-words (duplicate names refuse with a retitle hint).',
+    'the spec renders story-first: Story (what & why) · Research (findings, RCA)',
+    '· Requirements (deltas) · Blast radius · Git (auto: branch verb/first-four-',
+    'words, commit prefix, --no-ff merge title, tag law) · Checklist (tasks).',
+    'Story/research say WHAT we build; tasks are the only technical section.',
+    'Minimal spec (title + tasks) stays valid — story, findings, deltas optional.',
   ].join('\n');
 }
 

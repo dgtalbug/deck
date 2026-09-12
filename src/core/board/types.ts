@@ -69,6 +69,11 @@ export interface Research {
   codebaseFindings: string[];
   rca?: string | undefined;
   blastRadius?: string[] | undefined;
+  // Story-first spec law: what this is and why — the narrative section of
+  // spec.md. Optional (minimal groom = title + tasks), but it is the only
+  // home for the feature explanation; tasks stay technical. Lives on
+  // Research so the groomed row persists it and re-edits recover it.
+  story?: string | undefined;
 }
 
 export interface VerbItem {

@@ -49,7 +49,9 @@ export function GroomForm(props: {
   onReject(): void;
 }): VNode {
   const [input, setInput] = useState<GroomInput>(props.initial ?? EMPTY);
+  const [story, setStory] = useState(props.initial?.research.story ?? '');
   const [findings, setFindings] = useState((props.initial?.research.codebaseFindings ?? []).join('\n'));
+  const [blast, setBlast] = useState((props.initial?.research.blastRadius ?? []).join('\n'));
   const [deltas, setDeltas] = useState(stringifyDeltas(props.initial?.specDeltas ?? []));
   const [tasks, setTasks] = useState((props.initial?.tasks ?? []).join('\n'));
   const [questions, setQuestions] = useState((props.initial?.openQuestions ?? []).join('\n'));
@@ -73,6 +75,9 @@ export function GroomForm(props: {
       refinedTitle: input.refinedTitle.trim(),
       research: {
         codebaseFindings: parseLines(findings),
+        ...(story.trim() !== '' ? { story: story.trim() } : {}),
+        ...(props.initial?.research.rca !== undefined ? { rca: props.initial.research.rca } : {}),
+        ...(blast.trim() !== '' ? { blastRadius: parseLines(blast) } : {}),
       },
       specDeltas: parseDeltas(deltas),
       tasks: parseLines(tasks),
@@ -127,6 +132,14 @@ export function GroomForm(props: {
           placeholder="one line — what this becomes"
         />
         <TextField
+          id="groom-story"
+          label="story — what this is and why (epic-style narrative; ```mermaid fences welcome)"
+          value={story}
+          onInput={setStory}
+          multiline
+          placeholder={'A rider wants … so this card adds … GitHub renders any mermaid diagram below.'}
+        />
+        <TextField
           id="groom-findings"
           label="research — codebase findings (one per line)"
           value={findings}
@@ -134,6 +147,15 @@ export function GroomForm(props: {
           multiline
           mono
           placeholder={'evidence-cited findings from the repo'}
+        />
+        <TextField
+          id="groom-blast"
+          label="blast radius — existing files/behaviors touched (one per line)"
+          value={blast}
+          onInput={setBlast}
+          multiline
+          mono
+          placeholder={'src/core/board/groom.ts — materializeSpec template'}
         />
         <TextField
           id="groom-deltas"
@@ -145,17 +167,17 @@ export function GroomForm(props: {
           placeholder={'ADDED: board ui :: renders five lanes'}
         />
         <p class="hint" data-testid="minimal-spec-hint" style="margin:0">
-          minimal spec is valid — title + tasks alone; research and deltas may stay empty for
-          small changes (the branch names itself <code>verb/first-four-title-words</code>)
+          spec + research say <strong>what</strong> we are building and what we found; tasks stay the only
+          technical part. Minimal spec (title + tasks) stays valid — story, findings, deltas may be empty.
         </p>
         <TextField
           id="groom-tasks"
-          label="tasks (one per line, from the plan)"
+          label="tasks — technical, code-level steps only (one per line)"
           value={tasks}
           onInput={setTasks}
           multiline
           mono
-          placeholder={'implement lanes\nwire SSE deltas'}
+          placeholder={'extract helper in groom.ts\nextend renderCardSpec git block'}
         />
         {!editing ? (
           <TextField

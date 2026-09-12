@@ -8,6 +8,9 @@ export const researchSchema = z.object({
   codebaseFindings: z.array(z.string()),
   rca: z.string().optional(),
   blastRadius: z.array(z.string()).optional(),
+  // story-first spec law: the narrative persists on the row so re-groom
+  // edits and the research column agree with spec.md's Story section
+  story: z.string().optional(),
 });
 
 

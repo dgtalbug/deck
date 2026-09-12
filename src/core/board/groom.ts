@@ -15,10 +15,12 @@ function nowIso(): string {
   return new Date().toISOString();
 }
 
-// On accept, the spec directory exists with a real checklist so the
-// tasks-read-from-spec contract has a source from day one. Re-edits pass a
-// doneByTitle snapshot so surviving tasks keep their checkmarks in tasks.md
-// (next's digest reads the file, not the DB).
+// Story-first spec law: spec.md carries the full design document — Story
+// (what & why, mermaid fences pass through for GitHub to render), Research
+// (findings + RCA), Requirements (the deltas — format pinned for the review
+// gate parser), Blast radius (only when it touches existing code). The h1
+// header is added at render time (renderCardSpec), not here. tasks.md stays
+// the checklist — the only technical/code-level artifact.
 export function materializeSpec(
   projectPath: string,
   specPath: string,
@@ -29,11 +31,33 @@ export function materializeSpec(
   mkdirSync(dir, { recursive: true });
   const checklist = proposal.tasks.map((task) => `- [${doneByTitle.get(task) === true ? 'x' : ' '}] ${task}`).join('\n');
   Bun.write(join(dir, 'tasks.md'), `${checklist}\n`);
+
+  const sections: string[] = [];
+  const story = proposal.research.story?.trim();
+  if (story !== undefined && story !== '') {
+    sections.push(`## Story\n\n${story}\n`);
+  }
+  const findings = proposal.research.codebaseFindings.filter((line) => line.trim() !== '');
+  const rca = proposal.research.rca?.trim();
+  if (findings.length > 0 || (rca !== undefined && rca !== '')) {
+    const parts: string[] = [];
+    if (findings.length > 0) {
+      parts.push(`### Findings\n\n${findings.map((line) => `- ${line}`).join('\n')}\n`);
+    }
+    if (rca !== undefined && rca !== '') {
+      parts.push(`### Root cause\n\n${rca}\n`);
+    }
+    sections.push(`## Research\n\n${parts.join('')}`);
+  }
   const deltas = proposal.specDeltas
     .map((delta) => `### ${delta.op}: ${delta.requirement}\n${delta.text}\n`)
     .join('\n');
-  const spec = `# ${proposal.refinedTitle}\n\n## ADDED Requirements\n\n${deltas}\n`;
-  Bun.write(join(dir, 'spec.md'), spec);
+  sections.push(`## Requirements\n\n${deltas}`);
+  const blast = (proposal.research.blastRadius ?? []).filter((line) => line.trim() !== '');
+  if (blast.length > 0) {
+    sections.push(`## Blast radius\n\n${blast.map((line) => `- ${line}`).join('\n')}\n`);
+  }
+  Bun.write(join(dir, 'spec.md'), sections.join('\n'));
 }
 
 export function convertToVerbItem(store: DocumentStore, proposal: GroomProposal): VerbItem {

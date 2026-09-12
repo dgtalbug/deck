@@ -32,6 +32,7 @@ export const groomBody = z.object({
     codebaseFindings: z.array(z.string()),
     rca: z.string().optional(),
     blastRadius: z.array(z.string()).optional(),
+    story: z.string().optional(),
   }),
   specDeltas: z.array(
     z.object({
