@@ -13,6 +13,7 @@ import { NotFoundError } from './errors.ts';
 import { cards, issueMap, publishQueue, specs as specsTable } from './schema.ts';
 import { runTx, type DocumentStore } from './store.ts';
 import type { VerbItem } from './types.ts';
+import { branchFor } from '../engine/slug.ts';
 
 export interface SpecVersion {
   cardId: string;
@@ -44,16 +45,40 @@ export function checksumOf(markdown: string): string {
   return createHash('sha256').update(markdown, 'utf8').digest('hex');
 }
 
-// Render a card's spec blob from its materialized spec directory: the spec
-// markdown plus the live checklist state, headed by the card identity. This
-// is the "rendered view" of the persisted GroomProposal (decision #2).
+// The "rendered view" of the persisted GroomProposal (decision #2): the
+// story-first spec.md (Story / Research / Requirements / Blast radius) plus
+// this card's own pinned git conventions and the live checklist — the same
+// document becomes the published issue body, so GitHub carries everything
+// the groom collected (mermaid fences included; GitHub renders them).
+function gitBlock(card: VerbItem): string {
+  return [
+    '## Git',
+    '',
+    `- branch: \`${branchFor(card, card.verb)}\``,
+    `- commits: \`${card.verb}: subject\` / \`${card.verb}(scope): subject\``,
+    '- pr + merge: `merge: <branch> — <title>`, merged --no-ff',
+    '- release: annotated `vX.Y.Z` when the archived diff bumps the version',
+    '',
+  ].join('\n');
+}
+
 export function renderCardSpec(store: DocumentStore, card: VerbItem): string {
   const specDir = join(store.projectPath, card.specPath);
   const spec = existsSync(join(specDir, 'spec.md'))
     ? readFileSync(join(specDir, 'spec.md'), 'utf8')
-    : `# ${card.title}\n`;
+    : '';
   const checklist = card.tasks.map((task) => `- [${task.done ? 'x' : ' '}] ${task.title}`).join('\n');
-  return [`# ${card.verb}: ${card.title}`, '', '## Spec', '', spec.trimEnd(), '', '## Checklist', '', checklist, ''].join('\n');
+  return [
+    `# ${card.verb}: ${card.title}`,
+    '',
+    spec.trimEnd(),
+    '',
+    gitBlock(card),
+    '## Checklist',
+    '',
+    checklist,
+    '',
+  ].join('\n');
 }
 
 // Append a version iff the checksum differs from the newest — content

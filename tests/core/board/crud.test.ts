@@ -145,7 +145,10 @@ describe('updateGroom', () => {
     expect(tasksMd).toContain('- [x] implement lanes');
     expect(tasksMd).toContain('- [ ] wire sse better');
     const specMd = readFileSync(join(store.projectPath, item.specPath, 'spec.md'), 'utf-8');
-    expect(specMd).toContain('# engine core revised');
+    // story-first template: no h1 in spec.md (renderCardSpec adds it), the
+    // revised research lands as the Research section
+    expect(specMd).toContain('## Research');
+    expect(specMd).toContain('- found more');
   });
 
   test('open questions do not gate an edit', async () => {

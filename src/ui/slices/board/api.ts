@@ -31,7 +31,7 @@ export interface UiCard {
   specPath?: string;
   tasks?: TaskView[];
   progress?: string;
-  research?: { codebaseFindings: string[]; rca?: string; blastRadius?: string[] };
+  research?: { codebaseFindings: string[]; rca?: string; blastRadius?: string[]; story?: string };
   blocked?: BlockedView;
   requirement?: string;
   epicId?: string;
@@ -100,7 +100,7 @@ export interface GitOpResult {
 export interface GroomInput {
   proposedVerb: Verb;
   refinedTitle: string;
-  research: { codebaseFindings: string[]; rca?: string; blastRadius?: string[] };
+  research: { codebaseFindings: string[]; rca?: string; blastRadius?: string[]; story?: string };
   specDeltas: { op: 'ADDED' | 'MODIFIED' | 'REMOVED'; requirement: string; text: string }[];
   tasks: string[];
   openQuestions: string[];

@@ -303,6 +303,7 @@ export function Board({ project, api = boardApi, subscribe = subscribeBoardEvent
               ...(regroomCard.research?.blastRadius !== undefined
                 ? { blastRadius: regroomCard.research.blastRadius }
                 : {}),
+              ...(regroomCard.research?.story !== undefined ? { story: regroomCard.research.story } : {}),
             },
             specDeltas: [],
             tasks: (regroomCard.tasks ?? []).map((task) => task.title),
