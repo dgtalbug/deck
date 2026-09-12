@@ -24,6 +24,7 @@ import { noteBody } from '../server/routes/notes.ts';
 import { serveMain } from '../server/serve.ts';
 import { flagString, flagStrings, parseArgs, UsageError, type ParsedArgs } from './args.ts';
 import { startCommand } from './start.ts';
+import { graphCommand } from './graph.ts';
 import { overrideCommand, rulesCommand } from './rules.ts';
 import {
   backfillCommand,
@@ -92,6 +93,7 @@ export const parity = {
   'deck review': 'reviewGate',
   'deck types': 'listSpecTypes',
   'deck rules': 'loadRules',
+  'deck graph': 'indexGraph',
   'deck override': 'recordOverride',
 };
 
@@ -122,6 +124,8 @@ commands:
   types [list] | types new <json-file> | types remove <id>
                                     spec-type registry (list · create-edit · remove)
   rules [list|check|validate]       project law (deck.rules.yaml) — check runs machine gates
+  graph index|status|impact|why|lens|search
+                                    code intelligence over .deck/graph.sqlite
   override <rule-id> --reason "<t>" record a user override on the active card
   init [--name <name>]              register + scaffold this project
   doctor                            report drift (all checks must pass)
@@ -304,6 +308,7 @@ const commands: Record<string, Command> = {
   },
   hooks: hooksCommand,
   rules: rulesCommand,
+  graph: graphCommand,
   override: overrideCommand,
   epic: epicCommand,
   epics: epicsCommand,
