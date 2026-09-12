@@ -102,6 +102,25 @@ export interface GitOpResult {
 // Spec-type registry row (GET /:project/types) — drives the groom form's
 // per-type section fields and their required hints.
 // Epic tree (GET /:project/epics/:id): the epic plus navigable story rows.
+// Project timeline (GET /:project/timeline): one delivery narrative — board
+// cards interleaved with merged PR titles, newest first.
+export interface TimelineEntry {
+  at: string;
+  kind: 'epic' | 'card' | 'pr';
+  title: string;
+  cardId?: string | undefined;
+  epicId?: string | undefined;
+  lane?: string | undefined;
+  verb?: string | undefined;
+  progress?: string | undefined;
+  issueNumber?: number | null | undefined;
+  url?: string | undefined;
+}
+export interface TimelineView {
+  view: 'timeline';
+  entries: TimelineEntry[];
+  pulls: 'ok' | 'unavailable';
+}
 export interface EpicTreeStory {
   id: string;
   title: string;
@@ -218,6 +237,8 @@ function buildApi(base: string): BoardApi {
 
   fetchGit: (project: string): Promise<GitDigest> => request(base, `/${project}/git`),
 
+  fetchTimeline: (project: string): Promise<TimelineView> => request(base, `/${project}/timeline`),
+
   updateCard: (project: string, id: string, title: string): Promise<UiCard> =>
     patch(base, `/${project}/cards/${id}`, { title }),
 
@@ -302,6 +323,7 @@ export type BoardApi = {
 
   fetchEpicTree?: (project: string, epicId: string) => Promise<EpicTree>;
   fetchGit: (project: string) => Promise<GitDigest>;
+  fetchTimeline?: (project: string) => Promise<TimelineView>;
   updateCard: (project: string, id: string, title: string) => Promise<UiCard>;
   deleteCard: (project: string, id: string) => Promise<void>;
   updateGroom: (project: string, id: string, input: GroomInput) => Promise<UiCard>;

@@ -6,7 +6,7 @@ import { signal } from '@preact/signals';
 // history noise. Links must keep the trailing slash on /<project>/ (Bun only
 // matches that form).
 
-export type BoardViewMode = 'kanban' | 'todo' | 'git';
+export type BoardViewMode = 'kanban' | 'todo' | 'git' | 'timeline';
 
 export interface Route {
   project: string | null;
@@ -28,7 +28,7 @@ export function parseLocation(): Route {
   const viewParam = params.get('view');
   return {
     project,
-    view: viewParam === 'todo' || viewParam === 'git' ? viewParam : 'kanban',
+    view: viewParam === 'todo' || viewParam === 'git' || viewParam === 'timeline' ? viewParam : 'kanban',
     card: params.get('card'),
   };
 }
