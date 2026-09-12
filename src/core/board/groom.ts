@@ -92,6 +92,19 @@ export function convertToVerbItem(store: DocumentStore, proposal: GroomProposal)
       { noteId: proposal.noteId, verb: proposal.proposedVerb, missing },
     );
   }
+  // Shape law (jira-style direction): >3 tasks is story-shaped — the spec
+  // must say what and why, or the work belongs in an epic of smaller cards.
+  const hasSpecContent =
+    (proposal.research.story ?? '').trim() !== '' ||
+    proposal.specDeltas.length > 0 ||
+    proposal.research.codebaseFindings.length > 0;
+  if (proposal.tasks.length > 3 && !hasSpecContent) {
+    throw new DeckError(
+      `groom proposal for ${proposal.noteId} is story-shaped (${proposal.tasks.length} tasks) ` +
+        `without a spec — write the story (what & why, findings) or split it into an epic of smaller cards`,
+      { noteId: proposal.noteId, tasks: proposal.tasks.length },
+    );
+  }
   if (proposal.openQuestions.length > 0) {
     throw new DeckError(
       `groom proposal for ${proposal.noteId} has ${proposal.openQuestions.length} ` +

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import type { VNode } from 'preact';
 import { ArrowRightLeft, RadioTower } from 'lucide-preact';
 import { signal } from '@preact/signals';
-import { boardApi, type BoardApi, type GroomInput, type UiCard } from './api.ts';
+import { boardApi, type BoardApi, type EpicTree, type GroomInput, type UiCard } from './api.ts';
 import { registerDragMonitor, type DragCallbacks } from './dnd.ts';
 import { captureFlip, playFlip } from './flip.ts';
 import { createBoardStore } from './store.ts';
@@ -12,7 +12,7 @@ import { Lane, LANE_ORDER, LaneSkeleton } from './Lane.tsx';
 import { FilterBar } from './FilterBar.tsx';
 import { TodoView } from './TodoView.tsx';
 import { GitPage } from './GitPage.tsx';
-import { CardDetail, CardDetailSkeleton, type DetailActions } from './CardDetail.tsx';
+import { CardDetail, CardDetailSkeleton, EpicDetail, type DetailActions } from './CardDetail.tsx';
 import { GroomForm } from './GroomForm.tsx';
 import { NoteCapture } from './NoteCapture.tsx';
 import { Banners } from './Banners.tsx';
@@ -113,6 +113,27 @@ export function Board({ project, api = boardApi, subscribe = subscribeBoardEvent
 
   const view = route.value.view;
   const detailCard = route.value.card !== null ? store.cardById(route.value.card) : undefined;
+  // Epic navigation: a detail route that names an epic opens the epic tree
+  // instead of a card detail (epics are not lane cards).
+  const detailEpicId =
+    detailCard === undefined && route.value.card !== null &&
+    (store.board.value.epics ?? []).some((epic) => epic.id === route.value.card)
+      ? route.value.card
+      : null;
+  const [epicTree, setEpicTree] = useState<EpicTree | null>(null);
+  useEffect(() => {
+    if (detailEpicId === null || api.fetchEpicTree === undefined) {
+      setEpicTree(null);
+      return;
+    }
+    let alive = true;
+    api.fetchEpicTree(project, detailEpicId)
+      .then((tree) => alive && setEpicTree(tree))
+      .catch(() => alive && setEpicTree(null));
+    return () => {
+      alive = false;
+    };
+  }, [detailEpicId, project]);
   const groomNote = groomingId !== null ? store.cardById(groomingId) : undefined;
   const renameCard = renamingId !== null ? store.cardById(renamingId) : undefined;
   const deleteCard = deletingId !== null ? store.cardById(deletingId) : undefined;
@@ -250,13 +271,29 @@ export function Board({ project, api = boardApi, subscribe = subscribeBoardEvent
         onClose={() => setNextOpen(false)}
       />
 
-      {detailCard === undefined && route.value.card !== null && !store.loaded.value ? (
+      {detailEpicId !== null ? (
+        epicTree === null ? (
+          <CardDetailSkeleton />
+        ) : (
+          <EpicDetail
+            tree={epicTree}
+            onOpenStory={(id) => setParam('card', id)}
+            onClose={() => setParam('card', null)}
+          />
+        )
+      ) : detailCard === undefined && route.value.card !== null && !store.loaded.value ? (
         <CardDetailSkeleton />
       ) : detailCard !== undefined ? (
         <CardDetail
           card={detailCard}
           actions={detailActions}
           specMarkdown={detailCard.specPath !== undefined ? `spec: ${detailCard.specPath}` : '# no spec yet'}
+          {...(detailCard.epicId !== undefined
+            ? {
+                epic: (store.board.value.epics ?? []).find((row) => row.id === detailCard.epicId),
+                onOpenEpic: (id: string) => setParam('card', id),
+              }
+            : {})}
         />
       ) : null}
 
