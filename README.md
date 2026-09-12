@@ -54,7 +54,9 @@ deck note ─→ groom ─→ deck feat ──→ implement ──→ verify ─
 ```
 
 - **Specs live in the db, not markdown folders** — every groomed change carries its delta spec, research, and tasks as first-class data.
-- **Every spec gets a GitHub issue** — published automatically when implementation starts; labels mirror lanes; `deck sync` reconciles.
+- **Every spec gets a GitHub issue from birth** — grooming publishes a draft issue; starting the verb retargets it; labels mirror lanes; `deck sync` reconciles.
+- **The verb is the process** — spec types (`deck types`) are user-editable workflows: `fix` demands Reproduce + Root cause and cannot pass review without a red→green test; `feat` demands design sections when the blast radius grows; custom types carry their own sections, task laws, and git conventions, edited live without touching code.
+- **Agents get a full skill pack** — `deck setup` installs 11 composable runbook skills (capture → build → finish, plus git conventions, resume, sync) into every detected agent host's skills directory.
 - **The engine is deterministic** — deck computes checklists and gaps instantly; agents bring the intelligence via `deck next` (≤2k-token context packs).
 - **No lock-in** — import/export adapters planned for openspec, spec-kit, backlog.md, and plain Markdown/JSON.
 
