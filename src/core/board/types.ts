@@ -74,6 +74,10 @@ export interface Research {
   // home for the feature explanation; tasks stay technical. Lives on
   // Research so the groomed row persists it and re-edits recover it.
   story?: string | undefined;
+  // Spec-type registry sections (spec-type-registry): id → content. The
+  // registry defines which ids exist and when they are required; this map
+  // is the groomed content the spec renders and the gate checks.
+  sections?: Record<string, string> | undefined;
 }
 
 export interface VerbItem {

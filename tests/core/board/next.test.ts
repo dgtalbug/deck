@@ -69,7 +69,7 @@ describe('nextDigest', () => {
         noteId: other.addNote('queued').id,
         proposedVerb: 'fix',
         refinedTitle: 'queued',
-        research: { codebaseFindings: [] },
+        research: { codebaseFindings: [], sections: { reproduce: 'steps', rca: 'cause' } },
         specDeltas: [],
         tasks: [],
         openQuestions: [],

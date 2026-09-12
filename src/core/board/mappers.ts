@@ -11,6 +11,8 @@ export const researchSchema = z.object({
   // story-first spec law: the narrative persists on the row so re-groom
   // edits and the research column agree with spec.md's Story section
   story: z.string().optional(),
+  // spec-type registry sections: id → content
+  sections: z.record(z.string(), z.string()).optional(),
 });
 
 

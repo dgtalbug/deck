@@ -57,7 +57,7 @@ function groomed(title: string, verb: VerbType = 'feat'): string {
     noteId: note.id,
     proposedVerb: verb,
     refinedTitle: title,
-    research: { codebaseFindings: [] },
+    research: verb === 'fix' ? { codebaseFindings: [], sections: { reproduce: 'steps', rca: 'cause' } } : { codebaseFindings: [] },
     specDeltas: [],
     tasks: ['implement', 'verify'],
     openQuestions: [],

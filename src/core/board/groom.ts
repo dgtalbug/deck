@@ -7,9 +7,10 @@ import { endPosition } from './positions.ts';
 import { cards, issueMap, publishQueue, specs, tasks } from './schema.ts';
 import { runTx, type DocumentStore } from './store.ts';
 import type { GroomProposal, Note, Tweak, VerbItem } from './types.ts';
+import { getSpecType, sectionGate } from './types-registry.ts';
 import { emitEvent } from '../events/outbox.ts';
 import { assertUnderWip } from './lanes.ts';
-import { recordSpecVersion, renderCardSpec } from './specstore.ts';
+import { recordSpecVersion, renderCardSpec, enqueuePublish } from './specstore.ts';
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -26,6 +27,7 @@ export function materializeSpec(
   specPath: string,
   proposal: GroomProposal,
   doneByTitle: ReadonlyMap<string, boolean> = new Map(),
+  sectionLabels: ReadonlyMap<string, string> = new Map(),
 ): void {
   const dir = join(projectPath, specPath);
   mkdirSync(dir, { recursive: true });
@@ -57,6 +59,14 @@ export function materializeSpec(
   if (blast.length > 0) {
     sections.push(`## Blast radius\n\n${blast.map((line) => `- ${line}`).join('\n')}\n`);
   }
+  // Spec-type registry sections: one `## <label>` block per section id the
+  // groom filled, in registry order, after the fixed core sections. Labels
+  // are the caller's map (registry id → label) — this function stays pure.
+  for (const [id, label] of sectionLabels) {
+    const content = proposal.research.sections?.[id]?.trim();
+    if (content === undefined || content === '') continue;
+    sections.push(`## ${label}\n\n${content}\n`);
+  }
   Bun.write(join(dir, 'spec.md'), sections.join('\n'));
 }
 
@@ -67,6 +77,19 @@ export function convertToVerbItem(store: DocumentStore, proposal: GroomProposal)
     throw new DeckError(
       `verb '${proposal.proposedVerb}' is not registered — built-ins or 'deck workflow <verb>' names only`,
       { noteId: proposal.noteId, verb: proposal.proposedVerb },
+    );
+  }
+  // Spec-type gate (shared with verb start): the registry's required
+  // sections for this type must be present in the proposal. Existence
+  // first so the typed 404 contract wins over the gate.
+  store.getNote(proposal.noteId);
+  const type = getSpecType(store, proposal.proposedVerb);
+  const missing = sectionGate(type, proposal.research);
+  if (missing.length > 0) {
+    throw new DeckError(
+      `groom proposal for ${proposal.noteId} as '${proposal.proposedVerb}' is missing required ` +
+        `section(s): ${missing.join(', ')} — fill them and re-groom`,
+      { noteId: proposal.noteId, verb: proposal.proposedVerb, missing },
     );
   }
   if (proposal.openQuestions.length > 0) {
@@ -109,9 +132,17 @@ export function convertToVerbItem(store: DocumentStore, proposal: GroomProposal)
     emitEvent(tx, 'card.groomed', { id: proposal.noteId, lane: 'groomed', position });
   });
   const item = store.getVerbItem(proposal.noteId);
-  materializeSpec(store.projectPath, item.specPath, proposal);
-  recordSpecVersion(store, proposal.noteId, renderCardSpec(store, item));
+  materializeSpec(store.projectPath, item.specPath, proposal, new Map(), sectionLabels(type));
+  const version = recordSpecVersion(store, proposal.noteId, renderCardSpec(store, item));
+  // Issues at groom: the spec publishes as a DRAFT issue from birth —
+  // queue-first (deck sync flushes lazily), never blocking the groom.
+  enqueuePublish(store, proposal.noteId, version.checksum);
   return item;
+}
+
+// Registry id → label map for materializeSpec's section rendering.
+export function sectionLabels(type: { sections: Array<{ id: string; label: string }> }): Map<string, string> {
+  return new Map(type.sections.map((section) => [section.id, section.label]));
 }
 
 export function demoteToNote(store: DocumentStore, cardId: string): Note {
@@ -147,10 +178,18 @@ export function demoteToNote(store: DocumentStore, cardId: string): Note {
     // Cascade the card's derived rows like deleteCard — a note back in todo
     // has no spec/issue identity, and a surviving issue_map/publish_queue/
     // specs row would make deck sync's drift loop crash on the dead verb id.
+    const draftIssue = tx.select().from(issueMap).where(eq(issueMap.cardId, cardId)).get();
     tx.delete(issueMap).where(eq(issueMap.cardId, cardId)).run();
     tx.delete(publishQueue).where(eq(publishQueue.cardId, cardId)).run();
     tx.delete(specs).where(eq(specs.cardId, cardId)).run();
     emitEvent(tx, 'card.moved', { id: cardId, lane: 'todo', position });
+    // A draft issue published at groom dies with the groom: best-effort
+    // close (sync reports the leftover as drift if it fails).
+    if (draftIssue !== undefined && draftIssue.state !== 'closed') {
+      void import('../git/issues.ts').then(({ closeIssue }) =>
+        closeIssue(store.projectPath, draftIssue.issueNumber).catch(() => undefined),
+      );
+    }
   });
   return store.getNote(cardId);
 }

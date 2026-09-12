@@ -126,7 +126,7 @@ describe('updateGroom', () => {
         noteId: item.id,
         proposedVerb: 'fix',
         refinedTitle: 'engine core revised',
-        research: { codebaseFindings: ['found it', 'found more'], blastRadius: ['src/ui'] },
+        research: { codebaseFindings: ['found it', 'found more'], blastRadius: ['src/ui'], sections: { reproduce: 'steps', rca: 'cause' } },
         tasks: ['implement lanes', 'wire sse better', 'add tests'],
       }),
     });

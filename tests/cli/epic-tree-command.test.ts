@@ -55,7 +55,7 @@ describe('epic tree command', () => {
 
   test('deck epic <unknown> and deck story with a non-epic refuse', async () => {
     expect(await run(['epic', 'ghost-xxxx'])).toBe(1);
-    expect(err.join('\n')).toContain("card 'ghost-xxxx' not found");
+    expect(err.join('\n')).toContain("epic 'ghost-xxxx' not found");
     const note = store.addNote('plain note');
     expect(await run(['story', note.id, 'title'])).toBe(1);
     expect(err.join('\n')).toContain("epic 'plain-note");

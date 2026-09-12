@@ -74,10 +74,8 @@ export class DocumentStore {
     sqlite.exec('PRAGMA busy_timeout = 5000');
     sqlite.exec('PRAGMA journal_mode = WAL');
     const db = drizzle({ client: sqlite });
-    // Two processes opening a fresh board race the initial DDL; retry —
-    // once the winner commits, the migration journal makes this a no-op.
-    // Compiled binaries have no drizzle/ folder next to import.meta.dir —
-    // they carry the journal embedded (scripts/embed-migrations.ts).
+    // Fresh-board DDL races between processes: retry (the journal makes the
+    // loser a no-op). Compiled binaries carry the journal embedded.
     const drizzleDir = join(import.meta.dir, '../../../drizzle');
     for (let attempt = 0; ; attempt++) {
       try {
@@ -92,26 +90,24 @@ export class DocumentStore {
         await Bun.sleep(50 * (attempt + 1));
       }
     }
-    // Epic planning: cards.epic_id parent pointer (idempotent ALTER — the
-    // column is additive; drizzle migrations predate it).
-    const cols = sqlite.query("PRAGMA table_info('cards')").all() as Array<{ name: string }>;
-    if (!cols.some((col) => col.name === 'epic_id')) {
+    // Epic planning: cards.epic_id (idempotent ALTER; migrations predate it).
+    const cols = sqlite.query("PRAGMA table_info('cards')").all() as Array<{ name: string }>;    if (!cols.some((col) => col.name === 'epic_id')) {
       sqlite.exec('ALTER TABLE cards ADD COLUMN epic_id TEXT');
     }
     // User verbs ride raw DDL (migrations are generated for the core model;
     // this table is engine-registry state, idempotent on every open).
     sqlite.exec('CREATE TABLE IF NOT EXISTS user_verbs (name TEXT PRIMARY KEY NOT NULL, registered_at TEXT NOT NULL)');
+    // Spec-type registry: raw DDL + pinned seed, like user_verbs above.
+    const { ensureSpecTypes } = await import('./types-registry.ts');
+    ensureSpecTypes(sqlite);
     // Agent-host adapter registry (harness slice): raw DDL + pinned seed.
     const { ensureAgentHosts } = await import('../projects/harness.ts');
     ensureAgentHosts(sqlite);
-    // FTS5 index over session-memory bullets (drizzle cannot manage virtual
-    // tables); idempotent on every open.
+    // FTS5 over session-memory bullets (drizzle can't own virtual tables).
     sqlite.exec(
       'CREATE VIRTUAL TABLE IF NOT EXISTS session_memory USING fts5(line, cardId UNINDEXED, section UNINDEXED)',
     );
-    // Hold law sweep: legacy boards may carry blocked flags on engine-lane
-    // cards where hold is meaningless (nothing consumes it there). Clear
-    // them once per open so the flag only ever means pick-later.
+    // Hold law sweep: clear legacy engine-lane blocked flags once per open.
     sqlite.exec(
       `UPDATE cards SET blocked_reason = NULL, blocked_at = NULL ` +
         `WHERE lane IN ('active', 'verify', 'done') AND blocked_reason IS NOT NULL`,
@@ -183,6 +179,10 @@ export class DocumentStore {
     return this.listCards('todo').filter(isNote);
   }
 
+  private idTaken(id: string): boolean {
+    return this.db.select({ id: cards.id }).from(cards).where(eq(cards.id, id)).get() !== undefined;
+  }
+
   getCard(id: string): Card {
     const row = this.cardRow(this.db, id);
     return this.toCard(row, this.taskRows(this.db, id));
@@ -197,7 +197,7 @@ export class DocumentStore {
   // --- epic planning ----------------------------------------------------------
 
   addEpic(title: string): Epic {
-    const id = newCardId('epic');
+    const id = newCardId('epic', (id) => this.idTaken(id));
     const ts = nowIso();
     runTx(this.db, (tx) => {
       const position = endPosition(tx.select({ position: cards.position }).from(cards).where(eq(cards.lane, 'todo')).all().map((row) => row.position));
@@ -273,7 +273,7 @@ export class DocumentStore {
   // --- mutations -------------------------------------------------------------
 
   addNote(title: string): Note {
-    const id = newCardId(title);
+    const id = newCardId(title, (id) => this.idTaken(id));
     const ts = nowIso();
     runTx(this.db, (tx) => {
       const position = endPosition(this.lanePositions(tx, 'todo'));

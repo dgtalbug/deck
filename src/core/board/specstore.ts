@@ -14,6 +14,7 @@ import { cards, issueMap, publishQueue, specs as specsTable } from './schema.ts'
 import { runTx, type DocumentStore } from './store.ts';
 import type { VerbItem } from './types.ts';
 import { branchFor } from '../engine/slug.ts';
+import { commitPrefixFor } from './types-registry.ts';
 
 export interface SpecVersion {
   cardId: string;
@@ -26,7 +27,7 @@ export interface SpecVersion {
 export interface IssueMapEntry {
   cardId: string;
   issueNumber: number;
-  state: 'open' | 'closed';
+  state: 'draft' | 'open' | 'closed';
   checksum: string;
   updatedAt: string;
 }
@@ -50,12 +51,12 @@ export function checksumOf(markdown: string): string {
 // this card's own pinned git conventions and the live checklist — the same
 // document becomes the published issue body, so GitHub carries everything
 // the groom collected (mermaid fences included; GitHub renders them).
-function gitBlock(card: VerbItem): string {
+function gitBlock(card: VerbItem, commitPrefix: string): string {
   return [
     '## Git',
     '',
     `- branch: \`${branchFor(card, card.verb)}\``,
-    `- commits: \`${card.verb}: subject\` / \`${card.verb}(scope): subject\``,
+    `- commits: \`${commitPrefix}: subject\` / \`${commitPrefix}(scope): subject\``,
     '- pr + merge: `merge: <branch> — <title>`, merged --no-ff',
     '- release: annotated `vX.Y.Z` when the archived diff bumps the version',
     '',
@@ -76,7 +77,7 @@ export function renderCardSpec(store: DocumentStore, card: VerbItem): string {
     '',
     spec.trimEnd(),
     '',
-    gitBlock(card),
+    gitBlock(card, commitPrefixFor(store, card.verb)),
     '## Checklist',
     '',
     checklist,
@@ -145,7 +146,7 @@ export function deleteIssueMap(store: DocumentStore, cardId: string): void {
 
 export function setIssueMap(
   store: DocumentStore,
-  entry: { cardId: string; issueNumber: number; state: 'open' | 'closed'; checksum: string },
+  entry: { cardId: string; issueNumber: number; state: 'draft' | 'open' | 'closed'; checksum: string },
 ): IssueMapEntry {
   const updatedAt = nowIso();
   runTx(store.db, (tx) => {

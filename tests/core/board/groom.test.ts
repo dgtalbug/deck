@@ -23,7 +23,7 @@ function proposal(noteId: string) {
     noteId,
     proposedVerb: 'fix' as const,
     refinedTitle: 'refined: fix the thing',
-    research: { codebaseFindings: ['evidence one'] },
+    research: { codebaseFindings: ['evidence one'], sections: { reproduce: 'steps', rca: 'cause' } },
     specDeltas: [{ op: 'ADDED' as const, requirement: 'req', text: 'text' }],
     tasks: ['investigate', 'fix it'],
     openQuestions: [],

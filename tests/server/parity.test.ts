@@ -20,6 +20,7 @@ import * as outbox from '../../src/core/events/outbox.ts';
 import * as summary from '../../src/core/projects/summary.ts';
 import * as projectsInit from '../../src/core/projects/init.ts';
 import * as projectsDoctor from '../../src/core/projects/doctor.ts';
+import * as typesRegistry from '../../src/core/board/types-registry.ts';
 import { DocumentStore } from '../../src/core/board/store.ts';
 import { ProjectRegistry } from '../../src/core/projects/registry.ts';
 import { parity as cliParity } from '../../src/cli/main.ts';
@@ -32,6 +33,7 @@ import { parity as homeParity } from '../../src/server/routes/home.ts';
 import { parity as notesParity } from '../../src/server/routes/notes.ts';
 import { parity as sseParity } from '../../src/server/sse.ts';
 import { parity as epicsParity } from '../../src/server/routes/epics.ts';
+import { parity as typesParity } from '../../src/server/routes/types.ts';
 
 // Route → core parity (epic rule): every route maps to exactly one core
 // function with the same name — endpoint tests double as CLI tests.
@@ -64,6 +66,7 @@ const functions: Record<string, unknown> = {
   ...summary,
   ...projectsInit,
   ...projectsDoctor,
+  ...typesRegistry,
   ...outbox,
   addNote: DocumentStore.prototype.addNote,
   reorder: DocumentStore.prototype.reorder,
@@ -71,7 +74,7 @@ const functions: Record<string, unknown> = {
   list: ProjectRegistry.prototype.list,
 };
 
-const parityTables = [homeParity, boardParity, notesParity, cardsParity, specsParity, engineParity, gitParity, sseParity, epicsParity];
+const parityTables = [homeParity, boardParity, notesParity, cardsParity, specsParity, engineParity, gitParity, sseParity, epicsParity, typesParity];
 
 describe('route-to-core parity', () => {
   test('every declared route maps to an existing core function', () => {
