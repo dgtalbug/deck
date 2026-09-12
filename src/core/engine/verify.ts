@@ -123,7 +123,9 @@ export interface ConvergeOutcome {
 }
 
 // The driver computes, then hands the outcome to applyVerifyResult — the
-// ONLY mutation path (gaps → active + tasks appended; clean → done).
+// only mutation path for gaps (→ active + tasks appended). A CLEAN result
+// HOLDS in verify: done is archive's merge door alone (deck-review-archive
+// law; a clean→done jump skipped the PR and stranded the card).
 // Computed verification is verb-item-only: a tweak has no spec to compute
 // gaps from, so it must refuse BEFORE ensureVerifyLane could move anything
 // (a move-then-throw would strand the tweak in verify).
@@ -138,7 +140,7 @@ export async function runVerification(store: DocumentStore, id: string): Promise
   ensureVerifyLane(store, id);
   const gaps = computeGaps(store, id);
   const result = gaps.length === 0 ? 'clean' as const : 'gaps' as const;
-  applyVerifyResult(store, id, result, gaps.map((gap) => gap.taskTitle));
+  if (result === 'gaps') applyVerifyResult(store, id, result, gaps.map((gap) => gap.taskTitle));
   const card = store.getVerbItem(id);
   // onVerifyResult fires on both outcomes (core, so both doors fire it).
   const hookWarnings = await runHooks(store.projectPath, HookEvent.VerifyResult, {

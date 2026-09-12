@@ -104,11 +104,11 @@ describe('cli happy paths', () => {
     expect(store.getCard(id)).toHaveProperty('requirement');
   });
 
-  test('verify clean moves a verify card to done', async () => {
+  test('verify clean holds a verify card for archive', async () => {
     const id = groomNote('verify me');
     moveLane(store, id, 'verify', 'engine');
     expect(await run(['verify', id, '--result', 'clean'])).toBe(0);
-    expect(store.getVerbItem(id).lane).toBe('done');
+    expect(store.getVerbItem(id).lane).toBe('verify'); // done is archive's door
   });
 
   test('next prints the digest for the top of queue', async () => {

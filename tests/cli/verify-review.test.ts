@@ -109,17 +109,17 @@ describe('deck verify (computed)', () => {
     moveLane(store, id, 'verify', 'engine');
     expect(await run(['verify', id])).toBe(0);
     expect(out.join('\n')).toContain('clean');
-    expect(store.getVerbItem(id).lane).toBe('done');
+    expect(store.getVerbItem(id).lane).toBe('verify'); // holds for archive
   });
 
-  test('explicit --result override keeps the old contract', async () => {
+  test('explicit --result clean holds for archive (new contract)', async () => {
     stubGh();
     const id = groomed('cli override card', ['work']);
     await publishSpec(store, id);
     moveLane(store, id, 'active', 'engine');
     moveLane(store, id, 'verify', 'engine');
     expect(await run(['verify', id, '--result', 'clean'])).toBe(0);
-    expect(store.getVerbItem(id).lane).toBe('done');
+    expect(store.getVerbItem(id).lane).toBe('verify'); // done is archive's door
   });
 });
 
