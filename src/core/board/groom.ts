@@ -117,7 +117,11 @@ export function convertToVerbItem(store: DocumentStore, proposal: GroomProposal)
         verb: proposal.proposedVerb,
         lane: 'groomed',
         position,
-        specPath: `specs/changes/${proposal.proposedVerb}-${row.id}/`,
+        // Spec materialization lives under .deck (db is truth, the user's
+        // repo stays md-free), shaped Jira-style: >3 tasks is story-shaped,
+        // anything less is a task card. Existing cards keep their recorded
+        // specPath — render and re-groom follow the card, never the layout.
+        specPath: `.deck/specs/${proposal.tasks.length > 3 ? 'stories' : 'tasks'}/${proposal.proposedVerb}-${row.id}/`,
         research: JSON.stringify(proposal.research),
         updatedAt: nowIso(),
       })

@@ -101,6 +101,19 @@ export interface GitOpResult {
 
 // Spec-type registry row (GET /:project/types) — drives the groom form's
 // per-type section fields and their required hints.
+// Epic tree (GET /:project/epics/:id): the epic plus navigable story rows.
+export interface EpicTreeStory {
+  id: string;
+  title: string;
+  lane: string;
+  verb?: string | undefined;
+  tasks: { done: number; total: number };
+}
+export interface EpicTree {
+  epic: { id: string; title: string; createdAt: string; type: 'epic' };
+  stories: EpicTreeStory[];
+}
+
 export interface SpecTypeView {
   id: string;
   displayName: string;
@@ -286,6 +299,8 @@ export type BoardApi = {
   fetchTodo: (project: string) => Promise<{ view: 'todo'; cards: UiCard[] }>;
   fetchNext: (project: string) => Promise<NextDigest>;
   fetchTypes?: (project: string) => Promise<SpecTypeView[]>;
+
+  fetchEpicTree?: (project: string, epicId: string) => Promise<EpicTree>;
   fetchGit: (project: string) => Promise<GitDigest>;
   updateCard: (project: string, id: string, title: string) => Promise<UiCard>;
   deleteCard: (project: string, id: string) => Promise<void>;
