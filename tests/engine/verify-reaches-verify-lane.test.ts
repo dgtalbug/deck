@@ -107,7 +107,7 @@ describe('verify reaches verify lane', () => {
     store.syncTasks(id, store.getVerbItem(id).tasks.map((task) => ({ ...task, done: true })), 'engine');
     const outcome = await runVerification(store, id);
     expect(outcome.result).toBe('clean');
-    expect(outcome.card.lane).toBe('done');
+    expect(outcome.card.lane).toBe('verify'); // clean holds for archive
   });
 
   test('unknown and non-verb cards still refuse with the typed errors', () => {

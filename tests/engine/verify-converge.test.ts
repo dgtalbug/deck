@@ -97,7 +97,8 @@ describe('runVerification', () => {
     store.syncTasks(id, store.getVerbItem(id).tasks.map((task) => ({ ...task, done: true })), 'engine');
     const outcome = await runVerification(store, id);
     expect(outcome.result).toBe('clean');
-    expect(store.getVerbItem(id).lane).toBe('done');
+    // clean holds in verify — done is archive's merge door
+    expect(store.getVerbItem(id).lane).toBe('verify');
   });
 
   test('the loop converges: gap → fix → clean', async () => {
@@ -110,6 +111,6 @@ describe('runVerification', () => {
     moveLane(store, id, 'verify', 'engine');
     const second = await runVerification(store, id);
     expect(second.result).toBe('clean');
-    expect(store.getVerbItem(id).lane).toBe('done');
+    expect(store.getVerbItem(id).lane).toBe('verify');
   });
 });

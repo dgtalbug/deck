@@ -88,6 +88,6 @@ describe('POST /:project/cards/:id/verify computes gaps', () => {
     expect(response.status).toBe(200);
     const body = (await response.json()) as { result: 'clean' | 'gaps'; card: { lane: string } };
     expect(body.result).toBe('clean');
-    expect(body.card.lane).toBe('done');
+    expect(body.card.lane).toBe('verify'); // clean holds for archive
   });
 });

@@ -212,14 +212,9 @@ const commands: Record<string, Command> = {
     const project = resolveProject(ctx.registry, args, ctx.cwd);
     const store = await getStore(project.path);
     const explicit = flagString(args.flags, 'result');
-    if (explicit !== undefined) {
-      // The explicit-result form is reachable on active cards too (the
-      // engine owns active→verify) — verify closes the loop, not just archive.
-      ensureVerifyLane(store, id);
-    }
     if (explicit === undefined) {
-      // Computed convergence (P1c): deck enumerates the gaps itself and
-      // feeds them through applyVerifyResult; gaps exit non-zero.
+      // Computed convergence (P1c): deck enumerates the gaps itself; gaps
+      // exit non-zero. Clean HOLDS in verify — review + archive close.
       const outcome = await runVerification(store, id);
       if (outcome.hookWarnings.length > 0) ctx.io.err(renderHookWarnings(outcome.hookWarnings).join('\n'));
       if (outcome.result === 'gaps') {
@@ -227,13 +222,17 @@ const commands: Record<string, Command> = {
         ctx.io.out(lines.join('\n'));
         return 1;
       }
-      ctx.io.out(`clean — card ${id} moved to done`);
+      ctx.io.out(`clean — card ${id} holds in verify; deck review + deck archive close it`);
       return 0;
     }
+    // Explicit results land the card in verify; done is archive's alone.
+    ensureVerifyLane(store, id);
     const body = verifyBody.parse({ result: explicit });
-    return cardSummary(
-      applyVerifyResult(store, id, body.result, flagStrings(args.flags, 'task')),
-    );
+    if (body.result === 'gaps') {
+      return cardSummary(applyVerifyResult(store, id, body.result, flagStrings(args.flags, 'task')));
+    }
+    const card = store.getVerbItem(id);
+    return `${cardSummary(card)}\nclean — card ${id} holds in verify; deck review + deck archive close it`;
   },
   review: reviewCommand,
   types: typesCommand,
