@@ -70,6 +70,21 @@ describe('renderCardSpec full document', () => {
     expect(rendered).toContain('`vX.Y.Z`');
   });
 
+  test('legacy spec.md files with their own h1 render without header duplication', async () => {
+    const id = await groomedCard();
+    // pre-template-law files opened with '# <title>' — the render owns the
+    // header now, so a leading h1 line must drop
+    const card = store.getVerbItem(id);
+    const { writeFileSync } = await import('node:fs');
+    writeFileSync(
+      join(store.projectPath, card.specPath, 'spec.md'),
+      '# render the whole story and git block\n\n## Requirements\n\n### ADDED: Requirement: Git Block\nold body\n',
+    );
+    const rendered = renderCardSpec(store, card);
+    expect(rendered.match(/^# /gm)).toHaveLength(1); // exactly one h1
+    expect(rendered).toContain('old body');
+  });
+
   test('the checklist lands at the end and the published version matches', async () => {
     const id = await groomedCard();
     const card = store.getVerbItem(id);

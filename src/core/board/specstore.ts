@@ -64,9 +64,12 @@ function gitBlock(card: VerbItem): string {
 
 export function renderCardSpec(store: DocumentStore, card: VerbItem): string {
   const specDir = join(store.projectPath, card.specPath);
-  const spec = existsSync(join(specDir, 'spec.md'))
+  const raw = existsSync(join(specDir, 'spec.md'))
     ? readFileSync(join(specDir, 'spec.md'), 'utf8')
     : '';
+  // Legacy dedupe: pre-template-law spec.md files open with their own
+  // '# title' h1 — this render owns the header, so a leading h1 line drops.
+  const spec = raw.startsWith('# ') ? raw.slice(raw.indexOf('\n') + 1) : raw;
   const checklist = card.tasks.map((task) => `- [${task.done ? 'x' : ' '}] ${task.title}`).join('\n');
   return [
     `# ${card.verb}: ${card.title}`,
