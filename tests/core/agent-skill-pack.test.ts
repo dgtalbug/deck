@@ -6,9 +6,8 @@ import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { readdirSync } from 'node:fs';
-import { installSkillPack } from '../../src/core/projects/harness.ts';
+import { installSkillPack, renderManaged, HOST_SEED } from '../../src/core/projects/harness.ts';
 import { skillAssets } from '../../src/core/projects/skill-assets.ts';
-import { HOST_SEED } from '../../src/core/projects/harness.ts';
 
 const skillsRoot = join(import.meta.dir, '..', '..', '.agents', 'skills');
 const skillDirs = readdirSync(skillsRoot, { withFileTypes: true })
@@ -92,7 +91,7 @@ describe('CLI command coverage', () => {
 describe('installSkillPack', () => {
   let dir: string;
 
-  test('fresh dirs get every skill byte-identical; rerun idempotent; edits never clobbered', () => {
+  test('fresh dirs get every skill fenced; rerun idempotent; edits never clobbered', () => {
     dir = mkdtempSync(join(tmpdir(), 'skill-pack-'));
     const hosts = HOST_SEED.filter((host) => host.id === 'agents' || host.id === 'claude');
     for (const host of hosts) mkdirSync(join(dir, host.skillsDir), { recursive: true });
@@ -101,7 +100,9 @@ describe('installSkillPack', () => {
     expect(first.written).toHaveLength(hosts.length * skillDirs.length);
     expect(first.skipped).toEqual([]);
     const sample = join(dir, hosts[0]!.skillsDir, 'deck-build/SKILL.md');
-    expect(readFileSync(sample, 'utf8')).toBe(skillAssets['deck-build/SKILL.md']);
+    // Managed installs are fenced (wire-rules-yaml-gates): the fence carries
+    // the label + sha256 of the asset body.
+    expect(readFileSync(sample, 'utf8')).toBe(renderManaged('deck-build/SKILL.md', skillAssets['deck-build/SKILL.md']!));
 
     const second = installSkillPack(dir, hosts as never);
     expect(second.written).toEqual([]); // identical files rewrite nothing

@@ -10,8 +10,11 @@ import { getSpecType, listSpecTypes, removeSpecType, upsertSpecType } from '../c
 import { typeBody } from '../server/routes/types.ts';
 import { recall } from '../core/board/memory.ts';
 import { epicRollups } from '../core/board/views.ts';
+import { getIssueMap } from '../core/board/specstore.ts';
+import { viewIssue } from '../core/git/issues.ts';
 import { backfillSpecs, syncProject } from '../core/board/publish.ts';
 import { initProject } from '../core/projects/init.ts';
+import { loadRules, listOverrides, rulesDigest } from '../core/board/rules.ts';
 import { detectHosts, installSkillPack, listAgentHosts, scaffoldSkill, SkillNameError } from '../core/projects/harness.ts';
 import { skillAssets } from '../core/projects/skill-assets.ts';
 import { DeckError, NotFoundError } from '../core/board/errors.ts';
@@ -170,7 +173,7 @@ export async function groomCommand(args: ParsedArgs, ctx: RunContext): Promise<s
     tasks: ['<technical, code-level step>'],
     openQuestions: [],
   };
-  return [
+  const lines = [
     `POST /:project/cards/${id}/groom with:`,
     JSON.stringify(contract, null, 2),
     '',
@@ -179,7 +182,14 @@ export async function groomCommand(args: ParsedArgs, ctx: RunContext): Promise<s
     'words, commit prefix, --no-ff merge title, tag law) · Checklist (tasks).',
     'Story/research say WHAT we build; tasks are the only technical section.',
     'Minimal spec (title + tasks) stays valid — story, findings, deltas optional.',
-  ].join('\n');
+  ];
+  // Project law rides the contract (engine/rules): the groomed spec must honor
+  // deck.rules.yaml principles, and say where overrides are recorded.
+  const rulesLoad = loadRules(project.path);
+  if (rulesLoad !== null) {
+    lines.push('', '## Project rules (MUST — spec and tasks honor these)', rulesDigest(rulesLoad.rules));
+  }
+  return lines.join('\n');
 }
 
 // `deck epic "<title>"` creates an epic; `deck epic <id>` prints its tree.
@@ -272,6 +282,23 @@ export async function userVerbCommand(args: ParsedArgs, ctx: RunContext): Promis
   }
 }
 
+// `deck issue <id>` — the card's mapped GitHub issue (moved from main.ts to
+// keep the dispatch file within the line law; one core call plus rendering).
+export async function issueCommand(args: ParsedArgs, ctx: RunContext): Promise<string> {
+  const id = args.positionals[0];
+  if (id === undefined || id.length === 0) throw new UsageError('usage: deck issue <id>');
+  const project = resolveProject(ctx.registry, args, ctx.cwd);
+  const store = await getStore(project.path);
+  store.getCard(id); // typed 404 for unknown ids — before the no-map refusal
+  const map = getIssueMap(store, id);
+  if (map === undefined) {
+    throw new DeckError(`card ${id} has no mapped issue — publish it first`, { cardId: id });
+  }
+  const view = await viewIssue(project.path, map.issueNumber);
+  const p = ctx.pal;
+  return `${p.dim('#' + view.number)} ${view.state === 'open' ? p.color('primary', view.url) : view.url}`;
+}
+
 // `deck review <id>` — the review gate, plus the advisory spec-type law
 // surfaced for the reviewer (custom laws never hard-refuse; registry hard
 // rules block inside reviewGate itself).
@@ -283,6 +310,11 @@ export async function reviewCommand(args: ParsedArgs, ctx: RunContext): Promise<
   const card = store.getVerbItem(id);
   const type = getSpecType(store, card.verb);
   if (type.taskLaw !== '') ctx.io.out(`type law (${card.verb}): ${type.taskLaw}`);
+  // Recorded rule overrides surface with the review (engine/rules): they are
+  // user decisions carried by the card, not violations.
+  for (const record of listOverrides(store, id)) {
+    ctx.io.out(`override ${record.ruleId}: ${record.reason}`);
+  }
   const findings = await reviewGate(store, id);
   if (findings.length > 0) {
     ctx.io.out(renderFindings(findings));

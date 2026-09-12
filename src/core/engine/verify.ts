@@ -12,6 +12,7 @@ import { moveLane } from '../board/lanes.ts';
 import { newestSpecVersion } from '../board/specstore.ts';
 import { getIssueMap } from '../board/specstore.ts';
 import { getSpecType } from '../board/types-registry.ts';
+import { listOverrides, loadRules, runChecks } from '../board/rules.ts';
 import type { DocumentStore } from '../board/store.ts';
 import { isTweak, isVerbItem, type VerbItem } from '../board/types.ts';
 import { runGit } from '../git/digest.ts';
@@ -229,6 +230,22 @@ export async function reviewGate(store: DocumentStore, id: string): Promise<Find
       findings.push({
         risk: `the diff spans ${files.length} files — ceremony has outgrown the blast radius`,
         violates: 'law 1 (simple — ceremony scales with blast radius)',
+      });
+    }
+  }
+  // deck.rules.yaml machine gates (engine/rules): FAIL(error) principles are
+  // review findings; a recorded override is the user's answer — the check is
+  // skipped for that rule, and the override itself is surfaced by the CLI.
+  const rulesLoad = loadRules(store.projectPath);
+  if (rulesLoad !== null) {
+    const overridden = new Set(listOverrides(store, id).map((record) => record.ruleId));
+    for (const check of await runChecks(store.projectPath, rulesLoad.rules)) {
+      if (check.ok || check.severity !== 'error' || overridden.has(check.id)) continue;
+      findings.push({
+        risk:
+          `rules check '${check.id}' failed${check.detail.length > 0 ? ` — ${check.detail}` : ''} ` +
+            `(deck override ${check.id} --reason "…" records a user decision)`,
+        violates: `deck.rules: ${check.id}`,
       });
     }
   }
