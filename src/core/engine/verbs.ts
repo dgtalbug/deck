@@ -7,7 +7,7 @@
 import { DeckError } from '../board/errors.ts';
 import { assertUnderWip, moveLane } from '../board/lanes.ts';
 import { applyVerifyResult } from '../board/verify.ts';
-import { newestSpecVersion, getIssueMap } from '../board/specstore.ts';
+import { newestSpecVersion, getIssueMap, deleteIssueMap } from '../board/specstore.ts';
 import { publishSpec } from '../board/publish.ts';
 import { listQueue } from '../board/specstore.ts';
 import { closeIssue } from '../git/issues.ts';
@@ -105,6 +105,13 @@ export async function startVerb(
   } catch (error) {
     moveLane(store, id, 'groomed', 'engine'); // compensate — no side effects
     rmSync(sessionPath(store.projectPath, id), { force: true }); // ... including the session file
+    // ... and the publish side: the map row must not outlive the failed
+    // start. The remote issue cannot be unwritten — report it as drift.
+    let drift: string | undefined;
+    if (publish !== undefined && !publish.queued && publish.issueNumber !== null) {
+      deleteIssueMap(store, id);
+      drift = `issue #${publish.issueNumber} was already published and stays open — deck sync reports it as drift`;
+    }
     // Four-word law: uniqueness is git's — a same-titled second card lands
     // here. Raw git stderr would be opaque; name the branch and the fix.
     if (
@@ -113,8 +120,9 @@ export async function startVerb(
     ) {
       throw new DeckError(
         `branch '${branch}' already exists — another card owns this name; ` +
-          `retitle one of them and re-groom (verb + first four title words name the branch)`,
-        { cardId: id, branch },
+          `retitle one of them and re-groom (verb + first four title words name the branch)` +
+          (drift !== undefined ? ` (${drift})` : ''),
+        { cardId: id, branch, drift },
       );
     }
     throw error;

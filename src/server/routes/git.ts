@@ -50,6 +50,7 @@ export const pullsBody = z.object({
   title: z.string().min(1),
   base: z.string().optional(),
   draft: z.boolean().optional(),
+  body: z.string().optional(),
 });
 
 // Local git facts for the sidebar (v0.2.0) + guarded git writes (v0.3.0):

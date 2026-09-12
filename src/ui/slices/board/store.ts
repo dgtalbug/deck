@@ -150,7 +150,30 @@ export function createBoardStore(project: string, api: BoardApi): BoardStore {
       await refetch(); // server truth replaces wholesale
       return true;
     } catch (error) {
-      board.value = before;
+      // Roll back ONLY the affected card — restoring the whole `before`
+      // snapshot would wipe SSE deltas that landed on other cards while
+      // this mutation was in flight.
+      const latest = board.value;
+      const beforeLoc = findCard(before, id);
+      const beforeCard = beforeLoc !== undefined ? before.lanes[beforeLoc.lane][beforeLoc.index] : undefined;
+      const lanes = { ...latest.lanes } as typeof latest.lanes;
+      for (const lane of Object.keys(lanes) as Array<keyof typeof lanes>) {
+        const list = lanes[lane];
+        const index = list.findIndex((card) => card.id === id);
+        if (index === -1) continue;
+        lanes[lane] = [...list.slice(0, index), ...list.slice(index + 1)];
+        break;
+      }
+      if (beforeCard !== undefined) {
+        const target = beforeCard.lane ?? 'todo';
+        const restored = { ...beforeCard };
+        const list = [...(lanes[target] ?? [])];
+        const pos = restored.position ?? Number.POSITIVE_INFINITY;
+        const at = list.findIndex((card) => (card.position ?? Number.POSITIVE_INFINITY) > pos);
+        list.splice(at === -1 ? list.length : at, 0, restored);
+        lanes[target] = list;
+      }
+      board.value = { ...latest, lanes };
       pushToast('error', 'Change reverted', `card ${id}: ${error instanceof Error ? error.message : String(error)}`);
       return false;
     } finally {

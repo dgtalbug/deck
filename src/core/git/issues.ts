@@ -129,9 +129,14 @@ export async function setLaneLabel(projectPath: string, number: number, lane: La
   if (stale.length === 0 && !needsAdd) return;
   const args = ['edit', String(number), ...removeArgs];
   if (needsAdd) {
-    // Tolerate a repo without the label defined: create it, then add.
+    // Tolerate a repo without the label defined: create it, then add. A
+    // failed create propagates — pushing --add-label anyway would only
+    // produce a more confusing error downstream.
     const ensure = await runGh(projectPath, ['label', 'create', lane, '--force']);
     if (ensure === null) throw new GhUnavailableError();
+    if (ensure.code !== 0) {
+      throw new GitOpError('label create', `exit ${ensure.code}`, `${ensure.stdout}${ensure.stderr}`.trim());
+    }
     args.push('--add-label', lane);
   }
   await issueOp(projectPath, 'edit labels', args);

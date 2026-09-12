@@ -45,6 +45,29 @@ function tracked(cleanup: () => void): () => void {
   return cleanup;
 }
 
+// once-per-element registration marks (keyed diffs reuse DOM nodes; see
+// Card.tsx / Lane.tsx) — swapped by disposeDnd so remounts re-register.
+// Private; readers go through the accessors so the export-let swap pattern
+// cannot be bypassed.
+let registeredCards: WeakSet<HTMLElement> = new WeakSet();
+let registeredBodies: WeakSet<HTMLElement> = new WeakSet();
+
+export function cardRegistered(element: HTMLElement): boolean {
+  return registeredCards.has(element);
+}
+
+export function markCardRegistered(element: HTMLElement): void {
+  registeredCards.add(element);
+}
+
+export function bodyRegistered(element: HTMLElement): boolean {
+  return registeredBodies.has(element);
+}
+
+export function markBodyRegistered(element: HTMLElement): void {
+  registeredBodies.add(element);
+}
+
 export function disposeDnd(): void {
   for (const dispose of disposers) dispose();
   disposers.clear();
@@ -52,11 +75,6 @@ export function disposeDnd(): void {
   registeredCards = new WeakSet();
   registeredBodies = new WeakSet();
 }
-
-// once-per-element registration marks (keyed diffs reuse DOM nodes; see
-// Card.tsx / Lane.tsx) — swapped by disposeDnd so remounts re-register.
-export let registeredCards: WeakSet<HTMLElement> = new WeakSet();
-export let registeredBodies: WeakSet<HTMLElement> = new WeakSet();
 
 // Draggable per card (todo/groomed only — engine cards never register).
 export function registerCardDrag(element: HTMLElement, card: UiCard, lane: 'todo' | 'groomed', callbacks: DragCallbacks): () => void {

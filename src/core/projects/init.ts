@@ -63,7 +63,7 @@ export function upsertAgentsBlock(content: string, block: string): string {
   return `${prefix}${suffix}${block}\n`;
 }
 
-export function upsertGitignore(projectPath: string): void {
+function upsertGitignore(projectPath: string): void {
   const path = join(projectPath, '.gitignore');
   const existing = existsSync(path) ? readFileSync(path, 'utf8') : '';
   const present = new Set(existing.split('\n'));

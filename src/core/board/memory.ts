@@ -4,7 +4,7 @@
 // Pinned contracts in this header (specstore style):
 //   recall(store, query) → string[]   — ranked `<cardId> <section>: <line>`
 //   scaffoldSession(...) → void       — the verb start flow scaffolds the file
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { DocumentStore } from './store.ts';
 
@@ -58,10 +58,17 @@ function parseSession(cardId: string, markdown: string): Bullet[] {
 }
 
 // One row per bullet; the index is a derived view, rebuilt from the files
-// on every sync (files are the source of truth, never the index).
-export function syncMemory(store: DocumentStore): number {
+// only when they changed (files are the source of truth, never the index).
+export function syncMemory(store: DocumentStore, force = false): number {
   const dir = join(store.projectPath, SESSIONS_DIR);
   const db = store.raw();
+  // Cheap freshness probe: newest mtime across the sessions dir. recall()
+  // runs on every deck next — a full rescan per call is deadweight.
+  const stamp = dirStamp(dir);
+  if (!force && stamp !== null && stamp === lastSyncStamp.get(store.projectPath)) {
+    const row = db.query('SELECT COUNT(*) AS n FROM session_memory').get() as { n: number };
+    return row.n;
+  }
   const bullets: Bullet[] = [];
   if (existsSync(dir)) {
     for (const file of readdirSync(dir).filter((name) => name.endsWith('.md')).sort()) {
@@ -76,7 +83,20 @@ export function syncMemory(store: DocumentStore): number {
     const sect = bullet.section.replaceAll("'", "''");
     db.run(`INSERT INTO session_memory (line, cardId, section) VALUES ('${escaped}', '${card}', '${sect}')`);
   }
+  lastSyncStamp.set(store.projectPath, stamp);
   return bullets.length;
+}
+
+const lastSyncStamp = new Map<string, number | null>();
+
+function dirStamp(dir: string): number | null {
+  if (!existsSync(dir)) return null;
+  let newest = 0;
+  for (const file of readdirSync(dir)) {
+    const mtime = statSync(join(dir, file)).mtimeMs;
+    if (mtime > newest) newest = mtime;
+  }
+  return newest;
 }
 
 // Pinned contract: recall(query)→string[] — top FTS5-ranked bullets as
