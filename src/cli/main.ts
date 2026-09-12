@@ -236,6 +236,7 @@ const commands: Record<string, Command> = {
     );
   },
   review: reviewCommand,
+  types: typesCommand,
   init: async (args, ctx) => {
     const result = await initProject(ctx.registry, ctx.cwd, flagString(args.flags, 'name'));
     const p = ctx.pal;
