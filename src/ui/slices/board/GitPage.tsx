@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'preact/hooks';
+import { useCallback, useEffect, useRef, useState } from 'preact/hooks';
 import type { ComponentChildren, VNode } from 'preact';
 import { ArrowUp, ArrowDown, CircleDot, GitBranch, Inbox, RefreshCw } from 'lucide-preact';
 import {
@@ -12,13 +12,26 @@ import { Dialog, DialogHead } from '../../components/Dialog.tsx';
 import { GitBranches } from './GitBranches.tsx';
 import { GitChanges, GitMergeCard } from './GitChanges.tsx';
 import { GitPullRequests, GitRemote } from './GitRemote.tsx';
-import { GitLocalCard, GitTree } from './GitTree.tsx';
+import { GitHistory } from './GitTree.tsx';
 import type { GitActionCtx } from './gitShared.tsx';
 
-// Git mini control panel (v0.3.0): the SDD loop's git hands. Local component
-// state only (design D6) — git facts are per-view request/response, never in
-// the board signals store. Guards mirror core's (D2) inside the section
-// components; every action surfaces git's captured output in a mono block.
+// Git page (v0.7.0 tabbed): one responsibility per tab — working tree,
+// branches, sync, collaborate, history — over a shared status header and a
+// shared sticky output block. Local component state only (design D6): git
+// facts are per-view request/response, never in the board signals store.
+// Guards mirror core's (D2) inside the section components; every action
+// surfaces git's captured output in a mono block that survives tab
+// switches (it is page-scoped, not tab-scoped).
+
+type TabId = 'working' | 'branches' | 'sync' | 'collaborate' | 'history';
+
+const TABS: readonly { id: TabId; label: string }[] = [
+  { id: 'working', label: 'working tree' },
+  { id: 'branches', label: 'branches' },
+  { id: 'sync', label: 'sync' },
+  { id: 'collaborate', label: 'collaborate' },
+  { id: 'history', label: 'history' },
+];
 
 interface Confirm {
   label: string;
@@ -40,6 +53,8 @@ export function GitPage(props: { project: string; api?: BoardApi }): VNode {
   const [busy, setBusy] = useState<Record<string, boolean>>({});
   const [output, setOutput] = useState<OutputBlock | null>(null);
   const [confirm, setConfirm] = useState<Confirm | null>(null);
+  const [tab, setTab] = useState<TabId>('working');
+  const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
   const refresh = useCallback(async (): Promise<void> => {
     try {
@@ -96,9 +111,42 @@ export function GitPage(props: { project: string; api?: BoardApi }): VNode {
   const repo = digest?.repo === true;
   const ghOn = digest?.gh?.available === true;
 
+  // Roving tabindex: ArrowLeft/ArrowRight move focus and select together
+  // (selection follows focus — the simplest correct tablist pattern).
+  const onTablistKey = (event: KeyboardEvent): void => {
+    const delta = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0;
+    if (delta === 0) return;
+    event.preventDefault();
+    const index = TABS.findIndex((entry) => entry.id === tab);
+    const next = (index + delta + TABS.length) % TABS.length;
+    setTab(TABS[next]!.id);
+    tabRefs.current[next]?.focus();
+  };
+
+  const panel = (id: TabId): VNode | null => {
+    if (id !== tab) return null; // one panel in the DOM — the active one
+    switch (id) {
+      case 'working':
+        return <GitChanges ctx={ctx} />;
+      case 'branches':
+        return (
+          <>
+            <GitBranches ctx={ctx} />
+            <GitMergeCard ctx={ctx} />
+          </>
+        );
+      case 'sync':
+        return <GitRemote ctx={ctx} />;
+      case 'collaborate':
+        return <GitPullRequests ctx={ctx} pulls={pulls} />;
+      case 'history':
+        return <GitHistory digest={digest} />;
+    }
+  };
+
   return (
     <div class="git-page" aria-label={`git panel for ${project}`}>
-      <section class="card git-card git-command-bar" aria-label="git status">
+      <section class="card git-card git-command-bar" aria-label="git status" data-testid="git-status">
         {!repo ? (
           <p class="hint" style="margin:0">
             not a git repository
@@ -137,14 +185,39 @@ export function GitPage(props: { project: string; api?: BoardApi }): VNode {
       </section>
 
       {repo ? (
-        <div class="git-section-grid">
-          <GitChanges ctx={ctx} />
-          <GitBranches ctx={ctx} />
-          <GitRemote ctx={ctx} />
-          {ghOn ? <GitPullRequests ctx={ctx} pulls={pulls} /> : <GitLocalCard ctx={ctx} />}
-          <GitMergeCard ctx={ctx} />
-          <GitTree digest={digest} />
-        </div>
+        <>
+          <div class="git-tabs" role="tablist" aria-label="git sections" onKeyDown={onTablistKey}>
+            {TABS.map((entry, index) => (
+              <button
+                key={entry.id}
+                ref={(node) => {
+                  tabRefs.current[index] = node;
+                }}
+                type="button"
+                role="tab"
+                id={`git-tab-${entry.id}`}
+                aria-selected={tab === entry.id}
+                aria-controls={`git-panel-${entry.id}`}
+                tabIndex={tab === entry.id ? 0 : -1}
+                data-testid={`git-tab-${entry.id}`}
+                class="git-tab"
+                onClick={() => setTab(entry.id)}
+              >
+                {entry.label}
+              </button>
+            ))}
+          </div>
+          <div
+            role="tabpanel"
+            id={`git-panel-${tab}`}
+            aria-labelledby={`git-tab-${tab}`}
+            tabIndex={0}
+            class="git-tabpanel"
+            data-testid="git-panel"
+          >
+            {panel(tab)}
+          </div>
+        </>
       ) : null}
 
       {output !== null ? (

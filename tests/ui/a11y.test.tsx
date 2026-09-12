@@ -122,15 +122,15 @@ describe('keyboard walkthrough (task 9.1)', () => {
     }
   });
 
-  test('todo view is keyboard navigable and the sidebar nav updates the URL', async () => {
+  test('todo view is keyboard navigable and the view switcher updates the URL', async () => {
     const host = await mountBoard('/a11y/');
-    const nav = host.querySelector('.sidebar-nav a[href*="view=todo"]') as unknown as HTMLElement;
+    const nav = host.querySelector('.view-switch-btn[data-view="todo"]') as unknown as HTMLElement;
     expect(nav).not.toBeNull();
     nav.click();
     await new Promise((resolve) => setTimeout(resolve, 60));
     expect(win.location.search).toContain('view=todo');
-    const current = host.querySelector('.sidebar-nav a[aria-current="page"]');
-    expect(current?.textContent).toContain('Todo');
+    const current = host.querySelector('.view-switch-btn[aria-current="page"]');
+    expect(current?.textContent).toContain('todo');
     const groups = [...host.querySelectorAll('.todo-group-head')];
     expect(groups.length).toBeGreaterThan(0);
   });
@@ -150,10 +150,9 @@ describe('keyboard walkthrough (task 9.1)', () => {
 
   test('theme toggle is a labeled icon control in both modes', async () => {
     const host = await mountBoard('/a11y/');
-    // the sidebar carries the project-page theme icon toggle
-    const sidebarToggle = host.querySelector('.sidebar .icon-toggle') as unknown as HTMLElement | null;
-    expect(sidebarToggle?.getAttribute('aria-pressed')).toBe('true'); // dark default
-    expect(sidebarToggle?.getAttribute('aria-label')).toContain('light');
+    // sidebar retired (v0.7.0): the topbar toggle is the ONLY one — the
+    // board page must not grow a second copy
+    expect(host.querySelector('.icon-toggle')).toBeNull();
     // the full shell (topbar) — module import renders into #app
     const shell = win.document.createElement('div');
     shell.id = 'app';

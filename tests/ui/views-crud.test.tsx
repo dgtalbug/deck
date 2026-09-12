@@ -251,11 +251,12 @@ describe('quick block on engine lanes', () => {
   });
 });
 
-describe('sidebar git section (v0.3.1)', () => {
-  test('removed — git facts live on the GitPage now', async () => {
+describe('project sidebar retirement (v0.7.0)', () => {
+  test('no sidebar rail; view switching rides the board header row', async () => {
     const { host } = await mount();
-    expect(host.querySelector('.sidebar-git')).toBeNull();
-    expect(host.querySelector('.sidebar-nav')?.textContent).toContain('Git');
+    expect(host.querySelector('.sidebar')).toBeNull();
+    expect(host.querySelector('.view-switch')?.textContent).toContain('git');
+    expect(host.querySelector('[data-testid="deck-next"]')).not.toBeNull();
   });
 });
 

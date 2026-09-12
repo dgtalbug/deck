@@ -4,7 +4,8 @@ import { join } from 'node:path';
 
 // responsive-ui — the paired file for the "Responsive shell breakpoints"
 // requirement: the pinned viewport contract (1100 / 900 / 640) is written
-// into the stylesheets, and the shell collapses at 900px.
+// into the stylesheets. v0.7.0: the sidebar rail is gone — 900px no longer
+// stacks a shell grid; the git tabs scroll within their row instead.
 const app = readFileSync(join(import.meta.dir, '../../src/ui/styles/app.css'), 'utf8');
 
 describe('responsive shell breakpoints', () => {
@@ -15,8 +16,13 @@ describe('responsive shell breakpoints', () => {
     expect(app).toMatch(/640px/);
   });
 
-  test('the shell drops the sidebar rail to one column at 900px', () => {
-    expect(app).toMatch(/@media \(max-width: 900px\) \{[\s\S]*?\.board-shell \{[\s\S]*?grid-template-columns: minmax\(0, 1fr\);[\s\S]*?\}\s*\}/);
+  test('the sidebar shell grid is fully retired', () => {
+    expect(app).not.toMatch(/\.board-shell/);
+    expect(app).not.toMatch(/\.sidebar\s*\{/);
+  });
+
+  test('git tabs scroll within their row instead of growing the page', () => {
+    expect(app).toMatch(/\.git-tabs \{[\s\S]*?overflow-x: auto;/);
   });
 
   test('no breakpoint outside the pinned set is introduced', () => {

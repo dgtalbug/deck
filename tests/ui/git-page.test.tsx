@@ -100,8 +100,12 @@ const click = (win: TestWindow, selector: string): void => {
   (win.document.querySelector(selector) as unknown as HTMLElement).click();
 };
 
+const selectTab = (win: TestWindow, id: string): void => {
+  click(win, `[data-testid="git-tab-${id}"]`);
+};
+
 describe('GitPage', () => {
-  test('status card shows branch, dirty, stash, origin, gh badge; commit tree renders git graph', async () => {
+  test('status header shows branch, dirty, stash, origin, gh badge; default tab is working tree', async () => {
     const { api } = makeApi();
     const win = await mountGitPage(api);
     const text = win.document.body.textContent ?? '';
@@ -110,17 +114,23 @@ describe('GitPage', () => {
     expect(text).toContain('2 dirty');
     expect(text).toContain('1 stashed');
     expect(text).toContain('tester');
-    expect(text).toContain('first');
-    expect(text).toContain('#7');
-    expect(text).toContain('do the thing');
-    // redesign: section grid carries the tree and the action cards side by side
-    expect(win.document.querySelector('.git-section-grid .git-graph')?.textContent).toContain('(HEAD -> main)');
-    expect(win.document.querySelector('.git-section-grid button[data-action="commit"]')).not.toBeNull();
+    expect(text).toContain('example.com');
+    // tabbed (v0.7.0): five tabs, one responsibility each; the working tree
+    // panel is the default and the ONLY panel in the DOM
+    const tabs = [...win.document.querySelectorAll('[role="tab"]')];
+    expect(tabs.map((tab) => (tab as unknown as HTMLElement).textContent?.trim())).toEqual([
+      'working tree', 'branches', 'sync', 'collaborate', 'history',
+    ]);
+    expect((win.document.querySelector('[data-testid="git-tab-working"]') as unknown as HTMLElement).getAttribute('aria-selected')).toBe('true');
+    expect(win.document.querySelector('button[data-action="commit"]')).not.toBeNull();
+    expect(win.document.querySelector('.git-branch-row')).toBeNull();
   });
 
   test('branch list marks current; switch disabled on dirty tree with hint; delete disabled on current', async () => {
     const { api } = makeApi();
     const win = await mountGitPage(api);
+    selectTab(win, 'branches');
+    await new Promise((resolve) => setTimeout(resolve, 30));
     const mainRow = win.document.querySelector('.git-branch-row[data-branch="main"]');
     expect(mainRow?.querySelector('.git-current-mark')?.textContent).toBe('current');
 
@@ -135,6 +145,8 @@ describe('GitPage', () => {
     // clean tree → switch enabled and runs
     const { api: cleanApi, calls } = makeApi({}, { ...DIGEST, dirtyCount: 0 });
     const win2 = await mountGitPage(cleanApi);
+    selectTab(win2, 'branches');
+    await new Promise((resolve) => setTimeout(resolve, 30));
     const featSwitch = win2.document.querySelector('.git-branch-row[data-branch="feat/x"] button[data-action^="switch:"]') as unknown as HTMLButtonElement;
     expect(featSwitch.disabled).toBe(false);
     featSwitch.click();
@@ -148,6 +160,8 @@ describe('GitPage', () => {
   test('create branch form validates the name and submits base + checkout', async () => {
     const { api, calls } = makeApi();
     const win = await mountGitPage(api);
+    selectTab(win, 'branches');
+    await new Promise((resolve) => setTimeout(resolve, 30));
     const form = win.document.querySelector('.git-create-form') as unknown as HTMLFormElement;
     const name = form.querySelector('input[aria-label="new branch name"]') as unknown as HTMLInputElement;
     const submit = form.querySelector('button[type="submit"]') as unknown as HTMLButtonElement;
@@ -210,6 +224,8 @@ describe('GitPage', () => {
     });
     const win = await mountGitPage(conflictApi);
     // dirty by default → disabled
+    selectTab(win, 'branches');
+    await new Promise((resolve) => setTimeout(resolve, 30));
     const mergeBtn = win.document.querySelector('button[data-action="merge"]') as unknown as HTMLButtonElement;
     expect(mergeBtn.disabled).toBe(true);
 
@@ -217,6 +233,8 @@ describe('GitPage', () => {
       mergeBranch: () => Promise.reject(new ApiError(400, 'git merge refused: conflict — merge aborted, tree restored', { output: 'CONFLICT (content): Merge conflict in a.txt' })),
     }, { ...DIGEST, dirtyCount: 0 });
     const win2 = await mountGitPage(api);
+    selectTab(win2, 'branches');
+    await new Promise((resolve) => setTimeout(resolve, 30));
     const select = win2.document.querySelector('select[aria-label="merge source branch"]') as unknown as HTMLSelectElement;
     expect([...select.options].every((option) => option.value !== 'main')).toBe(true); // current excluded
     select.value = 'topic';
@@ -237,6 +255,8 @@ describe('GitPage', () => {
   test('remote: fetch/pull/push; pull guarded on dirty; push confirm names branch + remote', async () => {
     const { api, calls } = makeApi();
     const win = await mountGitPage(api);
+    selectTab(win, 'sync');
+    await new Promise((resolve) => setTimeout(resolve, 30));
     expect((win.document.querySelector('button[data-action="pull"]') as unknown as HTMLButtonElement).disabled).toBe(true);
 
     click(win, 'button[data-action="fetch"]');
@@ -253,9 +273,11 @@ describe('GitPage', () => {
     expect(calls.actions).toContain('pushRemote');
   });
 
-  test('PR create submits title/base/draft and shows the URL; gh unavailable replaces the section', async () => {
+  test('PR create submits title/base/draft and shows the URL; gh-off disables collaborate with a reason', async () => {
     const { api, calls } = makeApi();
     const win = await mountGitPage(api);
+    selectTab(win, 'collaborate');
+    await new Promise((resolve) => setTimeout(resolve, 30));
     const form = win.document.querySelector('.git-card[aria-label="pull requests"] .git-create-form') as unknown as HTMLFormElement;
     const title = form.querySelector('input[aria-label="pull request title"]') as unknown as HTMLInputElement;
     title.value = 'my pr';
@@ -268,14 +290,19 @@ describe('GitPage', () => {
 
     const { api: noGhApi, calls: noGhCalls } = makeApi({}, { ...DIGEST, gh: { available: false } });
     const win2 = await mountGitPage(noGhApi);
-    // gh fallback: local repository facts replace the PR card
-    const fallback = win2.document.querySelector('[data-testid="gh-fallback"]');
-    expect(fallback).not.toBeNull();
-    expect(fallback?.textContent).toContain('https://example.com/x/y.git');
-    expect(fallback?.textContent).toContain('v1.0.0');
+    // gh off: the collaborate tab explains itself; no PR list, no pulls call
+    selectTab(win2, 'collaborate');
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(win2.document.querySelector('[data-testid="gh-off-hint"]')?.textContent).toContain('not authenticated');
     expect(win2.document.querySelector('.git-pr-list')).toBeNull();
     expect(noGhCalls.actions).not.toContain('fetchPulls');
-    // other sections still render and work
+    // the tags that used to live in the fallback card are History now
+    selectTab(win2, 'history');
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(win2.document.querySelector('[data-testid="git-tags"]')?.textContent).toContain('v1.0.0');
+    // other tabs still render and work
+    selectTab(win2, 'sync');
+    await new Promise((resolve) => setTimeout(resolve, 30));
     click(win2, 'button[data-action="fetch"]');
     await new Promise((resolve) => setTimeout(resolve, 60));
     expect(noGhCalls.actions).toContain('fetchRemote');
@@ -284,7 +311,8 @@ describe('GitPage', () => {
   test('non-repo digest shows the notice instead of the sections', async () => {
     const { api } = makeApi({}, { repo: false, recent: [] });
     const win = await mountGitPage(api);
-    expect(win.document.querySelector('.git-card[aria-label="git status"]')?.textContent).toContain('not a git repository');
-    expect(win.document.querySelector('.git-card[aria-label="branches"]')).toBeNull();
+    expect(win.document.querySelector('[data-testid="git-status"]')?.textContent).toContain('not a git repository');
+    expect(win.document.querySelector('.git-tabs')).toBeNull();
+    expect(win.document.querySelector('.git-card[aria-label="changes"]')).toBeNull();
   });
 });

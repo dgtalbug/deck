@@ -185,7 +185,8 @@ button.wip.is-over {
 
 /* ═══ responsive-ui: the viewport contract (pinned) ═══
    1100px — kanban lanes become fixed-width scrollable columns (spade.css)
-   900px  — workspace shell + git page drop to a single column
+   900px  — board page and git panels drop to a single column (the sidebar
+            rail is retired; the project bar wraps instead, v0.7.0)
    640px  — small-screen tier: dialogs fit, inputs fill, nothing hover-only */
 @media (max-width: 640px) {
   .scrim {
@@ -464,114 +465,35 @@ button.wip.is-over {
   flex-wrap: wrap;
 }
 
-/* ═══ project sidebar + workspace shell (v0.2.0) ═══ */
-.board-shell {
-  display: grid;
-  grid-template-columns: 250px minmax(0, 1fr);
-  gap: 26px;
-  align-items: start;
-}
-/* responsive-ui viewport contract: ≤900px the shell stacks (sidebar above).
-   minmax(0,1fr) — the track must shrink below the content's min-content or
-   the sidebar inflates it and the page scrolls sideways (split-screen fix). */
-@media (max-width: 900px) {
-  .board-shell {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
-.sidebar {
-  position: sticky;
-  top: 76px;
-  /* split-screen fix: the sidebar accepts widths narrower than its
-     content's min-content instead of inflating the grid track */
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  padding: 16px 14px;
-  background: var(--card);
+/* ═══ project bar (v0.7.0) — the sidebar rail is retired; view switching
+   rides the board header row so the lanes keep the full viewport width ═══ */
+.view-switch {
+  display: inline-flex;
   border: 1px solid var(--border);
   border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--card);
 }
-@media (max-width: 900px) {
-  .sidebar {
-    position: static;
-  }
-}
-.sidebar-id {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  padding: 0 4px;
-}
-.sidebar-name {
-  font-family: var(--font-display);
-  font-size: 15px;
-  letter-spacing: -0.01em;
-}
-.sidebar-path {
-  font-size: 10.5px;
-  color: var(--soft);
-  overflow-wrap: anywhere;
-}
-.sidebar-nav {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.sidebar-nav a {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  padding: 7px 10px;
-  border-radius: var(--radius-sm);
+.view-switch-btn {
+  all: unset;
+  cursor: pointer;
+  padding: 6px 14px;
   font-size: 13px;
   font-weight: 550;
   color: var(--muted);
-  text-decoration: none;
+  font-family: inherit;
 }
-.sidebar-nav a .lucide {
-  width: 14px;
-  height: 14px;
+.view-switch-btn + .view-switch-btn {
+  border-left: 1px solid var(--border);
 }
-.sidebar-nav a:hover {
+.view-switch-btn:hover {
   color: var(--foreground);
   background: var(--chip);
 }
-.sidebar-nav a[aria-current='page'] {
-  color: var(--primary-vivid);
-  background: var(--primary-soft);
-  border: 1px solid var(--primary-border);
-}
-.sidebar-next {
-  justify-content: center;
-}
-.sidebar-git {
-  border-top: 1px solid var(--border);
-  padding-top: 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.sidebar-git-head {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--muted);
-  font-weight: 700;
-}
-.sidebar-git-head .lucide {
-  width: 13px;
-  height: 13px;
-}
-.sidebar-git-body {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  font-size: 12.5px;
+.view-switch-btn[aria-current='page'] {
+  color: var(--foreground);
+  background: var(--chip);
+  font-weight: 650;
 }
 .git-branch {
   display: flex;
@@ -623,30 +545,6 @@ button.wip.is-over {
   font-size: 10.5px;
   color: var(--soft);
   overflow-wrap: anywhere;
-}
-.sidebar-foot {
-  margin-top: auto;
-  border-top: 1px solid var(--border);
-  padding-top: 12px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-.sidebar-foot a {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  font-size: 12px;
-  color: var(--muted);
-  text-decoration: none;
-}
-.sidebar-foot a:hover {
-  color: var(--primary-vivid);
-}
-.sidebar-foot a .lucide {
-  width: 13px;
-  height: 13px;
 }
 
 /* icon-only controls */
@@ -914,22 +812,46 @@ button.wip.is-over {
   border-bottom: none;
 }
 
-/* git page redesign: self-sizing section grid — cells size to the viewport;
-   narrow order: working copy, branches, remote/PRs, merge, history */
-.git-section-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+/* git page tabs (v0.7.0): one responsibility per tab; the panel renders a
+   single section stack — width behavior is trivial at any viewport */
+.git-tabs {
+  display: flex;
+  gap: 2px;
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+}
+.git-tab {
+  all: unset;
+  cursor: pointer;
+  padding: 8px 13px;
+  font-size: 13px;
+  font-weight: 550;
+  color: var(--muted);
+  font-family: inherit;
+  border-bottom: 2px solid transparent;
+  white-space: nowrap;
+}
+.git-tab:hover {
+  color: var(--foreground);
+}
+.git-tab:focus-visible {
+  outline: 2px solid var(--primary-vivid);
+  outline-offset: -2px;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+}
+.git-tab[aria-selected='true'] {
+  color: var(--foreground);
+  font-weight: 650;
+  border-bottom-color: var(--primary-vivid);
+}
+.git-tabpanel {
+  display: flex;
+  flex-direction: column;
   gap: 14px;
-  align-items: start;
-}
-
-.git-section-grid > * {
   min-width: 0;
-  margin: 0;
 }
-
-.git-status-card {
-  padding: 10px 16px;
+.git-tabpanel > * {
+  margin: 0;
 }
 
 .git-graph {
@@ -941,21 +863,6 @@ button.wip.is-over {
   overflow-x: auto;
   white-space: pre;
   color: var(--soft);
-}
-
-.git-local-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  font-size: 13px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.git-local-list .mono {
-  font-size: 12px;
-  color: var(--muted);
 }
 
 .git-tag-row {
