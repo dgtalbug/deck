@@ -1,7 +1,10 @@
-// Hooks runner (hooks-runner, P2 deck-born): the extension point that makes
-// verbs user-extensible. Three pinned post-commit events, convention-only
-// discovery (.deck/hooks/<event>/<name>, zero config), JSON envelope on
-// stdin, non-blocking failures — a hook can never gate an engine transition.
+// Hooks runner (hooks-runner, P2 deck-born; moments via add-engine-event-hooks):
+// the extension point that makes verbs user-extensible. Two sources run at the
+// seven engine moments — DECLARED hooks from deck.rules.yaml (`hooks:` key,
+// reserved inert until this change) may block on `pre` and record failures on
+// the card on `post`; CONVENTION hooks (.deck/hooks/<event>/<name>) keep their
+// pinned law: post-only at their three legacy events, never gating. Declared
+// hooks run before convention hooks within a phase.
 import { existsSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -19,6 +22,7 @@ export const HOOK_EVENT_ORDER: HookEvent[] = [
   HookEvent.VerifyResult,
   HookEvent.Archive,
 ];
+
 
 // The pinned envelope — append-only: new fields may be added, existing
 // fields are never renamed or repurposed.
@@ -39,14 +43,14 @@ export interface HookWarning {
   stderr: string;
 }
 
-const HOOK_TIMEOUT_MS = 10_000;
+export const HOOK_TIMEOUT_MS = 10_000;
 
-function hooksDir(projectPath: string, event: HookEvent): string {
+export function hooksDir(projectPath: string, event: HookEvent): string {
   return join(projectPath, '.deck', 'hooks', event);
 }
 
 // Executable files only, lexical name order — the pinned run order.
-function hookNames(projectPath: string, event: HookEvent): { run: string[]; skipped: string[] } {
+export function hookNames(projectPath: string, event: HookEvent): { run: string[]; skipped: string[] } {
   const dir = hooksDir(projectPath, event);
   if (!existsSync(dir)) return { run: [], skipped: [] };
   const entries = readdirSync(dir).filter((name) => !name.startsWith('.')).sort();
@@ -139,7 +143,7 @@ export function listHooks(projectPath: string): HookListing {
   return { hooks, skipped };
 }
 
-function concat(chunks: Uint8Array[]): Uint8Array {
+export function concat(chunks: Uint8Array[]): Uint8Array {
   const total = chunks.reduce((sum, chunk) => sum + chunk.byteLength, 0);
   const out = new Uint8Array(total);
   let offset = 0;

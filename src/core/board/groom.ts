@@ -11,6 +11,7 @@ import { getSpecType, sectionGate } from './types-registry.ts';
 import { emitEvent } from '../events/outbox.ts';
 import { assertUnderWip } from './lanes.ts';
 import { recordSpecVersion, renderCardSpec, enqueuePublish } from './specstore.ts';
+import { runMomentPostSync, runMomentPreSync } from '../engine/moments.ts';
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -112,6 +113,17 @@ export function convertToVerbItem(store: DocumentStore, proposal: GroomProposal)
       { noteId: proposal.noteId, openQuestions: proposal.openQuestions },
     );
   }
+  // groom moment: pre sees the still-a-note card; a blocking hook refuses the
+  // promotion before any state changes. Post fires after the full conversion
+  // (tasks, spec, publish queue) has landed.
+  const noteCard = store.getNote(proposal.noteId);
+  runMomentPreSync(store, 'groom', {
+    moment: 'groom',
+    cardId: proposal.noteId,
+    lane: 'todo', // notes live only in todo — the pre-transition lane
+    card: noteCard,
+    timestamp: new Date().toISOString(),
+  });
   runTx(store.db, (tx) => {
     const row = tx.select().from(cards).where(eq(cards.id, proposal.noteId)).get();
     if (!row || row.type !== 'note') throw new NotFoundError('note', proposal.noteId);
@@ -154,6 +166,14 @@ export function convertToVerbItem(store: DocumentStore, proposal: GroomProposal)
   // Issues at groom: the spec publishes as a DRAFT issue from birth —
   // queue-first (deck sync flushes lazily), never blocking the groom.
   enqueuePublish(store, proposal.noteId, version.checksum);
+  runMomentPostSync(store, 'groom', {
+    moment: 'groom',
+    cardId: item.id,
+    lane: item.lane,
+    verb: item.verb,
+    card: item,
+    timestamp: new Date().toISOString(),
+  });
   return item;
 }
 

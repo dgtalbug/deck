@@ -49,10 +49,10 @@ describe('deck hooks', () => {
     const text = out.join('\n');
     expect(text).toBe(
       [
-        'hook   onVerbStart/a-first',
-        'hook   onVerbStart/notify',
-        'hook   onVerifyResult/audit',
-        'hook   onArchive/ship',
+        'hook   onVerbStart/a-first (convention, post-only)',
+        'hook   onVerbStart/notify (convention, post-only)',
+        'hook   onVerifyResult/audit (convention, post-only)',
+        'hook   onArchive/ship (convention, post-only)',
         'skip   onVerbStart/notes.txt (not executable)',
       ].join('\n'),
     );

@@ -31,7 +31,8 @@ import type { VerbName, VerbItem } from '../board/types.ts';
 import { branchFor } from './slug.ts';
 import { scaffoldSession, sessionPath } from '../board/memory.ts';
 import { archiveTail, ReviewBlockedError, reviewGate } from './verify.ts';
-import { HookEvent, runHooks, type HookWarning } from './hooks.ts';
+import { runMomentPost, runMomentPre, type MomentPayload } from './moments.ts';
+import type { HookWarning } from './hooks.ts';
 export { branchFor };
 
 async function assertCleanTree(projectPath: string): Promise<void> {
@@ -101,6 +102,10 @@ export async function startVerb(
   }
   assertUnderWip(store);
 
+  // feat moment pre: a blocking hook refuses the start before the lane
+  // moves, the branch is created, or the issue publishes.
+  await runMomentPre(store, 'feat', startPayload(store, card, 'groomed'));
+
   moveLane(store, id, 'active', 'engine');
   let publish;
   try {
@@ -145,23 +150,39 @@ export async function startVerb(
     throw error;
   }
   const started = store.getVerbItem(id);
-  // onVerbStart fires only after the start has fully committed (post-event).
-  const hookWarnings = await runHooks(store.projectPath, HookEvent.VerbStart, {
-    event: HookEvent.VerbStart,
-    cardId: id,
-    verb: started.verb,
-    lane: started.lane,
+  // The feat post phase (and the pinned onVerbStart convention event inside
+  // it) fires only after the start has fully committed.
+  const hookWarnings = await runMomentPost(store, 'feat', startPayload(store, started, started.lane, {
     branch,
     issueNumber: publish.issueNumber,
-    result: null,
-    timestamp: new Date().toISOString(),
-  });
+  }));
   return {
     card: started,
     branch,
     issueNumber: publish.issueNumber,
     queued: publish.queued,
     hookWarnings,
+  };
+}
+
+// Shared payload builder for the feat moment: the pre phase carries the
+// still-groomed card; the post phase the started one.
+function startPayload(
+  store: DocumentStore,
+  card: VerbItem,
+  lane: string,
+  extra: { branch?: string; issueNumber?: number | null } = {},
+): MomentPayload {
+  return {
+    moment: 'feat',
+    cardId: card.id,
+    lane,
+    verb: card.verb,
+    branch: extra.branch ?? branchFor(card, card.verb),
+    issueNumber: extra.issueNumber ?? getIssueMap(store, card.id)?.issueNumber ?? null,
+    result: null,
+    card,
+    timestamp: new Date().toISOString(),
   };
 }
 
@@ -219,6 +240,19 @@ export async function archiveVerb(store: DocumentStore, id: string): Promise<Arc
   const findings = await reviewGate(store, id);
   if (findings.length > 0) throw new ReviewBlockedError(id, findings);
 
+  // archive moment pre: blocks before the push/PR/merge sequence begins.
+  await runMomentPre(store, 'archive', {
+    moment: 'archive',
+    cardId: id,
+    lane: card.lane,
+    verb: card.verb,
+    branch,
+    issueNumber: map.issueNumber,
+    result: null,
+    card,
+    timestamp: new Date().toISOString(),
+  });
+
   // Guarded sequence on clean trees only. gh cannot open a PR for a branch
   // the remote has never seen — push the verb branch first, and push the
   // merge after, so the loop closes on the remote too.
@@ -270,15 +304,17 @@ export async function archiveVerb(store: DocumentStore, id: string): Promise<Arc
   const tail = await archiveTail(store, id, pr.url);
   warnings.push(...tail.warnings);
   const done = store.getVerbItem(id);
-  // onArchive fires after the loop has fully closed (post-event).
-  const hookWarnings = await runHooks(store.projectPath, HookEvent.Archive, {
-    event: HookEvent.Archive,
+  // The archive post phase (and the pinned onArchive convention event inside
+  // it) fires after the loop has fully closed.
+  const hookWarnings = await runMomentPost(store, 'archive', {
+    moment: 'archive',
     cardId: id,
-    verb: done.verb,
     lane: done.lane,
+    verb: done.verb,
     branch,
     issueNumber: map.issueNumber,
     result: null,
+    card: done,
     timestamp: new Date().toISOString(),
   });
   return { card: done, prUrl: pr.url, issueNumber: map.issueNumber, tail, warnings, hookWarnings };

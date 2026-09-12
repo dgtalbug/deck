@@ -131,7 +131,7 @@ commands:
   feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert <id>
                                     start a build: active + issue + branch
   workflow <new-verb>               register a user verb on the shared engine
-  hooks                             list installed hooks (.deck/hooks/<event>/<name>)
+  hooks                             list hooks — deck.rules.yaml declarations + .deck/hooks executables
   recall <query>                    search session memory (FTS5)
   setup                             onboard agent hosts (adapter table + detection)
   skill new <name>                 scaffold a skill pack from the pinned template
