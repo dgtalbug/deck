@@ -3,9 +3,10 @@
 // iris is never read at runtime), deterministic host detection, and the
 // pinned skill scaffold template. Deck's table supersedes iris's hardcoded
 // HOST_ADAPTERS as the registry of record.
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import type { Database } from 'bun:sqlite';
+import { skillAssets } from './skill-assets.ts';
 
 // Copied verbatim (skillsDir/detect/displayName) from iris
 // src/lib/host-adapters.ts:22-73 (HOST_ADAPTERS, six hosts). The iris repo
@@ -106,4 +107,37 @@ export function scaffoldSkill(projectPath: string, name: string): string {
   mkdirSync(dir, { recursive: true });
   writeFileSync(path, skillTemplate(name));
   return path;
+}
+
+// The shipped skill pack (agent-skill-pack): installSkillPack writes the
+// embedded deck-* SKILL.md files into every detected host's skillsDir.
+// Content-compare, never mtime: a byte-identical file rewrites freely; a
+// user-edited file is NEVER overwritten — the same law as scaffoldSkill.
+export interface SkillPackOutcome {
+  written: string[]; // "<host>/<skill>" entries
+  skipped: string[]; // user-modified files, named, untouched
+}
+
+export function installSkillPack(
+  projectPath: string,
+  hosts: Array<{ id: string; skillsDir: string }>,
+  assets: Record<string, string> = skillAssets,
+): SkillPackOutcome {
+  const detected = detectHosts(projectPath, hosts as AgentHost[]);
+  const outcome: SkillPackOutcome = { written: [], skipped: [] };
+  for (const host of detected) {
+    const dir = join(projectPath, host.skillsDir);
+    for (const [rel, content] of Object.entries(assets)) {
+      const file = join(dir, rel);
+      if (existsSync(file) && readFileSync(file, 'utf8') !== content) {
+        outcome.skipped.push(`${host.id}/${rel}`);
+        continue;
+      }
+      if (existsSync(file)) continue; // identical — nothing to write
+      mkdirSync(dirname(file), { recursive: true });
+      writeFileSync(file, content);
+      outcome.written.push(`${host.id}/${rel}`);
+    }
+  }
+  return outcome;
 }
