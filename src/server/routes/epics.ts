@@ -9,6 +9,7 @@ import { epicRollups } from '../../core/board/views.ts';
 export const parity = {
   'POST /:project/epics': 'addEpic',
   'GET /:project/epics': 'listEpics',
+  'GET /:project/epics/:id': 'getEpic',
   'POST /:project/cards/:id/epic': 'setEpic',
 };
 
@@ -28,6 +29,24 @@ export function epicsRoutes(registry: ProjectRegistry): RouteTable {
         attempt(async () => {
           const store = await projectStore(registry, req.params.project!);
           return Response.json({ epics: epicRollups(store) });
+        }),
+    },
+    '/:project/epics/:id': {
+      GET: (req) =>
+        attempt(async () => {
+          const store = await projectStore(registry, req.params.project!);
+          const epic = store.getEpic(req.params.id!); // typed 404 for non-epics
+          const stories = store.epicStories(req.params.id!).map((story) => ({
+            id: story.id,
+            title: story.title,
+            lane: 'lane' in story ? story.lane : 'todo',
+            verb: 'verb' in story ? story.verb : undefined,
+            tasks:
+              'tasks' in story
+                ? { done: story.tasks.filter((task) => task.done).length, total: story.tasks.length }
+                : { done: 0, total: 0 },
+          }));
+          return Response.json({ epic, stories });
         }),
     },
     '/:project/cards/:id/epic': {

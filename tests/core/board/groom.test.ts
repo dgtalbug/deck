@@ -40,7 +40,7 @@ describe('convertToVerbItem', () => {
     expect(item.lane).toBe('groomed');
     expect(item.verb).toBe('fix');
     expect(item.title).toBe('refined: fix the thing');
-    expect(item.specPath).toBe(`specs/changes/fix-${note.id}/`);
+    expect(item.specPath).toBe(`.deck/specs/tasks/fix-${note.id}/`); // shaped layout under .deck
     expect(item.tasks).toHaveLength(2);
     const groomed = store.listCards('groomed');
     expect(groomed[groomed.length - 1]?.id).toBe(item.id);
