@@ -15,7 +15,7 @@ function proposal(noteId: string, tasks: string[]): GroomProposal {
     noteId,
     proposedVerb: 'chore',
     refinedTitle: 'layout probe',
-    research: { codebaseFindings: [], sections: { reproduce: 'r', rca: 'c' } },
+    research: { codebaseFindings: ['scoped in the story spec'], sections: { reproduce: 'r', rca: 'c' } },
     specDeltas: [],
     tasks,
     openQuestions: [],
@@ -49,5 +49,26 @@ describe('.deck/specs layout', () => {
 
   test('cleanup', () => {
     rmSync(dir, { recursive: true, force: true });
+  });
+});
+
+describe('shape-naming gate', () => {
+  test('a >3-task groom without any spec content refuses as story-shaped', async () => {
+    const dir2 = mkdtempSync(join(tmpdir(), 'shape-gate-'));
+    const store2 = await openStore(dir2);
+    const id = store2.addNote('big bare').id;
+    let message = '';
+    try {
+      convertToVerbItem(store2, {
+        noteId: id, proposedVerb: 'chore', refinedTitle: 'big bare',
+        research: { codebaseFindings: [], sections: { reproduce: 'r', rca: 'c' } },
+        specDeltas: [], tasks: ['a', 'b', 'c', 'd'], openQuestions: [],
+      } as never);
+    } catch (error) {
+      message = (error as Error).message;
+    }
+    expect(message).toContain('story-shaped');
+    expect(message).toContain('split it into an epic');
+    rmSync(dir2, { recursive: true, force: true });
   });
 });

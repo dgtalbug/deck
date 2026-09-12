@@ -15,12 +15,13 @@ import {
   TriangleAlert,
   Zap,
 } from 'lucide-preact';
+import { Target } from 'lucide-preact';
 import { Dialog, DialogHead } from '../../components/Dialog.tsx';
 import { TextField } from '../../components/TextField.tsx';
 import { cardKind, progressParts } from './Card.tsx';
 import { VerbIcon } from './verbIcon.tsx';
 import { SpecView } from './specView.tsx';
-import type { UiCard } from './api.ts';
+import type { EpicTreeStory, UiCard } from './api.ts';
 
 // Card detail dialog: tasks (read-only — the checklist lives in the spec,
 // the engine syncs it), sanitized spec, research output, blocked reason,
@@ -76,7 +77,14 @@ export function CardDetailSkeleton(): VNode {
   );
 }
 
-export function CardDetail(props: { card: UiCard; actions: DetailActions; specMarkdown: string }): VNode {
+export function CardDetail(props: {
+  card: UiCard;
+  actions: DetailActions;
+  specMarkdown: string;
+  /** the story's epic, when attached — clickable back to the epic tree */
+  epic?: { id: string; title: string } | undefined;
+  onOpenEpic?: (id: string) => void;
+}): VNode {
   const { card, actions } = props;
   const [tab, setTab] = useState<Tab>('tasks');
   const [blocking, setBlocking] = useState(false);
@@ -111,6 +119,16 @@ export function CardDetail(props: { card: UiCard; actions: DetailActions; specMa
             ) : null}
             {kind === 'tweak' ? <span class="type-tweak"><Zap size={11} /> tweak</span> : null}
             {kind === 'note' ? <span class="type-note">note</span> : null}
+            {props.epic !== undefined ? (
+              <button
+                class="type-epic"
+                style="cursor:pointer;background:none;border:none;padding:0;font:inherit"
+                title={`open epic: ${props.epic.title}`}
+                onClick={() => props.onOpenEpic?.(props.epic!.id)}
+              >
+                <Target size={12} /> {props.epic.title}
+              </button>
+            ) : null}
             <span class="badge b-primary">{card.lane ?? 'todo'}</span>
             {card.blocked !== undefined ? (
               <span class="badge b-warning"><TriangleAlert size={11} /> blocked</span>
@@ -304,6 +322,55 @@ export function CardDetail(props: { card: UiCard; actions: DetailActions; specMa
           </div>
         </div>
       ) : null}
+    </Dialog>
+  );
+}
+
+// Epic navigation (architect-intake-navigation): the epic's child stories
+// as clickable rows — the Jira-style drill-down. Presented by Board (which
+// owns the detail route and the fetch); this component stays presentational.
+export function EpicDetail(props: {
+  tree: { epic: { id: string; title: string }; stories: EpicTreeStory[] };
+  onOpenStory(id: string): void;
+  onClose(): void;
+}): VNode {
+  const { tree } = props;
+  const done = tree.stories.filter((story) => story.lane === 'done').length;
+  return (
+    <Dialog open onClose={props.onClose} label={`epic detail: ${tree.epic.title}`}>
+      <DialogHead
+        title={tree.epic.title}
+        meta={
+          <span>
+            <span class="type-epic"><Target size={12} /> epic</span>
+            <span class="badge b-primary">{done}/{tree.stories.length} stories done</span>
+          </span>
+        }
+        onClose={props.onClose}
+      />
+      <div style="margin-top:14px">
+        {tree.stories.length === 0 ? (
+          <p class="hint">no stories yet — deck story <span class="mono">{tree.epic.id}</span> &quot;&lt;title&gt;&quot; adds one</p>
+        ) : (
+          tree.stories.map((story) => (
+            <button
+              key={story.id}
+              class="story-row"
+              style="display:flex;width:100%;align-items:center;gap:10px;padding:8px 10px;margin-bottom:6px;text-align:left;background:var(--surface);border:1px solid var(--border);border-radius:8px;cursor:pointer"
+              onClick={() => props.onOpenStory(story.id)}
+            >
+              {story.verb !== undefined ? (
+                <span class="verb-chip"><VerbIcon verb={story.verb} size={12} /> {story.verb}</span>
+              ) : (
+                <span class="type-note">note</span>
+              )}
+              <span class="badge">{story.lane}</span>
+              <span style="flex:1;overflow-wrap:anywhere">{story.title}</span>
+              <span class="hint" style="margin:0">{story.tasks.done}/{story.tasks.total}</span>
+            </button>
+          ))
+        )}
+      </div>
     </Dialog>
   );
 }
