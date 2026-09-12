@@ -90,8 +90,7 @@ export class DocumentStore {
         await Bun.sleep(50 * (attempt + 1));
       }
     }
-    // Epic planning: cards.epic_id parent pointer (idempotent ALTER — the
-    // column is additive; drizzle migrations predate it).
+    // Epic planning: cards.epic_id (idempotent ALTER; migrations predate it).
     const cols = sqlite.query("PRAGMA table_info('cards')").all() as Array<{ name: string }>;    if (!cols.some((col) => col.name === 'epic_id')) {
       sqlite.exec('ALTER TABLE cards ADD COLUMN epic_id TEXT');
     }
@@ -104,13 +103,11 @@ export class DocumentStore {
     // Agent-host adapter registry (harness slice): raw DDL + pinned seed.
     const { ensureAgentHosts } = await import('../projects/harness.ts');
     ensureAgentHosts(sqlite);
-    // FTS5 index over session-memory bullets (drizzle cannot manage virtual
-    // tables); idempotent on every open.
+    // FTS5 over session-memory bullets (drizzle can't own virtual tables).
     sqlite.exec(
       'CREATE VIRTUAL TABLE IF NOT EXISTS session_memory USING fts5(line, cardId UNINDEXED, section UNINDEXED)',
     );
-    // Hold law sweep: clear legacy blocked flags on engine lanes once per
-    // open so the flag only ever means pick-later.
+    // Hold law sweep: clear legacy engine-lane blocked flags once per open.
     sqlite.exec(
       `UPDATE cards SET blocked_reason = NULL, blocked_at = NULL ` +
         `WHERE lane IN ('active', 'verify', 'done') AND blocked_reason IS NOT NULL`,
@@ -182,6 +179,10 @@ export class DocumentStore {
     return this.listCards('todo').filter(isNote);
   }
 
+  private idTaken(id: string): boolean {
+    return this.db.select({ id: cards.id }).from(cards).where(eq(cards.id, id)).get() !== undefined;
+  }
+
   getCard(id: string): Card {
     const row = this.cardRow(this.db, id);
     return this.toCard(row, this.taskRows(this.db, id));
@@ -196,7 +197,7 @@ export class DocumentStore {
   // --- epic planning ----------------------------------------------------------
 
   addEpic(title: string): Epic {
-    const id = newCardId('epic');
+    const id = newCardId('epic', (id) => this.idTaken(id));
     const ts = nowIso();
     runTx(this.db, (tx) => {
       const position = endPosition(tx.select({ position: cards.position }).from(cards).where(eq(cards.lane, 'todo')).all().map((row) => row.position));
@@ -272,7 +273,7 @@ export class DocumentStore {
   // --- mutations -------------------------------------------------------------
 
   addNote(title: string): Note {
-    const id = newCardId(title);
+    const id = newCardId(title, (id) => this.idTaken(id));
     const ts = nowIso();
     runTx(this.db, (tx) => {
       const position = endPosition(this.lanePositions(tx, 'todo'));

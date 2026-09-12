@@ -13,7 +13,7 @@ import { epicRollups } from '../core/board/views.ts';
 import { backfillSpecs, syncProject } from '../core/board/publish.ts';
 import { initProject } from '../core/projects/init.ts';
 import { detectHosts, listAgentHosts, scaffoldSkill, SkillNameError } from '../core/projects/harness.ts';
-import { DeckError } from '../core/board/errors.ts';
+import { DeckError, NotFoundError } from '../core/board/errors.ts';
 import type { Command, RunContext } from './main.ts';
 import { startCommand } from './start.ts';
 import type { ParsedArgs } from './args.ts';
@@ -181,8 +181,21 @@ export async function epicCommand(args: ParsedArgs, ctx: RunContext): Promise<st
   const project = resolveProject(ctx.registry, args, ctx.cwd);
   const store = await getStore(project.path);
   const p = ctx.pal;
-  if (/^[a-z0-9-]+-[a-z0-9]{4}$/.test(first)) {
-    // looks like an id — print the tree
+  // Id-or-title: an existing epic id wins (bare slugs now, no suffix regex).
+  // A single token shaped like a LEGACY id (slug + 4-char tail) that resolves
+  // to nothing is still a lookup miss — refuse, don't create an epic named
+  // after a dead id.
+  let isId = false;
+  try {
+    store.getEpic(first);
+    isId = true;
+  } catch {
+    isId = false;
+  }
+  if (!isId && args.positionals.length === 1 && /^[a-z0-9]+(-[a-z0-9]+)*-[a-z0-9]{4}$/.test(first)) {
+    throw new NotFoundError('epic', first);
+  }
+  if (isId) {
     const epic = store.getEpic(first);
     const stories = store.epicStories(first);
     const done = stories.filter((story) => 'lane' in story && story.lane === 'done').length;

@@ -64,8 +64,8 @@ describe('SSE /:project/events', () => {
       if (text.includes('card.created')) {
         sawEvent = true;
         expect(text).toContain('event: card.created');
-        // card.created payload carries the id (slug of the title), not the title.
-        expect(text).toContain('live-note-');
+        // card.created payload carries the id (bare title slug), not the title.
+        expect(text).toContain('"id":"live-note"');
       }
     }
     expect(sawEvent).toBe(true);
