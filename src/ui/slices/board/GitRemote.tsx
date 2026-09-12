@@ -66,6 +66,7 @@ export function GitPullRequests(props: { ctx: GitActionCtx; pulls: PullRequest[]
   const [prTitle, setPrTitle] = useState('');
   const [prBase, setPrBase] = useState('');
   const [prDraft, setPrDraft] = useState(false);
+  const [prBody, setPrBody] = useState('');
 
   return (
     <section class="card git-card" aria-label="pull requests">
@@ -104,11 +105,13 @@ export function GitPullRequests(props: { ctx: GitActionCtx; pulls: PullRequest[]
                   title: prTitle.trim(),
                   ...(prBase !== '' ? { base: prBase } : {}),
                   draft: prDraft,
+                  ...(prBody.trim() !== '' ? { body: prBody.trim() } : {}),
                 });
                 pushToast('info', 'pull request opened', url);
                 return url;
               });
               setPrTitle('');
+              setPrBody('');
             }}
           >
             <input
@@ -130,6 +133,12 @@ export function GitPullRequests(props: { ctx: GitActionCtx; pulls: PullRequest[]
               <input type="checkbox" checked={prDraft} onChange={(event) => setPrDraft((event.target as HTMLInputElement).checked)} />{' '}
               draft
             </label>
+            <textarea
+              placeholder="PR body (optional)"
+              aria-label="pull request body"
+              value={prBody}
+              onInput={(event) => setPrBody((event.target as HTMLTextAreaElement).value)}
+            ></textarea>
             <button type="submit" class="btn btn-primary" data-action="pr-create" disabled={prTitle.trim() === '' || busy['pr-create'] === true}>
               <GitPullRequest size={12} /> open PR
             </button>

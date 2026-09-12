@@ -7,7 +7,9 @@ export type Lane = (typeof LANES)[number];
 export const VERBS = [
   'feat', 'fix', 'docs', 'style', 'refactor', 'perf', 'test', 'build', 'ci', 'chore', 'revert',
 ] as const;
-export type Verb = (typeof VERBS)[number];
+// Built-ins autocomplete; user-registered verbs (deck workflow) are plain
+// strings — the server serves both, so the type must admit both.
+export type Verb = (typeof VERBS)[number] | (string & {});
 
 export interface TaskView {
   id?: string;
@@ -250,7 +252,7 @@ function buildApi(base: string): BoardApi {
     fetchPulls: (project: string): Promise<PullRequest[]> =>
       request(base, `/${project}/git/pulls`),
 
-    createPullRequest: (project: string, input: { title: string; base?: string; draft?: boolean }): Promise<{ url: string }> =>
+    createPullRequest: (project: string, input: { title: string; base?: string; draft?: boolean; body?: string }): Promise<{ url: string }> =>
       post(base, `/${project}/git/pulls`, input),
   };
 }
@@ -286,5 +288,5 @@ export type BoardApi = {
   pullRemote: (project: string) => Promise<GitOpResult>;
   pushRemote: (project: string) => Promise<GitOpResult>;
   fetchPulls: (project: string) => Promise<PullRequest[]>;
-  createPullRequest: (project: string, input: { title: string; base?: string; draft?: boolean }) => Promise<{ url: string }>;
+  createPullRequest: (project: string, input: { title: string; base?: string; draft?: boolean; body?: string }) => Promise<{ url: string }>;
 };

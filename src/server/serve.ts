@@ -86,11 +86,26 @@ export function startupBanner(opts: {
   return kind === 'box' ? bannerBox(DECK_VERSION, p) : bannerAscii(DECK_VERSION, p);
 }
 
+// Non-loopback bind = the board AND its git routes accept unauthenticated
+// writes from anyone who can reach the interface. Null on loopback.
+export function nonLoopbackWarning(host: string): string | null {
+  if (['127.0.0.1', 'localhost', '::1'].includes(host)) return null;
+  return (
+    `\n  WARNING: binding to ${host} — the board and its git routes accept\n` +
+    `  UNAUTHENTICATED writes from anyone on that interface.\n` +
+    `  Keep --host loopback unless you know the network is trusted.\n`
+  );
+}
+
 export async function serveMain(): Promise<void> {
   const args = parseServeArgs(process.argv.slice(2));
   const port = await resolvePort(args.port);
   try {
     const server = buildServer({ port, hostname: args.host ?? '127.0.0.1' });
+    // Non-loopback bind = the board AND its git routes accept unauthenticated
+    // writes from anyone who can reach the interface. Warn before listening.
+    const warning = nonLoopbackWarning(server.hostname ?? '127.0.0.1');
+    if (warning !== null) console.error(warning);
     console.log(startupBanner({ port: server.port ?? port }));
     console.log(`deck serving on http://${server.hostname}:${server.port}`);
   } catch (error) {

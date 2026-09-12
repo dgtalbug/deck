@@ -135,6 +135,14 @@ export function getIssueMap(store: DocumentStore, cardId: string): IssueMapEntry
   return row === undefined ? undefined : { ...row };
 }
 
+// Publish-side compensation (startVerb): a failed branch start must leave
+// no standing map row. The remote issue itself stays — reported as drift.
+export function deleteIssueMap(store: DocumentStore, cardId: string): void {
+  runTx(store.db, (tx) => {
+    tx.delete(issueMap).where(eq(issueMap.cardId, cardId)).run();
+  });
+}
+
 export function setIssueMap(
   store: DocumentStore,
   entry: { cardId: string; issueNumber: number; state: 'open' | 'closed'; checksum: string },

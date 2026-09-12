@@ -129,6 +129,7 @@ export async function syncProject(store: DocumentStore): Promise<ReconcileReport
 
   // Drift diff — map rows vs live issues, cards, and versions.
   const mappedCards = store.db.select().from(issueMap).all().map((row) => ({ ...row }));
+  const labelRefreshes: Array<{ issueNumber: number; lane: 'todo' | 'groomed' | 'active' | 'verify' | 'done' }> = [];
   for (const row of mappedCards) {
     // Rows orphaned before the deleteCard cascade (or by hand-edited dbs)
     // must surface as drift, never abort the whole report.
@@ -179,9 +180,11 @@ export async function syncProject(store: DocumentStore): Promise<ReconcileReport
       const laneLabels = issue.labels.filter((label) =>
         ['todo', 'groomed', 'active', 'verify', 'done'].includes(label),
       );
+      // Batch label writes for AFTER the read loop — interleaving gh
+      // writes with reads serializes N round-trips and re-reads issues
+      // that a label edit would have refreshed anyway.
       if (!hasLaneLabel || laneLabels.length > 1) {
-        await setLaneLabel(store.projectPath, row.issueNumber, lane);
-        report.labelsRefreshed += 1;
+        labelRefreshes.push({ issueNumber: row.issueNumber, lane });
       }
     } catch (error) {
       if (error instanceof GhUnavailableError) {
@@ -199,6 +202,18 @@ export async function syncProject(store: DocumentStore): Promise<ReconcileReport
       } else {
         throw error;
       }
+    }
+  }
+  for (const refresh of labelRefreshes) {
+    try {
+      await setLaneLabel(store.projectPath, refresh.issueNumber, refresh.lane);
+      report.labelsRefreshed += 1;
+    } catch (error) {
+      if (error instanceof GhUnavailableError) {
+        report.gh = 'unavailable';
+        break;
+      }
+      throw error;
     }
   }
   return report;

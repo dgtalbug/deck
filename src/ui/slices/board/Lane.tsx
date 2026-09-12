@@ -10,7 +10,7 @@ import {
 } from 'lucide-preact';
 import { LANES, type Lane as LaneName, type UiCard } from './api.ts';
 import { Card, type CardActions, type CardDndProps } from './Card.tsx';
-import { registerLaneDrop, registeredBodies, type DragCallbacks } from './dnd.ts';
+import { bodyRegistered, markBodyRegistered, registerLaneDrop, type DragCallbacks } from './dnd.ts';
 
 // Five Lane columns per §13 mapping: todo muted, groomed primary (the
 // subject), active accent-1 + WIP meter, verify accent-3, done success.
@@ -127,8 +127,8 @@ export function Lane(props: {
           const html = element as HTMLElement | null;
           // engine lanes structurally never register a droppable
           if (html === null || props.dnd === undefined || props.lane !== 'todo' && props.lane !== 'groomed') return;
-          if (registeredBodies.has(html)) return;
-          registeredBodies.add(html);
+          if (bodyRegistered(html)) return;
+          markBodyRegistered(html);
           registerLaneDrop(html, props.lane, props.dnd.callbacks);
         }}
       >

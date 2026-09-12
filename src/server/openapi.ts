@@ -68,7 +68,7 @@ function gitPath(id: string, summary: string, body: z.ZodType): [string, Record<
   return [`/{project}/git/${id}`, post(summary, body, [projectParam])];
 }
 
-export function openApiDocument(): Record<string, unknown> {
+function openApiDocument(): Record<string, unknown> {
   return {
     openapi: '3.1.0',
     info: {
@@ -204,7 +204,7 @@ export function openApiDocument(): Record<string, unknown> {
   };
 }
 
-export function docsPage(): Response {
+function docsPage(): Response {
   const html = `<!doctype html>
 <html>
   <head>
@@ -228,7 +228,7 @@ function swaggerAsset(name: string): Response {
   );
 }
 
-export function swaggerPage(): Response {
+function swaggerPage(): Response {
   const html = `<!doctype html>
 <html>
   <head>

@@ -3,7 +3,7 @@ import { GripVertical, OctagonPause, OctagonX, StickyNote, Target, TriangleAlert
 import type { UiCard } from './api.ts';
 import { VerbIcon } from './verbIcon.tsx';
 import { Menu } from '../../components/Menu.tsx';
-import { keyboardAfterId, registerCardDrag, registerCardDrop, registeredCards, type DragCallbacks } from './dnd.ts';
+import { cardRegistered, keyboardAfterId, markCardRegistered, registerCardDrag, registerCardDrop, type DragCallbacks } from './dnd.ts';
 
 // Kanban card per Spade §13: type chip (note muted / verb chip / tweak pink),
 // blocked dim + reachable reason, progress badge + meter, restricted drag,
@@ -103,8 +103,8 @@ export function Card({ card, actions, dnd, flash }: { card: UiCard; actions: Car
       onClick={() => actions.onOpen(card.id)}
       ref={(element) => {
         const html = element as HTMLElement | null;
-        if (html === null || dnd === undefined || registeredCards.has(html)) return;
-        registeredCards.add(html);
+        if (html === null || dnd === undefined || cardRegistered(html)) return;
+        markCardRegistered(html);
         registerCardDrag(html, card, dnd.lane as 'todo' | 'groomed', dnd.callbacks);
         registerCardDrop(html, dnd.lane as 'todo' | 'groomed', dnd.callbacks);
       }}

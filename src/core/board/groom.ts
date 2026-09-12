@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { DeckError, NotFoundError } from './errors.ts';
 import { newTaskId } from './ids.ts';
 import { endPosition } from './positions.ts';
-import { cards, tasks } from './schema.ts';
+import { cards, issueMap, publishQueue, specs, tasks } from './schema.ts';
 import { runTx, type DocumentStore } from './store.ts';
 import type { GroomProposal, Note, Tweak, VerbItem } from './types.ts';
 import { emitEvent } from '../events/outbox.ts';
@@ -144,6 +144,12 @@ export function demoteToNote(store: DocumentStore, cardId: string): Note {
       .where(eq(cards.id, cardId))
       .run();
     tx.delete(tasks).where(eq(tasks.cardId, cardId)).run();
+    // Cascade the card's derived rows like deleteCard — a note back in todo
+    // has no spec/issue identity, and a surviving issue_map/publish_queue/
+    // specs row would make deck sync's drift loop crash on the dead verb id.
+    tx.delete(issueMap).where(eq(issueMap.cardId, cardId)).run();
+    tx.delete(publishQueue).where(eq(publishQueue.cardId, cardId)).run();
+    tx.delete(specs).where(eq(specs.cardId, cardId)).run();
     emitEvent(tx, 'card.moved', { id: cardId, lane: 'todo', position });
   });
   return store.getNote(cardId);
