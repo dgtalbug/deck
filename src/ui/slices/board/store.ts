@@ -41,11 +41,6 @@ export interface FilterState {
   chip: 'all' | 'notes' | 'verbs' | 'tweaks' | 'blocked';
 }
 
-export interface FilterState {
-  search: string;
-  chip: 'all' | 'notes' | 'verbs' | 'tweaks' | 'blocked';
-}
-
 export interface WipState {
   active: number;
   limit: number;
@@ -264,14 +259,25 @@ export function createBoardStore(project: string, api: BoardApi): BoardStore {
         if (found === undefined) return doc;
         const position = typeof payload.position === 'number' ? payload.position : undefined;
         // idempotent replay: same lane, same (or unspecified) position
-        if (found.lane === payload.lane && (position === undefined || found.index + 1 === position)) {
+        const current = doc.lanes[found.lane][found.index]!;
+        if (found.lane === payload.lane && (position === undefined || current.position === position)) {
           return doc;
         }
-        const card = { ...doc.lanes[found.lane][found.index]!, lane: payload.lane };
+        const card = {
+          ...current,
+          lane: payload.lane,
+          ...(position !== undefined ? { position } : {}),
+        };
         const source = doc.lanes[found.lane].filter((entry) => entry.id !== id);
         const base = withLane(doc, found.lane, source);
         const target = [...base.lanes[payload.lane]];
-        const insertAt = position === undefined ? target.length : Math.max(0, Math.min(target.length, position - 1));
+        // Positions are 1024-step floats, NOT ordinals — insert before the
+        // first neighbor with a larger position; unknown positions sort last.
+        let insertAt = target.length;
+        if (position !== undefined) {
+          const neighbor = target.findIndex((entry) => (entry.position ?? Number.POSITIVE_INFINITY) > position);
+          insertAt = neighbor === -1 ? target.length : neighbor;
+        }
         target.splice(insertAt, 0, card);
         return withLane(base, payload.lane, target);
       }

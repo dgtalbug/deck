@@ -135,6 +135,8 @@ export interface ArchiveOutcome {
   prUrl: string;
   issueNumber: number;
   tail: { changelog: string; release: string | null; warnings: string[] };
+  /** best-effort follow-ups that failed after the card reached done */
+  warnings: string[];
   hookWarnings: HookWarning[];
 }
 
@@ -211,9 +213,25 @@ export async function archiveVerb(store: DocumentStore, id: string): Promise<Arc
   if (card.lane === 'active') moveLane(store, id, 'verify', 'engine');
   applyVerifyResult(store, id, 'clean');
 
-  await closeIssue(store.projectPath, map.issueNumber);
-  await deleteBranch(store.projectPath, branch);
+  // Post-done follow-ups are best-effort by construction: the merge is
+  // pushed and the card is done — a failing issue close or branch delete
+  // must NOT throw into an unretryable state (archive refuses done cards).
+  // Failures become warnings; deck sync reports the leftover drift.
+  const warnings: string[] = [];
+  try {
+    await closeIssue(store.projectPath, map.issueNumber);
+  } catch (error) {
+    warnings.push(
+      `issue #${map.issueNumber} not closed: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  try {
+    await deleteBranch(store.projectPath, branch);
+  } catch (error) {
+    warnings.push(`branch ${branch} not deleted: ${error instanceof Error ? error.message : String(error)}`);
+  }
   const tail = await archiveTail(store, id, pr.url);
+  warnings.push(...tail.warnings);
   const done = store.getVerbItem(id);
   // onArchive fires after the loop has fully closed (post-event).
   const hookWarnings = await runHooks(store.projectPath, HookEvent.Archive, {
@@ -226,7 +244,7 @@ export async function archiveVerb(store: DocumentStore, id: string): Promise<Arc
     result: null,
     timestamp: new Date().toISOString(),
   });
-  return { card: done, prUrl: pr.url, issueNumber: map.issueNumber, tail, hookWarnings };
+  return { card: done, prUrl: pr.url, issueNumber: map.issueNumber, tail, warnings, hookWarnings };
 }
 
 // Kept for the offline-at-archive refusal contract (design D5): callers

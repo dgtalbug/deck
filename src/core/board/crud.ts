@@ -2,7 +2,7 @@ import { eq } from 'drizzle-orm';
 import { EngineOwnedError, NotFoundError } from './errors.ts';
 import { newTaskId } from './ids.ts';
 import { materializeSpec } from './groom.ts';
-import { cards, tasks } from './schema.ts';
+import { cards, issueMap, publishQueue, specs, tasks } from './schema.ts';
 import { runTx, type DocumentStore } from './store.ts';
 import type { Card, GroomProposal, Lane, VerbItem } from './types.ts';
 import { emitEvent } from '../events/outbox.ts';
@@ -45,6 +45,13 @@ export function deleteCard(store: DocumentStore, id: string): void {
       tx.update(cards).set({ epicId: null, updatedAt: new Date().toISOString() }).where(eq(cards.epicId, id)).run();
     }
     tx.delete(tasks).where(eq(tasks.cardId, id)).run();
+    // Cascade the card's derived rows too — a surviving issue_map/publish_queue/
+    // specs row would make deck sync's drift loop crash on the dead card id
+    // (getCard throws NotFoundError). The GitHub issue itself stays open:
+    // delete means "forget the card", and whoever deletes closes the issue.
+    tx.delete(issueMap).where(eq(issueMap.cardId, id)).run();
+    tx.delete(publishQueue).where(eq(publishQueue.cardId, id)).run();
+    tx.delete(specs).where(eq(specs.cardId, id)).run();
     tx.delete(cards).where(eq(cards.id, id)).run();
     emitEvent(tx, 'card.deleted', { id, lane: row.lane });
   });

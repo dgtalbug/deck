@@ -130,7 +130,21 @@ export async function syncProject(store: DocumentStore): Promise<ReconcileReport
   // Drift diff — map rows vs live issues, cards, and versions.
   const mappedCards = store.db.select().from(issueMap).all().map((row) => ({ ...row }));
   for (const row of mappedCards) {
-    const card = store.getCard(row.cardId);
+    // Rows orphaned before the deleteCard cascade (or by hand-edited dbs)
+    // must surface as drift, never abort the whole report.
+    let card: ReturnType<typeof store.getCard>;
+    try {
+      card = store.getCard(row.cardId);
+    } catch {
+      report.drift.push({
+        cardId: row.cardId,
+        issueNumber: row.issueNumber,
+        kind: 'missing',
+        detail: `map row references deleted card — orphaned issue #${row.issueNumber}`,
+        fix: 'close the issue on GitHub, then delete the map row (re-delete the card to cascade-clean)',
+      });
+      continue;
+    }
     const newest = newestSpecVersion(store, row.cardId);
     try {
       const issue = await viewIssue(store.projectPath, row.issueNumber);
