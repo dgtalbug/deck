@@ -11,7 +11,7 @@ import { newestSpecVersion, getIssueMap } from '../board/specstore.ts';
 import { publishSpec } from '../board/publish.ts';
 import { listQueue } from '../board/specstore.ts';
 import { closeIssue } from '../git/issues.ts';
-import { GhUnavailableError } from '../git/errors.ts';
+import { GhUnavailableError, GitOpError } from '../git/errors.ts';
 import { runGit } from '../git/digest.ts';
 import { rmSync } from 'node:fs';
 import {
@@ -105,6 +105,18 @@ export async function startVerb(
   } catch (error) {
     moveLane(store, id, 'groomed', 'engine'); // compensate — no side effects
     rmSync(sessionPath(store.projectPath, id), { force: true }); // ... including the session file
+    // Four-word law: uniqueness is git's — a same-titled second card lands
+    // here. Raw git stderr would be opaque; name the branch and the fix.
+    if (
+      error instanceof GitOpError &&
+      /already exists/i.test(`${error.message} ${String(error.details['output'] ?? '')}`)
+    ) {
+      throw new DeckError(
+        `branch '${branch}' already exists — another card owns this name; ` +
+          `retitle one of them and re-groom (verb + first four title words name the branch)`,
+        { cardId: id, branch },
+      );
+    }
     throw error;
   }
   const started = store.getVerbItem(id);
