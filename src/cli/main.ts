@@ -11,6 +11,7 @@ import { applyVerifyResult } from '../core/board/verify.ts';
 import { archiveVerb } from '../core/engine/verbs.ts';
 import { renderHookWarnings } from '../core/engine/hooks.ts';
 import { ensureVerifyLane, renderFindings, reviewGate, runVerification } from '../core/engine/verify.ts';
+import { revertCommand } from './revert.ts';
 import { getIssueMap } from '../core/board/specstore.ts';
 import { viewIssue } from '../core/git/issues.ts';
 import { boardView, todoView } from '../core/board/views.ts';
@@ -290,7 +291,8 @@ const commands: Record<string, Command> = {
   build: (args, ctx) => startCommand(args, ctx, 'build'),
   ci: (args, ctx) => startCommand(args, ctx, 'ci'),
   chore: (args, ctx) => startCommand(args, ctx, 'chore'),
-  revert: (args, ctx) => startCommand(args, ctx, 'revert'),
+  // The revert verb doubles as the done-card door (hold law): see cli/revert.ts
+  revert: revertCommand,
   archive: async (args, ctx) => {
     const id = requiredId(args, 'archive <id>');
     const project = resolveProject(ctx.registry, args, ctx.cwd);

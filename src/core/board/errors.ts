@@ -33,8 +33,22 @@ export class EngineOwnedError extends DeckError {
   constructor(cardId: string, lane: Lane, action: string) {
     super(
       `card ${cardId}: ${action} is not allowed in ${lane} — ` +
-        `active/verify/done are engine-owned; block/unblock is the only human action there`,
+        `active/verify/done are engine-owned; use the engine doors instead`,
       { cardId, lane, action },
+    );
+  }
+}
+
+// Hold law: hold means pick-later (todo → groom later, groomed → build
+// later). Active and verify do not pause — finish or verify-gaps them.
+export class HoldViolation extends DeckError {
+  constructor(cardId: string, lane: Lane) {
+    super(
+      `card ${cardId}: hold is not allowed in ${lane} — ` +
+        `hold means pick-later and only applies to todo/groomed; ` +
+        `active and verify do not pause (finish or verify-gaps them), ` +
+        `done has no hold (deck revert <id> is the way back)`,
+      { cardId, lane },
     );
   }
 }
