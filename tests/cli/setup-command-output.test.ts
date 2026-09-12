@@ -41,8 +41,13 @@ describe('deck setup', () => {
     expect(first).toContain('.github/skills');
     expect(first).toContain('detected:');
     expect(first).toContain('gemini');
-    // idempotent: same facts, still exit 0
+    // idempotent once detection settles: codex's skillsDir is the shared
+    // .agents/skills, so run 1 can surface the `agents` host on run 2 —
+    // from run 2 on, the facts are stable.
     expect(await run(['setup'])).toBe(0);
-    expect(out.join('\n')).toBe(first);
+    const second = out.join('\n');
+    expect(await run(['setup'])).toBe(0);
+    expect(out.join('\n')).toBe(second);
+    expect(second).toContain('skill pack:');
   });
 });

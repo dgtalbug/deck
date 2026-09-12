@@ -12,7 +12,8 @@ import { recall } from '../core/board/memory.ts';
 import { epicRollups } from '../core/board/views.ts';
 import { backfillSpecs, syncProject } from '../core/board/publish.ts';
 import { initProject } from '../core/projects/init.ts';
-import { detectHosts, listAgentHosts, scaffoldSkill, SkillNameError } from '../core/projects/harness.ts';
+import { detectHosts, installSkillPack, listAgentHosts, scaffoldSkill, SkillNameError } from '../core/projects/harness.ts';
+import { skillAssets } from '../core/projects/skill-assets.ts';
 import { DeckError, NotFoundError } from '../core/board/errors.ts';
 import type { Command, RunContext } from './main.ts';
 import { startCommand } from './start.ts';
@@ -118,6 +119,13 @@ export async function setupCommand(args: ParsedArgs, ctx: RunContext): Promise<s
     lines.push(`  ${mark} ${host.id.padEnd(8)} ${host.displayName.padEnd(18)} skills: ${host.skillsDir}`);
   }
   lines.push('', '  detected:', ...(detected.size > 0 ? [...detected].sort().map((id) => `    ${id}`) : ['    none']));
+  const pack = installSkillPack(result.project.path, hosts);
+  const ensured = detected.size * Object.keys(skillAssets).length;
+  if (ensured > 0) lines.push('', `  skill pack: ${Object.keys(skillAssets).length} skills · ${detected.size} host(s) (${ensured} files ensured)`);
+  if (pack.skipped.length > 0) {
+    lines.push(`  skill pack: ${pack.skipped.length} skipped (user-modified — never overwritten):`);
+    for (const name of pack.skipped) lines.push(`    ${name}`);
+  }
   return lines.join('\n');
 }
 

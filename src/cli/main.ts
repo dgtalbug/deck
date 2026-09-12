@@ -118,7 +118,7 @@ commands:
   verify <id> [--result clean|gaps]      compute gaps (or override the result)
   review <id>                       attack the diff vs spec — blocks archive
   types [list] | types new <json-file> | types remove <id>
-                                    spec-type registry (list / create-edit / remove)
+                                    spec-type registry (list · create-edit · remove)
   init [--name <name>]              register + scaffold this project
   doctor                            report drift (all checks must pass)
   projects                          list registered projects
