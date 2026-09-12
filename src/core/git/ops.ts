@@ -235,12 +235,14 @@ export interface MergedPullRequest {
   title: string;
   mergedAt: string;
   url: string;
+  // merge commit — gh returns {oid}; the timeline dedups git commits against it
+  mergeCommit?: { oid: string } | undefined;
 }
 
 export async function listMergedPullRequests(projectPath: string, limit = 30): Promise<MergedPullRequest[]> {
   await requireGh(projectPath);
   const result = await runGh(projectPath, [
-    'pr', 'list', '--state', 'merged', '--json', 'number,title,mergedAt,url', '--limit', String(limit),
+    'pr', 'list', '--state', 'merged', '--json', 'number,title,mergedAt,url,mergeCommit', '--limit', String(limit),
   ]);
   if (result === null) throw new GhUnavailableError();
   const { code, stdout, stderr } = result;
@@ -252,6 +254,35 @@ export async function listMergedPullRequests(projectPath: string, limit = 30): P
   } catch {
     throw new GitOpError('pr list --state merged', 'unparseable gh output', stdout.trim());
   }
+}
+
+// Recent commits feed the project timeline — local git log, no network.
+// The field separator (\x1f) cannot appear in a formatted log line.
+export interface RecentCommit {
+  sha: string;
+  shortSha: string;
+  subject: string;
+  date: string;
+}
+
+export async function listRecentCommits(projectPath: string, limit = 50): Promise<RecentCommit[]> {
+  const SEP = '\x1f';
+  const result = await runGit(
+    projectPath,
+    ['log', `-n`, String(limit), `--pretty=format:%H${SEP}%h${SEP}%s${SEP}%cI`],
+    LOCAL_TIMEOUT_MS,
+  );
+  if (result.code !== 0) {
+    throw new GitOpError('log', `exit ${result.code}`, `${result.stdout}${result.stderr}`.trim());
+  }
+  return result.stdout
+    .split('\n')
+    .filter((line) => line.length > 0)
+    .map((line) => {
+      const [sha, shortSha, subject, date] = line.split(SEP);
+      return { sha: sha ?? '', shortSha: shortSha ?? '', subject: subject ?? '', date: date ?? '' };
+    })
+    .filter((commit) => commit.sha !== '');
 }
 
 export async function createPullRequest(

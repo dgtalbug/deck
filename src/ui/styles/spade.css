@@ -1461,43 +1461,52 @@ kbd {
 /* ═══ end §13 ═══ */
 
 /* --- project timeline (board ?view=timeline) --- */
-.timeline-list {
-  display: flex;
-  flex-direction: column;
+.timeline .tl-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+.chip-btn {
+  display: inline-flex; align-items: center; gap: 5px;
+  background: var(--chip); color: var(--muted); border: 1px solid var(--border);
+  border-radius: var(--radius-pill); padding: 4px 12px;
+  font: 600 12px var(--font-sans); cursor: pointer;
 }
+.chip-btn[aria-pressed='true'] { background: var(--primary-soft); color: var(--primary-vivid); border-color: var(--primary-border); }
+.chip-btn:hover { border-color: var(--border-2); }
+.timeline-note { margin-bottom: 10px; font-size: 13px; }
+.timeline-day { margin-bottom: 4px; }
+.timeline-day-head {
+  position: sticky; top: 0; z-index: 2; width: 100%;
+  display: flex; align-items: baseline; gap: 10px;
+  background: var(--background); border: none; cursor: pointer;
+  padding: 8px 0 6px; border-bottom: 1px solid var(--border); margin-bottom: 8px;
+  font: inherit; color: inherit; text-align: left;
+}
+.timeline-day-tw { color: var(--soft); font-size: 11px; }
+.timeline-day-name { font: 600 13px var(--font-display); letter-spacing: 0.02em; }
+.timeline-day-count { color: var(--soft); font-size: 11px; }
+.timeline-list { list-style: none; margin: 0; padding: 0; position: relative; }
+.timeline-list::before { content: ''; position: absolute; left: 15px; top: 8px; bottom: 8px; width: 2px; background: var(--border); }
 .timeline-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 10px;
-  border-left: 2px solid color-mix(in srgb, var(--accent-1) 35%, transparent);
-  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
-  margin-bottom: 6px;
-  font-size: 13px;
+  position: relative; display: flex; align-items: center; gap: 10px;
+  padding: 6px 8px 6px 0; border-radius: var(--radius-sm); font-size: 13px;
 }
-.timeline-row[data-kind='pr'] {
-  border-left-color: color-mix(in srgb, var(--accent-2) 45%, transparent);
-}
-.timeline-row[data-kind='epic'] {
-  border-left-color: var(--primary-vivid);
-}
+.timeline-row:hover { background: var(--background-2); }
 .timeline-icon {
-  display: inline-flex;
-  color: var(--text-dim, inherit);
+  position: relative; z-index: 1; flex: none; width: 32px; height: 32px;
+  display: grid; place-items: center; border-radius: var(--radius-pill);
+  background: var(--card); border: 1px solid var(--border); color: var(--muted);
 }
-.timeline-date {
-  font-size: 11px;
-  letter-spacing: 0.03em;
-  min-width: 84px;
-  color: var(--text-dim, inherit);
-}
-.timeline-title {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.timeline-link {
-  text-decoration: underline dotted;
+.timeline-row[data-kind='pr'] .timeline-icon { color: var(--accent-1); border-color: color-mix(in srgb, var(--accent-1) 45%, transparent); }
+.timeline-row[data-kind='epic'] .timeline-icon { color: var(--primary-vivid); border-color: var(--primary-border); }
+.timeline-row[data-kind='commit'] .timeline-icon { color: var(--accent-3); }
+.timeline-row[data-kind='card'][data-lane='done'] .timeline-icon { color: var(--success); }
+.timeline-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.timeline-link { color: var(--accent-1); text-decoration: underline dotted; text-underline-offset: 3px; }
+.timeline-sha { font-family: var(--font-mono); font-size: 11px; color: var(--soft); }
+.timeline-kind-label { flex: none; font-size: 10px; letter-spacing: 0.04em; color: var(--soft); text-transform: uppercase; }
+.timeline-when { flex: none; color: var(--soft); font-size: 11px; min-width: 60px; text-align: right; font-variant-numeric: tabular-nums; }
+.timeline-load-more { display: block; margin: 14px auto 0; }
+.timeline-skel { display: flex; flex-direction: column; gap: 8px; }
+.timeline-skel-row { display: flex; gap: 10px; align-items: center; }
+@media (max-width: 560px) {
+  .timeline-when, .timeline-kind-label { display: none; }
+  .timeline-row { padding: 8px 6px 8px 0; }
 }
