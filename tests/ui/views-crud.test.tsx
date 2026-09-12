@@ -239,15 +239,22 @@ describe('groom re-edit flow', () => {
   });
 });
 
-describe('quick block on engine lanes', () => {
-  test('active card carries a hold control that POSTs block', async () => {
+describe('quick block on backlog lanes (hold law)', () => {
+  test('groomed card carries a hold control that POSTs block', async () => {
     const { host, calls } = await mount();
-    const activeCard = host.querySelector('.lane[data-lane="active"] [data-id="a1"]')!;
-    const hold = activeCard.querySelector('.quick-block') as unknown as HTMLElement | null;
+    const groomedCard = host.querySelector('.lane[data-lane="groomed"] [data-id="v1"]')!;
+    const hold = groomedCard.querySelector('.quick-block') as unknown as HTMLElement | null;
     expect(hold).not.toBeNull();
     hold!.click();
     await new Promise((resolve) => setTimeout(resolve, 80));
-    expect(calls.some((call) => call.startsWith('block:a1:'))).toBe(true);
+    expect(calls.some((call) => call.startsWith('block:v1:'))).toBe(true);
+  });
+
+  test('active card shows no hold control — engine lanes never pause', async () => {
+    const { host } = await mount();
+    const activeCard = host.querySelector('.lane[data-lane="active"] [data-id="a1"]')!;
+    expect(activeCard.querySelector('.quick-block')).toBeNull();
+    expect(activeCard.querySelector('.quick-unblock')).toBeNull();
   });
 });
 

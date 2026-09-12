@@ -268,15 +268,16 @@ export function CardDetail(props: { card: UiCard; actions: DetailActions; specMa
             <Play size={13} /> Fast lane → active
           </button>
         ) : null}
-        {card.blocked === undefined ? (
+        {manualLane && card.blocked === undefined ? (
           <button class="btn btn-ghost" onClick={() => setBlocking(!blocking)}>
             <OctagonPause size={13} /> Block…
           </button>
-        ) : (
+        ) : null}
+        {manualLane && card.blocked !== undefined ? (
           <button class="btn btn-ghost" onClick={() => actions.onUnblock(card.id)}>
             <OctagonPause size={13} /> Unblock
           </button>
-        )}
+        ) : null}
         <div class="spacer"></div>
         <button class="btn btn-ghost mono" style="font-size:11.5px" onClick={() => void copyId()} aria-label="copy card id">
           <Copy size={13} /> {copied ? 'copied!' : card.id}

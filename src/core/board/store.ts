@@ -6,7 +6,7 @@ import { existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { readDeckConfig } from './config.ts';
-import { DeckError, NotFoundError } from './errors.ts';
+import { DeckError, HoldViolation, NotFoundError } from './errors.ts';
 import { newCardId } from './ids.ts';
 import { endPosition, gapTooSmall, midpoint, renumberPositions } from './positions.ts';
 import { cards, tasks, userVerbs, type CardRow, type TaskRow } from './schema.ts';
@@ -108,6 +108,13 @@ export class DocumentStore {
     // tables); idempotent on every open.
     sqlite.exec(
       'CREATE VIRTUAL TABLE IF NOT EXISTS session_memory USING fts5(line, cardId UNINDEXED, section UNINDEXED)',
+    );
+    // Hold law sweep: legacy boards may carry blocked flags on engine-lane
+    // cards where hold is meaningless (nothing consumes it there). Clear
+    // them once per open so the flag only ever means pick-later.
+    sqlite.exec(
+      `UPDATE cards SET blocked_reason = NULL, blocked_at = NULL ` +
+        `WHERE lane IN ('active', 'verify', 'done') AND blocked_reason IS NOT NULL`,
     );
     const config = await readDeckConfig(projectPath);
     return new DocumentStore(projectPath, dbPath, db, config.board?.wipLimit ?? 3, sqlite);
@@ -335,7 +342,12 @@ export class DocumentStore {
 
   setBlocked(id: string, reason?: string): Card {
     runTx(this.db, (tx) => {
-      this.cardRow(tx, id);
+      const row = this.cardRow(tx, id);
+      // Hold law: hold means pick-later — todo/groomed only. Unblock stays
+      // open so legacy flags (swept at open) can always be cleared by hand.
+      if (reason !== undefined && row.lane !== 'todo' && row.lane !== 'groomed') {
+        throw new HoldViolation(id, row.lane as Lane);
+      }
       if (reason === undefined) {
         tx.update(cards)
           .set({ blockedReason: null, blockedAt: null, updatedAt: nowIso() })

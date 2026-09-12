@@ -168,7 +168,7 @@ export function Card({ card, actions, dnd, flash }: { card: UiCard; actions: Car
             fast lane
           </button>
         ) : null}
-        {engineLane ? (
+        {!engineLane ? (
           card.blocked !== undefined ? (
             <button
               class="icon-btn quick-unblock"
