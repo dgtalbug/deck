@@ -1,14 +1,16 @@
-import { listMergedPullRequests } from '../git/ops.ts';
+import { listMergedPullRequests, listRecentCommits } from '../git/ops.ts';
+import { runGit } from '../git/digest.ts';
 import { getIssueMap } from './specstore.ts';
 import type { DocumentStore } from './store.ts';
 import { isEpic, isVerbItem, type Card, type Lane } from './types.ts';
 
 // The project timeline: one delivery narrative blending planning cards
-// (epics, stories, tasks) with the GitHub record (merged PR titles). Every
-// row is recomputed from current board state — no counters to drift; PR
-// events come straight from `gh` at read time. Newest first.
+// (epics, stories, tasks) with the GitHub record (merged PR titles, commit
+// subjects). Every row is recomputed from current board state — no counters
+// to drift; PRs come from `gh`, commits from local git, both at read time.
+// Newest first. Source outages degrade per-source — never a failed read.
 
-export type TimelineKind = 'epic' | 'card' | 'pr';
+export type TimelineKind = 'epic' | 'card' | 'pr' | 'commit';
 
 export interface TimelineEntry {
   at: string;
@@ -21,12 +23,17 @@ export interface TimelineEntry {
   progress?: string | undefined;
   issueNumber?: number | null | undefined;
   url?: string | undefined;
+  shortSha?: string | undefined;
 }
+
+export type SourceHealth = 'ok' | 'unavailable';
 
 export interface TimelineView {
   view: 'timeline';
   entries: TimelineEntry[];
-  pulls: 'ok' | 'unavailable';
+  // per-source health; `pulls` is the deprecated v1 alias kept for clients
+  sources: { pulls: SourceHealth; commits: SourceHealth };
+  pulls: SourceHealth;
 }
 
 function cardEntries(store: DocumentStore, card: Card): TimelineEntry[] {
@@ -68,12 +75,28 @@ export function cardTimeline(store: DocumentStore): TimelineEntry[] {
     .sort((a, b) => b.at.localeCompare(a.at));
 }
 
+// git@github.com:o/r.git | https://github.com/o/r.git → https://github.com/o/r
+async function githubBase(projectPath: string): Promise<string | null> {
+  const result = await runGit(projectPath, ['remote', 'get-url', 'origin'], 5000);
+  const raw = result.stdout.trim();
+  if (result.code !== 0 || raw === '') return null;
+  const ssh = raw.match(/^git@github\.com:(.+?)(?:\.git)?$/);
+  const https = raw.match(/^https:\/\/github\.com\/(.+?)(?:\.git)?$/);
+  const slug = ssh?.[1] ?? https?.[1];
+  return slug === undefined ? null : `https://github.com/${slug}`;
+}
+
 export async function timelineView(store: DocumentStore, limit = 50): Promise<TimelineView> {
   const entries = cardTimeline(store);
-  // gh offline degrades to a cards-only timeline — never a failed read.
-  let pulls: TimelineView['pulls'] = 'ok';
+  const sources: TimelineView['sources'] = { pulls: 'ok', commits: 'ok' };
+
+  // merged PRs (gh) — mergeCommit oids drive the commit dedup below
+  let mergeOids = new Set<string>();
   try {
     const merged = await listMergedPullRequests(store.projectPath, limit);
+    mergeOids = new Set(
+      merged.map((pr) => pr.mergeCommit?.oid).filter((oid): oid is string => oid !== undefined),
+    );
     entries.push(
       ...merged.map((pr) => ({
         at: pr.mergedAt,
@@ -84,8 +107,28 @@ export async function timelineView(store: DocumentStore, limit = 50): Promise<Ti
       })),
     );
   } catch {
-    pulls = 'unavailable';
+    sources.pulls = 'unavailable';
   }
+
+  // commits (local git log) — a commit that IS a PR's merge commit renders
+  // once, as the PR row (it carries the link)
+  try {
+    const base = await githubBase(store.projectPath);
+    const commits = await listRecentCommits(store.projectPath, limit);
+    for (const commit of commits) {
+      if (mergeOids.has(commit.sha)) continue;
+      entries.push({
+        at: commit.date,
+        kind: 'commit',
+        title: commit.subject,
+        shortSha: commit.shortSha,
+        url: base === null ? undefined : `${base}/commit/${commit.sha}`,
+      });
+    }
+  } catch {
+    sources.commits = 'unavailable';
+  }
+
   entries.sort((a, b) => b.at.localeCompare(a.at));
-  return { view: 'timeline', entries: entries.slice(0, limit), pulls };
+  return { view: 'timeline', entries: entries.slice(0, limit), sources, pulls: sources.pulls };
 }

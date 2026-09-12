@@ -103,10 +103,10 @@ export interface GitOpResult {
 // per-type section fields and their required hints.
 // Epic tree (GET /:project/epics/:id): the epic plus navigable story rows.
 // Project timeline (GET /:project/timeline): one delivery narrative — board
-// cards interleaved with merged PR titles, newest first.
+// cards interleaved with merged PR titles and commit subjects, newest first.
 export interface TimelineEntry {
   at: string;
-  kind: 'epic' | 'card' | 'pr';
+  kind: 'epic' | 'card' | 'pr' | 'commit';
   title: string;
   cardId?: string | undefined;
   epicId?: string | undefined;
@@ -115,10 +115,13 @@ export interface TimelineEntry {
   progress?: string | undefined;
   issueNumber?: number | null | undefined;
   url?: string | undefined;
+  shortSha?: string | undefined;
 }
 export interface TimelineView {
   view: 'timeline';
   entries: TimelineEntry[];
+  sources: { pulls: 'ok' | 'unavailable'; commits: 'ok' | 'unavailable' };
+  /** deprecated v1 alias of sources.pulls */
   pulls: 'ok' | 'unavailable';
 }
 export interface EpicTreeStory {
@@ -237,7 +240,8 @@ function buildApi(base: string): BoardApi {
 
   fetchGit: (project: string): Promise<GitDigest> => request(base, `/${project}/git`),
 
-  fetchTimeline: (project: string): Promise<TimelineView> => request(base, `/${project}/timeline`),
+  fetchTimeline: (project: string, limit?: number): Promise<TimelineView> =>
+    request(base, `/${project}/timeline${limit === undefined ? '' : `?limit=${limit}`}`),
 
   updateCard: (project: string, id: string, title: string): Promise<UiCard> =>
     patch(base, `/${project}/cards/${id}`, { title }),
@@ -323,7 +327,7 @@ export type BoardApi = {
 
   fetchEpicTree?: (project: string, epicId: string) => Promise<EpicTree>;
   fetchGit: (project: string) => Promise<GitDigest>;
-  fetchTimeline?: (project: string) => Promise<TimelineView>;
+  fetchTimeline?: (project: string, limit?: number) => Promise<TimelineView>;
   updateCard: (project: string, id: string, title: string) => Promise<UiCard>;
   deleteCard: (project: string, id: string) => Promise<void>;
   updateGroom: (project: string, id: string, input: GroomInput) => Promise<UiCard>;

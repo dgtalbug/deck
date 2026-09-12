@@ -137,7 +137,7 @@ function openApiDocument(): Record<string, unknown> {
       },
       '/{project}/timeline': {
         get: {
-          summary: 'Project timeline: epics, cards, task progress and merged PR titles, newest first',
+          summary: 'Project timeline: epics, cards, task progress, merged PRs and commits, newest first',
           parameters: [projectParam],
           responses: { '200': jsonResponse('TimelineView'), '404': errorResponses['404'] },
         },
