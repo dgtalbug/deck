@@ -1459,3 +1459,45 @@ kbd {
   }
 }
 /* ═══ end §13 ═══ */
+
+/* --- project timeline (board ?view=timeline) --- */
+.timeline-list {
+  display: flex;
+  flex-direction: column;
+}
+.timeline-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-left: 2px solid color-mix(in srgb, var(--accent-1) 35%, transparent);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  margin-bottom: 6px;
+  font-size: 13px;
+}
+.timeline-row[data-kind='pr'] {
+  border-left-color: color-mix(in srgb, var(--accent-2) 45%, transparent);
+}
+.timeline-row[data-kind='epic'] {
+  border-left-color: var(--primary-vivid);
+}
+.timeline-icon {
+  display: inline-flex;
+  color: var(--text-dim, inherit);
+}
+.timeline-date {
+  font-size: 11px;
+  letter-spacing: 0.03em;
+  min-width: 84px;
+  color: var(--text-dim, inherit);
+}
+.timeline-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.timeline-link {
+  text-decoration: underline dotted;
+}

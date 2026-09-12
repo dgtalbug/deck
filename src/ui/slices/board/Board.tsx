@@ -12,6 +12,7 @@ import { Lane, LANE_ORDER, LaneSkeleton } from './Lane.tsx';
 import { FilterBar } from './FilterBar.tsx';
 import { TodoView } from './TodoView.tsx';
 import { GitPage } from './GitPage.tsx';
+import { Timeline } from './Timeline.tsx';
 import { CardDetail, CardDetailSkeleton, EpicDetail, type DetailActions } from './CardDetail.tsx';
 import { GroomForm } from './GroomForm.tsx';
 import { NoteCapture } from './NoteCapture.tsx';
@@ -141,7 +142,7 @@ export function Board({ project, api = boardApi, subscribe = subscribeBoardEvent
 
   // kanban↔todo↔git toggle rides the View Transition API when available
   // (D-UI-005); the plain swap is the fallback.
-  const switchView = (next: 'kanban' | 'todo' | 'git') => {
+  const switchView = (next: 'kanban' | 'todo' | 'git' | 'timeline') => {
     const go = () => setParam('view', next === 'kanban' ? null : next);
     if (typeof document !== 'undefined' && typeof document.startViewTransition === 'function') {
       document.startViewTransition(go);
@@ -171,7 +172,7 @@ export function Board({ project, api = boardApi, subscribe = subscribeBoardEvent
   // lives in the header row now — segmented view switcher + deck next — so
   // the board keeps the full viewport width for its five lanes. Workspace
   // identity (home link, crumb, theme) stays in the global topbar.
-  const viewSwitch = (mode: 'kanban' | 'todo' | 'git', label: string): VNode => (
+  const viewSwitch = (mode: 'kanban' | 'todo' | 'git' | 'timeline', label: string): VNode => (
     <button
       type="button"
       class="view-switch-btn"
@@ -191,6 +192,7 @@ export function Board({ project, api = boardApi, subscribe = subscribeBoardEvent
         <nav class="view-switch" aria-label="board views">
           {viewSwitch('kanban', 'board')}
           {viewSwitch('todo', 'todo')}
+          {viewSwitch('timeline', 'timeline')}
           {viewSwitch('git', 'git')}
         </nav>
         <button type="button" class="btn btn-outline" onClick={() => setNextOpen(true)} data-testid="deck-next">
@@ -200,6 +202,8 @@ export function Board({ project, api = boardApi, subscribe = subscribeBoardEvent
       <p class="subtitle">
         {view === 'git' ? (
           'Branch, checkpoint, integrate, publish — guarded git for the SDD loop.'
+        ) : view === 'timeline' ? (
+          'Epics, cards and merged PRs as one delivery narrative — newest first.'
         ) : (
           <>Capture → groom → prioritize. The engine owns everything after <code>groomed</code>.</>
         )}
@@ -216,7 +220,7 @@ export function Board({ project, api = boardApi, subscribe = subscribeBoardEvent
         </div>
       ) : null}
 
-      {view !== 'git' ? (
+      {view !== 'git' && view !== 'timeline' ? (
         <FilterBar
           filter={store.filter.value}
           onFilter={(partial) => store.setFilter(partial)}
@@ -225,6 +229,8 @@ export function Board({ project, api = boardApi, subscribe = subscribeBoardEvent
 
       {view === 'git' ? (
         <GitPage project={project} api={api} />
+      ) : view === 'timeline' ? (
+        <Timeline project={project} api={api} />
       ) : view === 'kanban' && !store.loaded.value ? (
         // board skeleton (brand §4): real chrome — sidebar, lane heads,
         // semantic top-borders — only the card data shimmers

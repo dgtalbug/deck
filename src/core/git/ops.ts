@@ -229,6 +229,31 @@ export async function listPullRequests(projectPath: string): Promise<PullRequest
   }
 }
 
+// Merged PRs feed the project timeline — mergedAt is the event timestamp.
+export interface MergedPullRequest {
+  number: number;
+  title: string;
+  mergedAt: string;
+  url: string;
+}
+
+export async function listMergedPullRequests(projectPath: string, limit = 30): Promise<MergedPullRequest[]> {
+  await requireGh(projectPath);
+  const result = await runGh(projectPath, [
+    'pr', 'list', '--state', 'merged', '--json', 'number,title,mergedAt,url', '--limit', String(limit),
+  ]);
+  if (result === null) throw new GhUnavailableError();
+  const { code, stdout, stderr } = result;
+  if (code !== 0) {
+    throw new GitOpError('pr list --state merged', `exit ${code}`, `${stdout}${stderr}`.trim());
+  }
+  try {
+    return JSON.parse(stdout) as MergedPullRequest[];
+  } catch {
+    throw new GitOpError('pr list --state merged', 'unparseable gh output', stdout.trim());
+  }
+}
+
 export async function createPullRequest(
   projectPath: string,
   input: { title: string; base?: string | undefined; draft?: boolean | undefined; body?: string | undefined },

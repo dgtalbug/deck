@@ -89,7 +89,7 @@ describe('top bar replaces the project sidebar', () => {
     const buttons = [...win.document.querySelectorAll('.view-switch-btn')].map(
       (btn) => (btn as unknown as HTMLElement).textContent?.trim(),
     );
-    expect(buttons).toEqual(['board', 'todo', 'git']);
+    expect(buttons).toEqual(['board', 'todo', 'timeline', 'git']);
     expect(win.document.querySelector('[data-testid="deck-next"]')).not.toBeNull();
   });
 

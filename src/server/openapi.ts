@@ -135,6 +135,13 @@ function openApiDocument(): Record<string, unknown> {
           responses: { '204': { description: 'removed' }, '400': errorResponses['400'] },
         },
       },
+      '/{project}/timeline': {
+        get: {
+          summary: 'Project timeline: epics, cards, task progress and merged PR titles, newest first',
+          parameters: [projectParam],
+          responses: { '200': jsonResponse('TimelineView'), '404': errorResponses['404'] },
+        },
+      },
       '/{project}/events': {
         get: {
           summary: 'SSE stream of board events (outbox-tailed; keepalive heartbeat)',

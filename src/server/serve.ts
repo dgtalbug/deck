@@ -12,6 +12,7 @@ import { gitRoutes } from './routes/git.ts';
 import { homeRoutes } from './routes/home.ts';
 import { notesRoutes } from './routes/notes.ts';
 import { specsRoutes } from './routes/specs.ts';
+import { timelineRoutes } from './routes/timeline.ts';
 import { typesRoutes } from './routes/types.ts';
 import { sseRoutes } from './sse.ts';
 import { openApiRoutes } from './openapi.ts';
@@ -37,6 +38,7 @@ export function buildRoutes(registry: ProjectRegistry, staticRoot?: string, embe
     ...cardsRoutes(registry),
     ...specsRoutes(registry),
     ...typesRoutes(registry),
+    ...timelineRoutes(registry),
     ...engineRoutes(registry),
     ...epicsRoutes(registry),
     ...gitRoutes(registry),
