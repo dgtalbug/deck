@@ -80,7 +80,7 @@ describe('publishSpec', () => {
     expect(outcome.issueNumber).toBe(42);
     const map = getIssueMap(store, note.id);
     expect(map?.issueNumber).toBe(42);
-    expect(map?.state).toBe('open');
+    expect(map?.state).toBe('draft'); // groomed lane publishes as draft (issues-at-groom)
     expect(map?.checksum).toMatch(/^[0-9a-f]{64}$/);
   });
 
@@ -113,9 +113,8 @@ describe('publishSpec', () => {
     const outcome = await publishSpec(store, note.id);
     expect(outcome.queued).toBe(true);
     expect(outcome.issueNumber).toBeNull();
-    const queue = listQueue(store);
-    expect(queue).toHaveLength(1);
-    expect(queue[0]!.cardId).toBe(note.id);
+    const queue = listQueue(store).filter((entry) => entry.cardId === note.id);
+    expect(queue).toHaveLength(1); // one per card — groom's enqueue + this one merge
     expect(store.getCard(note.id)).toEqual(item); // board untouched
   });
 });

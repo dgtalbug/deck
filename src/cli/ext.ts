@@ -5,6 +5,9 @@ import { UsageError } from './args.ts';
 import { resolveProject } from './context.ts';
 import { getStore } from '../core/projects/stores.ts';
 import { listHooks } from '../core/engine/hooks.ts';
+import { renderFindings, reviewGate } from '../core/engine/verify.ts';
+import { getSpecType, listSpecTypes, removeSpecType, upsertSpecType } from '../core/board/types-registry.ts';
+import { typeBody } from '../server/routes/types.ts';
 import { recall } from '../core/board/memory.ts';
 import { epicRollups } from '../core/board/views.ts';
 import { backfillSpecs, syncProject } from '../core/board/publish.ts';
@@ -246,4 +249,74 @@ export async function userVerbCommand(args: ParsedArgs, ctx: RunContext): Promis
   } catch {
     return undefined; // unresolvable project → the usage error is the answer
   }
+}
+
+// `deck review <id>` — the review gate, plus the advisory spec-type law
+// surfaced for the reviewer (custom laws never hard-refuse; registry hard
+// rules block inside reviewGate itself).
+export async function reviewCommand(args: ParsedArgs, ctx: RunContext): Promise<string | number> {
+  const id = args.positionals[0];
+  if (id === undefined || id.length === 0) throw new UsageError('usage: deck review <id>');
+  const project = resolveProject(ctx.registry, args, ctx.cwd);
+  const store = await getStore(project.path);
+  const card = store.getVerbItem(id);
+  const type = getSpecType(store, card.verb);
+  if (type.taskLaw !== '') ctx.io.out(`type law (${card.verb}): ${type.taskLaw}`);
+  const findings = await reviewGate(store, id);
+  if (findings.length > 0) {
+    ctx.io.out(renderFindings(findings));
+    return 1;
+  }
+  return 'review clean — archive is unblocked';
+}
+
+// `deck types` — the spec-type registry at the terminal: list, create/edit
+// from a JSON file (the groom file-payload convention), remove.
+export async function typesCommand(args: ParsedArgs, ctx: RunContext): Promise<string> {
+  const [sub, arg] = args.positionals;
+  const project = resolveProject(ctx.registry, args, ctx.cwd);
+  const store = await getStore(project.path);
+  const p = ctx.pal;
+  if (sub === undefined || sub === 'list') {
+    const types = listSpecTypes(store);
+    const lines = [`${p.color('primary', '♠')} spec types — ${types.length} registered`, ''];
+    for (const type of types) {
+      const sections = type.sections.length === 0
+        ? 'no extra sections'
+        : type.sections
+            .map((section) =>
+              section.alwaysRequired === true
+                ? `${section.id}(required)`
+                : section.requiredAboveRadius !== undefined
+                  ? `${section.id}(≥${section.requiredAboveRadius} radius)`
+                  : section.id,
+            )
+            .join(', ');
+      const law = type.hardRule !== null ? ` hard rule: ${type.hardRule}` : '';
+      lines.push(`  ${p.dim(type.id.padEnd(9))} ${sections}${law}`);
+    }
+    lines.push('', '  edit: deck types new <json-file> · remove: deck types remove <id>');
+    return lines.join('\n');
+  }
+  if (sub === 'remove') {
+    if (arg === undefined || arg.length === 0) throw new UsageError('usage: deck types remove <id>');
+    removeSpecType(store, arg);
+    return `spec type '${arg}' removed`;
+  }
+  if (sub === 'new') {
+    if (arg === undefined || arg.length === 0) {
+      throw new UsageError('usage: deck types new <json-file> (same shape as PUT /:project/types)');
+    }
+    const raw = await Bun.file(arg).text();
+    const type = typeBody.parse(JSON.parse(raw));
+    const saved = upsertSpecType(store, type);
+    return [
+      `${p.color('primary', '♠')} spec type '${saved.id}' saved`,
+      '',
+      `  ${p.dim('sections')} ${saved.sections.length}`,
+      `  ${p.dim('law')}     ${saved.taskLaw === '' ? 'none' : saved.taskLaw}`,
+      `  ${p.dim('hard')}    ${saved.hardRule ?? 'none'}`,
+    ].join('\n');
+  }
+  throw new UsageError('usage: deck types [list] | deck types new <json-file> | deck types remove <id>');
 }

@@ -99,10 +99,29 @@ export interface GitOpResult {
   output: string;
 }
 
+// Spec-type registry row (GET /:project/types) — drives the groom form's
+// per-type section fields and their required hints.
+export interface SpecTypeView {
+  id: string;
+  displayName: string;
+  icon: string;
+  sections: { id: string; label: string; alwaysRequired?: boolean; requiredAboveRadius?: number }[];
+  groomFields: string[];
+  taskLaw: string;
+  gitConvention: { commitPrefix?: string };
+  hardRule: string | null;
+}
+
 export interface GroomInput {
   proposedVerb: Verb;
   refinedTitle: string;
-  research: { codebaseFindings: string[]; rca?: string; blastRadius?: string[]; story?: string };
+  research: {
+    codebaseFindings: string[];
+    rca?: string;
+    blastRadius?: string[];
+    story?: string;
+    sections?: Record<string, string>;
+  };
   specDeltas: { op: 'ADDED' | 'MODIFIED' | 'REMOVED'; requirement: string; text: string }[];
   tasks: string[];
   openQuestions: string[];
@@ -181,6 +200,8 @@ function buildApi(base: string): BoardApi {
     request(base, `/${project}/board?view=todo`),
 
   fetchNext: (project: string): Promise<NextDigest> => request(base, `/${project}/next`),
+
+  fetchTypes: (project: string): Promise<SpecTypeView[]> => request(base, `/${project}/types`),
 
   fetchGit: (project: string): Promise<GitDigest> => request(base, `/${project}/git`),
 
@@ -264,6 +285,7 @@ export type BoardApi = {
   fetchBoard: (project: string) => Promise<BoardDoc>;
   fetchTodo: (project: string) => Promise<{ view: 'todo'; cards: UiCard[] }>;
   fetchNext: (project: string) => Promise<NextDigest>;
+  fetchTypes?: (project: string) => Promise<SpecTypeView[]>;
   fetchGit: (project: string) => Promise<GitDigest>;
   updateCard: (project: string, id: string, title: string) => Promise<UiCard>;
   deleteCard: (project: string, id: string) => Promise<void>;

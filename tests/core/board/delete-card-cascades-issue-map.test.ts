@@ -31,7 +31,7 @@ function groomedPublishedCard(title: string): string {
     noteId: note.id,
     proposedVerb: 'fix',
     refinedTitle: title,
-    research: { codebaseFindings: [] },
+    research: { codebaseFindings: [], sections: { reproduce: 'steps', rca: 'cause' } },
     specDeltas: [],
     tasks: ['do it'],
     openQuestions: [],

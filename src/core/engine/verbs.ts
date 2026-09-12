@@ -7,7 +7,7 @@
 import { DeckError } from '../board/errors.ts';
 import { assertUnderWip, moveLane } from '../board/lanes.ts';
 import { applyVerifyResult } from '../board/verify.ts';
-import { newestSpecVersion, getIssueMap, deleteIssueMap } from '../board/specstore.ts';
+import { newestSpecVersion, getIssueMap, deleteIssueMap, dequeuePublish } from '../board/specstore.ts';
 import { publishSpec } from '../board/publish.ts';
 import { listQueue } from '../board/specstore.ts';
 import { closeIssue } from '../git/issues.ts';
@@ -23,6 +23,7 @@ import {
   switchBranch,
 } from '../git/ops.ts';
 import type { DocumentStore } from '../board/store.ts';
+import { getSpecType, sectionGate } from '../board/types-registry.ts';
 import type { VerbName, VerbItem } from '../board/types.ts';
 
 // The branch for a started verb is always re-derivable from the card
@@ -87,12 +88,28 @@ export async function startVerb(
       { cardId: id, cardVerb: card.verb, requested: verb },
     );
   }
+  // Spec-type gate, re-checked at the door: a registry tightened between
+  // groom and start must not let a now-invalid card through.
+  const type = getSpecType(store, verb);
+  const missingSections = sectionGate(type, card.research);
+  if (missingSections.length > 0) {
+    throw new DeckError(
+      `card ${id} as '${verb}' is missing required section(s): ${missingSections.join(', ')} — ` +
+        `the spec type was tightened after grooming; re-groom with the sections filled`,
+      { cardId: id, verb, missing: missingSections },
+    );
+  }
   assertUnderWip(store);
 
   moveLane(store, id, 'active', 'engine');
   let publish;
   try {
     publish = await publishSpec(store, id); // queues on offline, never blocks
+    if (!publish.queued) {
+      // groom's draft-publish queue entry is satisfied by this direct
+      // publish — a stale entry would wedge archive ("still queued").
+      dequeuePublish(store, id);
+    }
   } catch (error) {
     moveLane(store, id, 'groomed', 'engine'); // compensate
     throw error;

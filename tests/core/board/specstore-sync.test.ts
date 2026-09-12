@@ -129,7 +129,7 @@ describe('syncProject', () => {
     expect(mine[0]!.fix).toContain('verify');
     // The map was not rewritten to closed — reconcile reports, then writes
     // only the three allowed refreshes.
-    expect(getIssueMap(store, note.id)?.state).toBe('open');
+    expect(getIssueMap(store, note.id)?.state).toBe('draft'); // never started past groom
   });
 
   test('offline queue flushes before diffing once gh returns', async () => {

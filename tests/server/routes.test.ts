@@ -215,7 +215,7 @@ describe('card CRUD routes (v0.2.0)', () => {
     const revised = await patch(`/testproj/cards/${note.id}/groom`, {
       ...groomBody('revised title'),
       proposedVerb: 'fix',
-      research: { codebaseFindings: ['new finding'] },
+      research: { codebaseFindings: ['new finding'], sections: { reproduce: 'steps', rca: 'cause' } },
     });
     expect(revised.status).toBe(200);
     const item = (await revised.json()) as { title: string; verb: string; research: { codebaseFindings: string[] } };

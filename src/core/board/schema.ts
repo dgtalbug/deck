@@ -56,11 +56,12 @@ export const specs = sqliteTable(
 );
 
 // One card ↔ at most one mapped issue (decision #3: one issue per change).
-// `state` is deck's last-observed open/closed of the issue.
+// `state` is deck's last-observed lifecycle: 'draft' = published at groom
+// (spec-type-registry), 'open' = activated at verb start, 'closed' = archived.
 export const issueMap = sqliteTable('issue_map', {
   cardId: text('card_id').primaryKey(),
   issueNumber: integer('issue_number').notNull(),
-  state: text('state', { enum: ['open', 'closed'] }).$type<'open' | 'closed'>().notNull(),
+  state: text('state', { enum: ['draft', 'open', 'closed'] }).$type<'draft' | 'open' | 'closed'>().notNull(),
   checksum: text('checksum').notNull(),
   updatedAt: text('updated_at').notNull(),
 });

@@ -116,6 +116,25 @@ function openApiDocument(): Record<string, unknown> {
           responses: { '200': jsonResponse('NextDigest'), '404': errorResponses['404'] },
         },
       },
+      '/{project}/types': {
+        get: {
+          summary: 'Spec-type registry rows (sections, groom fields, git conventions, laws)',
+          parameters: [projectParam],
+          responses: { '200': jsonResponse('SpecType[]'), '404': errorResponses['404'] },
+        },
+        put: {
+          summary: 'Create or edit a spec type (built-ins are ordinary rows)',
+          parameters: [projectParam],
+          responses: { '200': jsonResponse('SpecType'), '400': errorResponses['400'] },
+        },
+      },
+      '/{project}/types/{id}': {
+        delete: {
+          summary: 'Remove a spec type (refuses while cards use it)',
+          parameters: [projectParam, idParam],
+          responses: { '204': { description: 'removed' }, '400': errorResponses['400'] },
+        },
+      },
       '/{project}/events': {
         get: {
           summary: 'SSE stream of board events (outbox-tailed; keepalive heartbeat)',

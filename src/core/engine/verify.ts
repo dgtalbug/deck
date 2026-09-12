@@ -11,6 +11,7 @@ import { applyVerifyResult } from '../board/verify.ts';
 import { moveLane } from '../board/lanes.ts';
 import { newestSpecVersion } from '../board/specstore.ts';
 import { getIssueMap } from '../board/specstore.ts';
+import { getSpecType } from '../board/types-registry.ts';
 import type { DocumentStore } from '../board/store.ts';
 import { isTweak, isVerbItem, type VerbItem } from '../board/types.ts';
 import { runGit } from '../git/digest.ts';
@@ -207,6 +208,20 @@ export async function reviewGate(store: DocumentStore, id: string): Promise<Find
         risk: `the diff touches ${deps.join(', ')} with no checklist task pairing a dependency change`,
         violates: 'law 3 (efficient — no unjustified new dependencies)',
       });
+    }
+    // Spec-type hard rule (registry enum — never free-text evaluation):
+    // 'test-pairing' means the diff must carry a test file.
+    const type = getSpecType(store, card.verb);
+    if (type.hardRule === 'test-pairing') {
+      const hasTest = files.some(
+        (file) => /(^|\/)(tests?|__tests__|spec)\//.test(file) || /\.(test|spec)\.[cm]?[jt]sx?$/.test(file),
+      );
+      if (!hasTest) {
+        findings.push({
+          risk: `type '${card.verb}' requires test pairing — the diff changes no test file; the failing case must go red→green in this change`,
+          violates: `spec type law: ${card.verb} (${type.taskLaw || 'test-pairing'})`,
+        });
+      }
     }
     if (files.length > 60) {
       findings.push({

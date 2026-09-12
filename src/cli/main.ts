@@ -10,7 +10,7 @@ import { nextDigest } from '../core/board/next.ts';
 import { applyVerifyResult } from '../core/board/verify.ts';
 import { archiveVerb } from '../core/engine/verbs.ts';
 import { renderHookWarnings } from '../core/engine/hooks.ts';
-import { ensureVerifyLane, renderFindings, reviewGate, runVerification } from '../core/engine/verify.ts';
+import { ensureVerifyLane, runVerification } from '../core/engine/verify.ts';
 import { revertCommand } from './revert.ts';
 import { getIssueMap } from '../core/board/specstore.ts';
 import { viewIssue } from '../core/git/issues.ts';
@@ -36,7 +36,9 @@ import {
   setupCommand,
   storyCommand,
   skillCommand,
+  reviewCommand,
   syncCommand,
+  typesCommand,
   userVerbCommand,
   workflowCommand,
 } from './ext.ts';
@@ -88,6 +90,7 @@ export const parity = {
   'deck archive': 'archiveVerb',
   'deck issue': 'viewIssue',
   'deck review': 'reviewGate',
+  'deck types': 'listSpecTypes',
 };
 
 export interface CliIo {
@@ -114,6 +117,8 @@ commands:
   tweak <id>                        promote a note to a tweak build
   verify <id> [--result clean|gaps]      compute gaps (or override the result)
   review <id>                       attack the diff vs spec — blocks archive
+  types [list] | types new <json-file> | types remove <id>
+                                    spec-type registry (list / create-edit / remove)
   init [--name <name>]              register + scaffold this project
   doctor                            report drift (all checks must pass)
   projects                          list registered projects
@@ -230,17 +235,7 @@ const commands: Record<string, Command> = {
       applyVerifyResult(store, id, body.result, flagStrings(args.flags, 'task')),
     );
   },
-  review: async (args, ctx) => {
-    const id = requiredId(args, 'review <id>');
-    const project = resolveProject(ctx.registry, args, ctx.cwd);
-    const store = await getStore(project.path);
-    const findings = await reviewGate(store, id);
-    if (findings.length > 0) {
-      ctx.io.out(renderFindings(findings));
-      return 1;
-    }
-    return 'review clean — archive is unblocked';
-  },
+  review: reviewCommand,
   init: async (args, ctx) => {
     const result = await initProject(ctx.registry, ctx.cwd, flagString(args.flags, 'name'));
     const p = ctx.pal;

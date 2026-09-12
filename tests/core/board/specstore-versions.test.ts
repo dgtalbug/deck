@@ -24,7 +24,7 @@ function proposal(noteId: string, title = 'refined: fix the thing') {
     noteId,
     proposedVerb: 'fix' as const,
     refinedTitle: title,
-    research: { codebaseFindings: ['evidence'] },
+    research: { codebaseFindings: ['evidence'], sections: { reproduce: 'steps', rca: 'cause' } },
     specDeltas: [{ op: 'ADDED' as const, requirement: 'req', text: 'text' }],
     tasks: ['investigate'],
     openQuestions: [],

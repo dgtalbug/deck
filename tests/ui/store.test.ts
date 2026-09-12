@@ -336,7 +336,7 @@ describe('SSE idempotency + echo suppression (findings 6+7)', () => {
 });
 
 describe('card CRUD mutations + new SSE events (v0.2.0)', () => {
-  const groomInput = { proposedVerb: 'fix' as const, refinedTitle: 'revised', research: { codebaseFindings: [] }, specDeltas: [], tasks: [], openQuestions: [] };
+  const groomInput = { proposedVerb: 'fix' as const, refinedTitle: 'revised', research: { codebaseFindings: [], sections: { reproduce: 'steps', rca: 'cause' } }, specDeltas: [], tasks: [], openQuestions: [] };
 
   test('rename applies optimistically and rolls back on failure', async () => {
     const api = makeApi(doc([{ id: 'a', lane: 'todo' }]));

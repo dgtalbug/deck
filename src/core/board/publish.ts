@@ -38,9 +38,12 @@ export interface PublishOutcome {
 
 // Pinned contract: publishSpec(cardId)→issueNumber. Renders the newest
 // version (materializing one if none exists), publishes one-way, and queues
-// — never blocks — when gh is down.
+// — never blocks — when gh is down. Stage derives from the card's lane:
+// 'groomed' publishes/keeps a DRAFT issue (issues-at-groom); any engine lane
+// retargets an existing draft to active (body refresh + lane label + state).
 export async function publishSpec(store: DocumentStore, cardId: string): Promise<PublishOutcome> {
   const card = store.getVerbItem(cardId);
+  const stage = card.lane === 'groomed' ? 'draft' : 'active';
   const version = renderSpecVersion(store, cardId);
   const map = getIssueMap(store, cardId);
   try {
@@ -50,8 +53,23 @@ export async function publishSpec(store: DocumentStore, cardId: string): Promise
         body: version.markdown,
         label: card.lane,
       });
-      setIssueMap(store, { cardId, issueNumber: created.number, state: 'open', checksum: version.checksum });
+      setIssueMap(store, {
+        cardId,
+        issueNumber: created.number,
+        state: stage === 'draft' ? 'draft' : 'open',
+        checksum: version.checksum,
+      });
       return { issueNumber: created.number, queued: false, url: created.url };
+    }
+    if (map.state === 'draft' && stage === 'active') {
+      // Retarget: groom's draft becomes the build issue — refresh the body
+      // if the spec changed, move the lane label, flip the map state.
+      if (map.checksum !== version.checksum) {
+        await editIssueBody(store.projectPath, map.issueNumber, version.markdown);
+      }
+      await setLaneLabel(store.projectPath, map.issueNumber, card.lane);
+      setIssueMap(store, { cardId, issueNumber: map.issueNumber, state: 'open', checksum: version.checksum });
+      return { issueNumber: map.issueNumber, queued: false };
     }
     if (map.checksum !== version.checksum) {
       await editIssueBody(store.projectPath, map.issueNumber, version.markdown);
@@ -150,7 +168,15 @@ export async function syncProject(store: DocumentStore): Promise<ReconcileReport
     try {
       const issue = await viewIssue(store.projectPath, row.issueNumber);
       const lane = 'lane' in card ? card.lane : 'todo';
-      if (issue.state === 'closed' && !cardDone(store, row.cardId)) {
+      if (row.state === 'draft' && lane !== 'todo' && lane !== 'groomed') {
+        report.drift.push({
+          cardId: row.cardId,
+          issueNumber: row.issueNumber,
+          kind: 'state',
+          detail: `issue #${row.issueNumber} is still draft but card is ${lane}`,
+          fix: 'run deck sync to flush the retarget, or re-run the verb start',
+        });
+      } else if (issue.state === 'closed' && !cardDone(store, row.cardId)) {
         report.drift.push({
           cardId: row.cardId,
           issueNumber: row.issueNumber,

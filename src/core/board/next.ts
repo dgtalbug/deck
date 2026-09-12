@@ -6,6 +6,7 @@ import type { NextDigest, TaskState, VerbItem } from './types.ts';
 import { mostAdvancedActive, topOfQueue } from './lanes.ts';
 import { isVerbItem, type Tweak } from './types.ts';
 import { getIssueMap } from './specstore.ts';
+import { getSpecType } from './types-registry.ts';
 import { branchFor } from '../engine/slug.ts';
 import { recall } from './memory.ts';
 
@@ -33,6 +34,12 @@ export function buildContext(store: DocumentStore, card: VerbItem): string {
     '## Tasks',
     taskList(card.tasks),
   ];
+  // Spec-type task law (spec-type-registry): the implementing agent gets
+  // the type's discipline with the digest — capped well under 200 tokens.
+  const type = getSpecType(store, card.verb);
+  if (type.taskLaw !== '') {
+    parts.push('', '## Type law', type.taskLaw.slice(0, 800));
+  }
   const spec = readFileHead(join(store.projectPath, card.specPath, 'spec.md'), MAX_CONTEXT_CHARS / 2);
   if (spec !== undefined) parts.push('', '## Spec', spec);
   const checklist = readFileHead(

@@ -263,6 +263,8 @@ export function Board({ project, api = boardApi, subscribe = subscribeBoardEvent
       {groomNote !== undefined ? (
         <GroomForm
           noteTitle={groomNote.title}
+          {...(api.fetchTypes !== undefined ? { fetchTypes: api.fetchTypes } : {})}
+          project={project}
           onAccept={onGroomAccept}
           onReject={() => setGroomingId(null)}
         />
@@ -293,6 +295,8 @@ export function Board({ project, api = boardApi, subscribe = subscribeBoardEvent
       {regroomCard !== undefined ? (
         <GroomForm
           mode="edit"
+          {...(api.fetchTypes !== undefined ? { fetchTypes: api.fetchTypes } : {})}
+          project={project}
           noteTitle={regroomCard.title}
           initial={{
             proposedVerb: regroomCard.verb ?? 'chore',

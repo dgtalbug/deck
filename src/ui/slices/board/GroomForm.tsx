@@ -1,9 +1,9 @@
-import { useState } from 'preact/hooks';
+import { useEffect, useState } from 'preact/hooks';
 import type { VNode } from 'preact';
 import { ArrowRight, Check, StickyNote, X } from 'lucide-preact';
 import { Dialog, DialogHead } from '../../components/Dialog.tsx';
 import { TextField } from '../../components/TextField.tsx';
-import { VERBS, type GroomInput, type Verb } from './api.ts';
+import { VERBS, type GroomInput, type SpecTypeView, type Verb } from './api.ts';
 import { VerbIcon } from './verbIcon.tsx';
 
 // Manual groom form collecting EXACTLY the GroomProposal fields
@@ -45,10 +45,32 @@ export function GroomForm(props: {
   initial?: GroomInput;
   /** 'groom' converts a note (POST); 'edit' re-edits a groomed item (PATCH) */
   mode?: 'groom' | 'edit';
+  /** registry rows — the form's section fields follow the selected type */
+  types?: SpecTypeView[];
+  fetchTypes?: (project: string) => Promise<SpecTypeView[]>;
+  project?: string;
   onAccept(input: GroomInput): void;
   onReject(): void;
 }): VNode {
   const [input, setInput] = useState<GroomInput>(props.initial ?? EMPTY);
+  const [types, setTypes] = useState<SpecTypeView[]>(props.types ?? []);
+  // Registry rows arrive async when only the fetcher is wired — the form
+  // stays usable without them (no sections = the pre-registry look).
+  useEffect(() => {
+    if (props.types !== undefined || props.fetchTypes === undefined || props.project === undefined) return;
+    let alive = true;
+    props.fetchTypes(props.project).then((rows) => alive && setTypes(rows)).catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, [props.project]);
+  const [sectionText, setSectionText] = useState<Record<string, string>>(props.initial?.research.sections ?? {});
+  const selected = types.find((type) => type.id === input.proposedVerb);
+  const sections = selected?.sections ?? [];
+  const missingRequiredLabels = sections
+    .filter((section) => section.alwaysRequired === true)
+    .filter((section) => (sectionText[section.id] ?? '').trim() === '')
+    .map((section) => section.label);
   const [story, setStory] = useState(props.initial?.research.story ?? '');
   const [findings, setFindings] = useState((props.initial?.research.codebaseFindings ?? []).join('\n'));
   const [blast, setBlast] = useState((props.initial?.research.blastRadius ?? []).join('\n'));
@@ -62,6 +84,10 @@ export function GroomForm(props: {
   const openQuestions = parseLines(questions);
   const unanswered = openQuestions.filter((_, index) => (answers[index] ?? '').trim() === '');
   const titleError = touched && input.refinedTitle.trim() === '' ? 'refined title is required' : undefined;
+  const sectionError =
+    touched && missingRequiredLabels.length > 0
+      ? `fill the required section${missingRequiredLabels.length > 1 ? 's' : ''}: ${missingRequiredLabels.join(', ')}`
+      : undefined;
   const gateError =
     !editing && touched && unanswered.length > 0
       ? `answer the open question${unanswered.length > 1 ? 's' : ''} to accept — ${unanswered.length} unanswered`
@@ -69,7 +95,16 @@ export function GroomForm(props: {
 
   const accept = () => {
     setTouched(true);
-    if (input.refinedTitle.trim() === '' || (!editing && unanswered.length > 0)) return;
+    const filledSections: Record<string, string> = {};
+    for (const section of sections) {
+      const text = (sectionText[section.id] ?? '').trim();
+      if (text !== '') filledSections[section.id] = text;
+    }
+    const missingRequired = sections
+      .filter((section) => section.alwaysRequired === true)
+      .filter((section) => (sectionText[section.id] ?? '').trim() === '')
+      .map((section) => section.label);
+    if (input.refinedTitle.trim() === '' || (!editing && unanswered.length > 0) || missingRequired.length > 0) return;
     props.onAccept({
       ...input,
       refinedTitle: input.refinedTitle.trim(),
@@ -78,6 +113,7 @@ export function GroomForm(props: {
         ...(story.trim() !== '' ? { story: story.trim() } : {}),
         ...(props.initial?.research.rca !== undefined ? { rca: props.initial.research.rca } : {}),
         ...(blast.trim() !== '' ? { blastRadius: parseLines(blast) } : {}),
+        ...(Object.keys(filledSections).length > 0 ? { sections: filledSections } : {}),
       },
       specDeltas: parseDeltas(deltas),
       tasks: parseLines(tasks),
@@ -157,6 +193,21 @@ export function GroomForm(props: {
           mono
           placeholder={'src/core/board/groom.ts — materializeSpec template'}
         />
+        {sections.map((section) => (
+          <TextField
+            id={`groom-section-${section.id}`}
+            label={`${section.label}${section.alwaysRequired === true ? ' (required)' : section.requiredAboveRadius !== undefined ? ` (required at blast radius ${section.requiredAboveRadius}+)` : ''}`}
+            value={sectionText[section.id] ?? ''}
+            onInput={(value) => setSectionText((prev) => ({ ...prev, [section.id]: value }))}
+            multiline
+            placeholder={section.alwaysRequired === true ? 'required by the spec type — the groom refuses without it' : 'optional section from the spec type'}
+          />
+        ))}
+        {sectionError !== undefined ? (
+          <p role="alert" style="color:var(--warning);font-size:12.5px;margin:0">
+            {sectionError}
+          </p>
+        ) : null}
         <TextField
           id="groom-deltas"
           label="spec deltas (ADDED|MODIFIED|REMOVED: requirement :: text)"
