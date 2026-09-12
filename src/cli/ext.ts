@@ -15,6 +15,8 @@ import { viewIssue } from '../core/git/issues.ts';
 import { backfillSpecs, syncProject } from '../core/board/publish.ts';
 import { initProject } from '../core/projects/init.ts';
 import { loadRules, listOverrides, rulesDigest } from '../core/board/rules.ts';
+import { declaredHooks } from '../core/engine/moments.ts';
+import { listHookFailures } from '../core/engine/moments.ts';
 import { detectHosts, installSkillPack, listAgentHosts, scaffoldSkill, SkillNameError } from '../core/projects/harness.ts';
 import { skillAssets } from '../core/projects/skill-assets.ts';
 import { DeckError, NotFoundError } from '../core/board/errors.ts';
@@ -26,11 +28,24 @@ export async function hooksCommand(_args: ParsedArgs, ctx: RunContext): Promise<
   const project = resolveProject(ctx.registry, _args, ctx.cwd);
   const store = await getStore(project.path);
   const listing = listHooks(store.projectPath);
+  const declared = declaredHooks(store.projectPath);
   const lines: string[] = [];
-  for (const hook of listing.hooks) lines.push(`hook   ${hook}`);
+  // Declared hooks (deck.rules.yaml `hooks:`) first, in file order — they run
+  // before convention hooks within their phase.
+  for (const [index, hook] of declared.entries()) {
+    const phases = [hook.pre !== undefined ? 'pre' : null, hook.post !== undefined ? 'post' : null]
+      .filter((phase) => phase !== null)
+      .join('+');
+    lines.push(
+      `hook   hooks[${index}] on ${hook.on} ${phases}` +
+        ` — ${[hook.pre, hook.post].filter((cmd) => cmd !== undefined).join(' | ')}` +
+        (hook.timeout !== undefined ? ` (timeout ${hook.timeout}ms)` : ''),
+    );
+  }
+  for (const hook of listing.hooks) lines.push(`hook   ${hook} (convention, post-only)`);
   for (const skipped of listing.skipped) lines.push(`skip   ${skipped} (not executable)`);
   if (lines.length === 0) {
-    return 'no hooks — add executables at .deck/hooks/<event>/<name> (onVerbStart, onVerifyResult, onArchive)';
+    return 'no hooks — declare them in deck.rules.yaml `hooks:` or add executables at .deck/hooks/<event>/<name> (onVerbStart, onVerifyResult, onArchive)';
   }
   return lines.join('\n');
 }
@@ -314,6 +329,14 @@ export async function reviewCommand(args: ParsedArgs, ctx: RunContext): Promise<
   // user decisions carried by the card, not violations.
   for (const record of listOverrides(store, id)) {
     ctx.io.out(`override ${record.ruleId}: ${record.reason}`);
+  }
+  // Persistent post-hook failures (engine/hooks): a failed announce is a
+  // fact about the card the reviewer should see, never a reverting force.
+  for (const failure of listHookFailures(store, id)) {
+    ctx.io.out(
+      `hook-fail ${failure.hook} (exit ${failure.code})` +
+        (failure.stderr.length > 0 ? ` — ${failure.stderr}` : ''),
+    );
   }
   const findings = await reviewGate(store, id);
   if (findings.length > 0) {

@@ -1,9 +1,7 @@
-// Verify + review + archive tail (verify-review-archive, P1c — the last
-// openspec change): a deterministic converge driver whose ONLY writer is
-// the existing applyVerifyResult, a lean single-pass review gate that
-// attacks the diff and blocks archive, and a best-effort archive tail
-// (changelog + tagged gh release). No AI anywhere in deck's loop — the
-// agent brings the intelligence; deck computes and enforces.
+// Verify + review + archive tail (verify-review-archive, P1c): a deterministic
+// converge driver whose ONLY writer is applyVerifyResult, a lean single-pass
+// review gate that attacks the diff and blocks archive, and a best-effort
+// archive tail. No AI anywhere in deck's loop — deck computes and enforces.
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { DeckError } from '../board/errors.ts';
@@ -18,7 +16,8 @@ import { isTweak, isVerbItem, type VerbItem } from '../board/types.ts';
 import { runGit } from '../git/digest.ts';
 import { runGh } from '../git/gh.ts';
 import { branchFor } from './slug.ts';
-import { HookEvent, runHooks, type HookWarning } from './hooks.ts';
+import { runMomentPost, runMomentPre } from './moments.ts';
+import type { HookWarning } from './hooks.ts';
 
 // --- deterministic gap computation -------------------------------------------
 
@@ -130,6 +129,27 @@ export interface ConvergeOutcome {
 // Computed verification is verb-item-only: a tweak has no spec to compute
 // gaps from, so it must refuse BEFORE ensureVerifyLane could move anything
 // (a move-then-throw would strand the tweak in verify).
+// Shared payload for the verify/review moments (all fields the pinned
+// envelope and declared hooks read).
+function momentPayload(
+  store: DocumentStore,
+  moment: 'verify' | 'review',
+  card: VerbItem,
+  result: 'clean' | 'gaps' | null,
+): Parameters<typeof runMomentPost>[2] {
+  return {
+    moment,
+    cardId: card.id,
+    lane: card.lane,
+    verb: card.verb,
+    branch: branchFor(card, card.verb),
+    issueNumber: getIssueMap(store, card.id)?.issueNumber ?? null,
+    result,
+    card,
+    timestamp: new Date().toISOString(),
+  };
+}
+
 export async function runVerification(store: DocumentStore, id: string): Promise<ConvergeOutcome> {
   const before = store.getCard(id); // typed 404 for unknown ids
   if (!isVerbItem(before)) {
@@ -138,22 +158,17 @@ export async function runVerification(store: DocumentStore, id: string): Promise
       { cardId: id },
     );
   }
+  // verify moment pre: blocks before the active→verify move or any result
+  // application — the pre hook sees the card where it stands.
+  await runMomentPre(store, 'verify', momentPayload(store, 'verify', before, null));
   ensureVerifyLane(store, id);
   const gaps = computeGaps(store, id);
   const result = gaps.length === 0 ? 'clean' as const : 'gaps' as const;
   if (result === 'gaps') applyVerifyResult(store, id, result, gaps.map((gap) => gap.taskTitle));
   const card = store.getVerbItem(id);
-  // onVerifyResult fires on both outcomes (core, so both doors fire it).
-  const hookWarnings = await runHooks(store.projectPath, HookEvent.VerifyResult, {
-    event: HookEvent.VerifyResult,
-    cardId: id,
-    verb: card.verb,
-    lane: card.lane,
-    branch: branchFor(card, card.verb),
-    issueNumber: getIssueMap(store, id)?.issueNumber ?? null,
-    result,
-    timestamp: new Date().toISOString(),
-  });
+  // The verify post phase (and the pinned onVerifyResult convention event
+  // inside it) fires on both outcomes (core, so both doors fire it).
+  const hookWarnings = await runMomentPost(store, 'verify', momentPayload(store, 'verify', card, result));
   return { result, gaps, card, hookWarnings };
 }
 
@@ -182,6 +197,9 @@ export async function reviewGate(store: DocumentStore, id: string): Promise<Find
       lane: card.lane,
     });
   }
+  // review moment pre: a blocking hook (e.g. `deck rules check`) refuses the
+  // review before findings are computed; post fires on the result below.
+  await runMomentPre(store, 'review', momentPayload(store, 'review', card, null));
   const findings: Finding[] = [];
   for (const task of card.tasks.filter((task) => !task.done)) {
     findings.push({
@@ -249,6 +267,8 @@ export async function reviewGate(store: DocumentStore, id: string): Promise<Find
       });
     }
   }
+  // review moment post: fires with the computed findings on the card.
+  await runMomentPost(store, 'review', momentPayload(store, 'review', card, null));
   return findings;
 }
 
