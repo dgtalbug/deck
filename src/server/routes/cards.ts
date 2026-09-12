@@ -4,7 +4,7 @@ import { convertToVerbItem, demoteToNote, tweak } from '../../core/board/groom.t
 import { deleteCard, updateCard, updateGroom } from '../../core/board/crud.ts';
 import { moveLane } from '../../core/board/lanes.ts';
 import type { Lane } from '../../core/board/types.ts';
-import { applyVerifyResult } from '../../core/board/verify.ts';
+import { runVerification } from '../../core/engine/verify.ts';
 import type { ProjectRegistry } from '../../core/projects/registry.ts';
 import { projectStore } from '../stores.ts';
 import { attempt, type RouteTable } from '../http.ts';
@@ -19,7 +19,7 @@ export const parity = {
   'POST /:project/cards/:id/block': 'setBlocked',
   'POST /:project/cards/:id/unblock': 'setBlocked',
   'POST /:project/cards/:id/tweak': 'tweak',
-  'POST /:project/cards/:id/verify': 'applyVerifyResult',
+  'POST /:project/cards/:id/verify': 'runVerification',
   'POST /:project/cards/:id/demote': 'demoteToNote',
 };
 
@@ -48,6 +48,10 @@ export const moveBody = z.object({ to: z.enum(['todo', 'groomed', 'active', 'ver
 export const reorderBody = z.object({ afterId: z.string().optional() });
 export const blockBody = z.object({ reason: z.string().optional() });
 export const updateBody = z.object({ title: z.string().min(1) });
+// The explicit-result schema for the CLI's --result flag (and the shape the
+// MCP task_sync tool accepts). The HTTP route runs the COMPUTED converge
+// loop instead (like MCP `verify` and the CLI default) — a client-chosen
+// result would bypass computeGaps.
 export const verifyBody = z.object({
   result: z.enum(['clean', 'gaps']),
   newTasks: z.array(z.string()).optional(),
@@ -104,9 +108,10 @@ export function cardsRoutes(registry: ProjectRegistry): RouteTable {
     '/:project/cards/:id/verify': {
       POST: (req) =>
         attempt(async () => {
-          const body = verifyBody.parse(await req.json());
+          await req.json().catch(() => undefined);
           const store = await projectStore(registry, req.params.project!);
-          return Response.json(applyVerifyResult(store, req.params.id!, body.result, body.newTasks ?? []));
+          const outcome = await runVerification(store, req.params.id!);
+          return Response.json({ card: outcome.card, result: outcome.result, gaps: outcome.gaps });
         }),
     },
     '/:project/cards/:id/demote': {

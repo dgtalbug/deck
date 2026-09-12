@@ -45,7 +45,7 @@ describe('moveLane', () => {
   test('human move groomed→todo succeeds; human move into active throws', () => {
     const item = groomedItem('movable card');
     const moved = moveLane(store, item.id, 'todo');
-    expect(moved.lane).toBe('todo');
+    expect('lane' in moved && moved.lane).toBe('todo');
 
     const item2 = groomedItem('engine owned');
     expect(() => moveLane(store, item2.id, 'active')).toThrow(LaneViolation);
@@ -55,7 +55,7 @@ describe('moveLane', () => {
   test('engine move into active succeeds', () => {
     const item = groomedItem('engine builds this');
     const moved = moveLane(store, item.id, 'active', 'engine');
-    expect(moved.lane).toBe('active');
+    expect('lane' in moved && moved.lane).toBe('active');
   });
 
   test('unknown card throws NotFound', () => {

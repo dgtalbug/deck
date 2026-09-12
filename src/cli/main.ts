@@ -58,7 +58,7 @@ export const parity = {
   'deck unblock': 'setBlocked',
   'deck next': 'nextDigest',
   'deck tweak': 'tweak',
-  'deck verify': 'applyVerifyResult',
+  'deck verify': 'runVerification',
   'deck init': 'initProject',
   'deck doctor': 'runDoctor',
   'deck projects': 'projectSummary',
@@ -302,6 +302,7 @@ const commands: Record<string, Command> = {
       async () => {
         const outcome = await archiveVerb(store, id);
         if (outcome.hookWarnings.length > 0) ctx.io.err(renderHookWarnings(outcome.hookWarnings).join('\n'));
+        for (const warning of outcome.warnings) ctx.io.err(`warn   ${warning}`);
         return [
           `${p.color('primary', '♠')} ${p.bold(`archived — ${outcome.card.title}`)}`,
           '',

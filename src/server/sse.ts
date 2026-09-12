@@ -51,17 +51,23 @@ function subscribe(store: DocumentStore): ReadableStream<Uint8Array> {
   }
   const current = tailer;
 
+  // `cancel` must remove only THIS stream's send fn — clearing the set would
+  // silently kill every other subscriber of the project (second-tab bug).
+  let detach: (() => void) | null = null;
   return new ReadableStream<Uint8Array>({
     start(controller) {
       const send = (data: string) => controller.enqueue(encoder.encode(data));
       current.subscribers.add(send);
+      detach = () => {
+        current.subscribers.delete(send);
+        if (current.subscribers.size === 0) {
+          clearInterval(current.timer);
+          tailers.delete(store.projectPath);
+        }
+      };
     },
     cancel() {
-      current.subscribers.clear();
-      if (current.subscribers.size === 0) {
-        clearInterval(current.timer);
-        tailers.delete(store.projectPath);
-      }
+      detach?.();
     },
   });
 }

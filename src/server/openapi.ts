@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { join } from 'node:path';
 import { DECK_VERSION } from '../version.ts';
-import { blockBody, groomBody, moveBody, reorderBody, updateBody, verifyBody } from './routes/cards.ts';
+import { blockBody, groomBody, moveBody, reorderBody, updateBody } from './routes/cards.ts';
 import { noteBody } from './routes/notes.ts';
 import { branchBody, commitBody, mergeBody, pullsBody, stashBody, switchBody } from './routes/git.ts';
 import { startBody } from './routes/engine.ts';
@@ -185,7 +185,7 @@ export function openApiDocument(): Record<string, unknown> {
         cardPath('block', 'Flag a card blocked with a reason (no lane change)', blockBody),
         cardPath('unblock', 'Clear the blocked flag', z.object({})),
         cardPath('tweak', 'Fast lane: todo → active with one task', z.object({})),
-        cardPath('verify', 'Apply a VerifyResult (clean → done, gaps → back to active)', verifyBody),
+        cardPath('verify', 'Computed converge verification (gaps → back to active with appended tasks, clean → done)', z.object({})),
         cardPath('demote', 'Reject after groom: verb item reverts to a note in todo', z.object({})),
         cardPath('publish', 'Publish the card spec as a GitHub issue (202 + queued when gh is offline)', z.object({})),
       ]),

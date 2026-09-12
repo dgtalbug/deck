@@ -21,9 +21,9 @@ export function applyVerifyResult(
 ): Card {
   runTx(store.db, (tx) => {
     const row = tx.select().from(cards).where(eq(cards.id, id)).get();
-    if (!row || row.type !== 'verb' || row.lane !== 'verify') {
+    if (!row || (row.type !== 'verb' && row.type !== 'tweak') || row.lane !== 'verify') {
       throw new DeckError(
-        `card ${id} is not in verify — applyVerifyResult only runs on verify-lane verb items`,
+        `card ${id} is not in verify — applyVerifyResult runs on verify-lane verb items and tweaks`,
         { cardId: id, type: row?.type ?? 'missing', lane: row?.lane ?? 'missing' },
       );
     }

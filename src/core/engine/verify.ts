@@ -12,7 +12,7 @@ import { moveLane } from '../board/lanes.ts';
 import { newestSpecVersion } from '../board/specstore.ts';
 import { getIssueMap } from '../board/specstore.ts';
 import type { DocumentStore } from '../board/store.ts';
-import type { VerbItem } from '../board/types.ts';
+import { isTweak, isVerbItem, type VerbItem } from '../board/types.ts';
 import { runGit } from '../git/digest.ts';
 import { runGh } from '../git/gh.ts';
 import { branchFor } from './slug.ts';
@@ -71,9 +71,15 @@ function testFileExists(projectPath: string, slug: string): boolean {
 // test file in the worktree is itself a gap.
 // The documented contract ('deck verify <id> closes the loop') is reachable:
 // verify on an ACTIVE card transitions it into verify first — the engine
-// owns active→verify, archive is not the only door.
+// owns active→verify, archive is not the only door. Tweaks share this door
+// (they verify explicitly); computed verification below stays verb-only.
 export function ensureVerifyLane(store: DocumentStore, id: string): void {
-  const card = store.getVerbItem(id); // typed 404 for non-verb ids
+  const card = store.getCard(id); // typed 404 for unknown ids
+  if (!isVerbItem(card) && !isTweak(card)) {
+    throw new DeckError(`card ${id} is not a build card — verification runs on verb items and tweaks`, {
+      cardId: id,
+    });
+  }
   if (card.lane === 'active') moveLane(store, id, 'verify', 'engine');
 }
 
@@ -117,7 +123,17 @@ export interface ConvergeOutcome {
 
 // The driver computes, then hands the outcome to applyVerifyResult — the
 // ONLY mutation path (gaps → active + tasks appended; clean → done).
+// Computed verification is verb-item-only: a tweak has no spec to compute
+// gaps from, so it must refuse BEFORE ensureVerifyLane could move anything
+// (a move-then-throw would strand the tweak in verify).
 export async function runVerification(store: DocumentStore, id: string): Promise<ConvergeOutcome> {
+  const before = store.getCard(id); // typed 404 for unknown ids
+  if (!isVerbItem(before)) {
+    throw new DeckError(
+      `card ${id} is not a verb item — computed verification needs a spec; tweaks verify explicitly (deck verify <id> --result clean|gaps)`,
+      { cardId: id },
+    );
+  }
   ensureVerifyLane(store, id);
   const gaps = computeGaps(store, id);
   const result = gaps.length === 0 ? 'clean' as const : 'gaps' as const;

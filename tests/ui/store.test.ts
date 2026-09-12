@@ -7,10 +7,13 @@ import { ApiError, type BoardApi, type BoardDoc, type GroomInput, type UiCard } 
 // batching, optimistic apply → response replace → rollback, never-optimistic
 // engine-lane entry.
 
-function doc(cards: { id: string; lane: 'todo' | 'groomed'; title?: string }[]): BoardDoc {
+function doc(cards: { id: string; lane: 'todo' | 'groomed'; title?: string; position?: number }[]): BoardDoc {
   const board: BoardDoc = { lanes: { todo: [], groomed: [], active: [], verify: [], done: [] } };
   for (const card of cards) {
-    board.lanes[card.lane].push({ id: card.id, title: card.title ?? card.id });
+    // Server positions are 1024-step floats (midpoint insert scheme) — the
+    // store's neighbor-comparison apply depends on realistic values.
+    const position = card.position ?? (board.lanes[card.lane].length + 1) * 1024;
+    board.lanes[card.lane].push({ id: card.id, title: card.title ?? card.id, position });
   }
   return board;
 }
@@ -255,17 +258,16 @@ describe('SSE idempotency + echo suppression (findings 6+7)', () => {
     const api = makeApi(doc([{ id: 'a', lane: 'todo' }, { id: 'b', lane: 'todo' }, { id: 'c', lane: 'todo' }]));
     const store = createBoardStore('p', api);
     await store.refetch();
-    // echo of a move that already happened (a is at position 1 of todo)
-    store.applyEvents([{ rowid: 1, type: 'card.moved', payload: { id: 'a', lane: 'todo', position: 1 } }]);
+    // echo of a move that already happened (a is at position 1024 of todo)
+    store.applyEvents([{ rowid: 1, type: 'card.moved', payload: { id: 'a', lane: 'todo', position: 1024 } }]);
     expect(store.board.value.lanes.todo.map((card) => card.id)).toEqual(['a', 'b', 'c']); // no re-append
-    // a remote reorder within the lane honors position
-    store.applyEvents([{ rowid: 2, type: 'card.moved', payload: { id: 'a', lane: 'todo', position: 3 } }]);
+    // a remote reorder within the lane honors the float position (end of lane)
+    store.applyEvents([{ rowid: 2, type: 'card.moved', payload: { id: 'a', lane: 'todo', position: 4096 } }]);
     expect(store.board.value.lanes.todo.map((card) => card.id)).toEqual(['b', 'c', 'a']);
     // cross-lane insertion honors position too (not a blind append)
-    store.applyEvents([{ rowid: 3, type: 'card.moved', payload: { id: 'x', lane: 'todo', position: 1 } }]);
-    store.applyEvents([{ rowid: 4, type: 'card.moved', payload: { id: 'b', lane: 'groomed', position: 1 } }]);
-    store.applyEvents([{ rowid: 5, type: 'card.created', payload: { id: 'n', lane: 'todo', position: 4 } }]);
-    store.applyEvents([{ rowid: 6, type: 'card.moved', payload: { id: 'n', lane: 'groomed', position: 1 } }]);
+    store.applyEvents([{ rowid: 4, type: 'card.moved', payload: { id: 'b', lane: 'groomed', position: 1024 } }]);
+    store.applyEvents([{ rowid: 5, type: 'card.created', payload: { id: 'n', lane: 'todo', position: 4096 } }]);
+    store.applyEvents([{ rowid: 6, type: 'card.moved', payload: { id: 'n', lane: 'groomed', position: 512 } }]);
     expect(store.board.value.lanes.groomed.map((card) => card.id)).toEqual(['n', 'b']);
   });
 
@@ -317,7 +319,8 @@ describe('SSE idempotency + echo suppression (findings 6+7)', () => {
     expect(store.board.value.lanes.groomed.map((card) => card.id)).toEqual(['a']);
 
     // window closed: a later remote delta for the same card applies again
-    store.applyEvents([{ rowid: 2, type: 'card.moved', payload: { id: 'a', lane: 'todo', position: 2 } }]);
+    // (a returns to todo AFTER b — the float position lands past b's 2048)
+    store.applyEvents([{ rowid: 2, type: 'card.moved', payload: { id: 'a', lane: 'todo', position: 3072 } }]);
     expect(store.board.value.lanes.todo.map((card) => card.id)).toEqual(['b', 'a']);
   });
 

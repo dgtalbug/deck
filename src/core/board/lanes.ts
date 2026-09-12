@@ -3,7 +3,7 @@ import { LaneViolation, WipLimitError } from './errors.ts';
 import { endPosition } from './positions.ts';
 import { cards } from './schema.ts';
 import { runTx, type DocumentStore } from './store.ts';
-import { MANUAL_TRANSITIONS, isTweak, isVerbItem, type Lane, type Tweak, type VerbItem } from './types.ts';
+import { MANUAL_TRANSITIONS, isTweak, isVerbItem, type Card, type Lane, type Tweak, type VerbItem } from './types.ts';
 import { emitEvent } from '../events/outbox.ts';
 
 function nowIso(): string {
@@ -62,7 +62,7 @@ export function moveLane(
   id: string,
   to: Lane,
   source: 'human' | 'engine' = 'human',
-): VerbItem {
+): Card {
   const card = store.getCard(id);
   if (!('lane' in card)) {
     // Notes only leave todo through grooming or tweak — never a lane move.
@@ -86,5 +86,7 @@ export function moveLane(
       .run();
     emitEvent(tx, 'card.moved', { id, lane: to, position });
   });
-  return store.getVerbItem(id);
+  // Any lane-dwelling card (verb item or tweak) — a narrowed getVerbItem
+  // here would throw AFTER the transaction committed.
+  return store.getCard(id);
 }
