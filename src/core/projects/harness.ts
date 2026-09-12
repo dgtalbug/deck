@@ -109,13 +109,43 @@ export function scaffoldSkill(projectPath: string, name: string): string {
   return path;
 }
 
+// --- managed blocks (wire-rules-yaml-gates, the iris pattern) -----------------
+// Deck-generated regions inside a managed file carry hash fences; upgrades
+// rewrite ONLY the fenced region and preserve user content outside it
+// byte-for-byte. Files without a fence keep the never-overwrite law.
+
+export function sha256Text(text: string): string {
+  return new Bun.CryptoHasher('sha256').update(text).digest('hex').slice(0, 16);
+}
+
+export function renderManaged(label: string, content: string): string {
+  const body = content.endsWith('\n') || content.length === 0 ? content : `${content}\n`;
+  return `<!-- deck:managed:start id=${label} sha256=${sha256Text(body)} -->\n${body}<!-- deck:managed:end -->`;
+}
+
+const END = '<!-- deck:managed:end -->';
+
+// Replaces the label's fenced region in `existing` with a fresh fence around
+// `content`. Null when the file carries no (or a malformed) fence for the
+// label — the caller then keeps the skip law. Bytes outside survive exactly.
+export function replaceManaged(existing: string, label: string, content: string): string | null {
+  const startMarker = `<!-- deck:managed:start id=${label} `;
+  const startIdx = existing.indexOf(startMarker);
+  if (startIdx < 0) return null;
+  const endIdx = existing.indexOf(END, startIdx);
+  if (endIdx < 0) return null;
+  return existing.slice(0, startIdx) + renderManaged(label, content) + existing.slice(endIdx + END.length);
+}
+
 // The shipped skill pack (agent-skill-pack): installSkillPack writes the
-// embedded deck-* SKILL.md files into every detected host's skillsDir.
-// Content-compare, never mtime: a byte-identical file rewrites freely; a
-// user-edited file is NEVER overwritten — the same law as scaffoldSkill.
+// embedded deck-* SKILL.md files into every detected host's skillsDir,
+// wrapped in a managed fence. Fresh writes are fenced; a byte-identical
+// fenced file rewrites freely; a user-edited file is upgraded ONLY inside
+// its fence (outside bytes preserved); a fence-less edited file is NEVER
+// overwritten — the same law as scaffoldSkill.
 export interface SkillPackOutcome {
-  written: string[]; // "<host>/<skill>" entries
-  skipped: string[]; // user-modified files, named, untouched
+  written: string[]; // "<host>/<skill>" entries (fresh installs + fenced upgrades)
+  skipped: string[]; // user-modified files without a fence, named, untouched
 }
 
 export function installSkillPack(
@@ -129,13 +159,24 @@ export function installSkillPack(
     const dir = join(projectPath, host.skillsDir);
     for (const [rel, content] of Object.entries(assets)) {
       const file = join(dir, rel);
-      if (existsSync(file) && readFileSync(file, 'utf8') !== content) {
+      const expected = renderManaged(rel, content);
+      if (!existsSync(file)) {
+        mkdirSync(dirname(file), { recursive: true });
+        writeFileSync(file, expected);
+        outcome.written.push(`${host.id}/${rel}`);
+        continue;
+      }
+      const existing = readFileSync(file, 'utf8');
+      if (existing === expected) continue; // identical — nothing to write
+      // Legacy pristine install (pre-fence bytes): upgrade to the fenced form.
+      // Fence-less divergence is a lived-in file — never overwritten.
+      const upgraded =
+        existing === content ? expected : replaceManaged(existing, rel, content);
+      if (upgraded === null) {
         outcome.skipped.push(`${host.id}/${rel}`);
         continue;
       }
-      if (existsSync(file)) continue; // identical — nothing to write
-      mkdirSync(dirname(file), { recursive: true });
-      writeFileSync(file, content);
+      writeFileSync(file, upgraded);
       outcome.written.push(`${host.id}/${rel}`);
     }
   }

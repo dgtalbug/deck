@@ -4,5 +4,8 @@ DECK_FEATURE_SSE = "true"
 DECK_FEATURE_TWEAK = "true"
 
 [test]
+# Discovery stays inside tests/ — vendored skill collections under .agents/
+# and agent/ carry example tests that must not join deck's suite.
+root = "./tests"
 preload = ["./tests/setup.ts"]
 coverage = true

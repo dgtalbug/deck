@@ -7,6 +7,7 @@ import { mostAdvancedActive, topOfQueue } from './lanes.ts';
 import { isVerbItem, type Tweak } from './types.ts';
 import { getIssueMap } from './specstore.ts';
 import { getSpecType } from './types-registry.ts';
+import { loadRules, rulesDigest } from './rules.ts';
 import { branchFor } from '../engine/slug.ts';
 import { recall } from './memory.ts';
 
@@ -47,8 +48,16 @@ export function buildContext(store: DocumentStore, card: VerbItem): string {
     MAX_CONTEXT_CHARS / 2,
   );
   if (checklist !== undefined) parts.push('', '## Checklist', checklist);
-  const rules = readFileHead(join(store.projectPath, '.meta', 'project-rules.md'), RULES_DIGEST_CHARS);
-  if (rules !== undefined) parts.push('', '## Project rules (digest)', rules);
+  // Project law: deck.rules.yaml supersedes the freeform .meta/project-rules.md
+  // head when present; absent the file, the legacy digest continues unchanged
+  // (zero-regression absence — engine/rules).
+  const rulesLoad = loadRules(store.projectPath);
+  if (rulesLoad !== null) {
+    parts.push('', '## Project rules', rulesDigest(rulesLoad.rules, RULES_DIGEST_CHARS));
+  } else {
+    const rules = readFileHead(join(store.projectPath, '.meta', 'project-rules.md'), RULES_DIGEST_CHARS);
+    if (rules !== undefined) parts.push('', '## Project rules (digest)', rules);
+  }
   const words = `${card.title} ${card.tasks.map((task) => task.title).join(' ')}`;
   const hits = recall(store, words, 8);
   if (hits.length > 0) {

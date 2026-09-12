@@ -12,8 +12,6 @@ import { archiveVerb } from '../core/engine/verbs.ts';
 import { renderHookWarnings } from '../core/engine/hooks.ts';
 import { ensureVerifyLane, runVerification } from '../core/engine/verify.ts';
 import { revertCommand } from './revert.ts';
-import { getIssueMap } from '../core/board/specstore.ts';
-import { viewIssue } from '../core/git/issues.ts';
 import { boardView, todoView } from '../core/board/views.ts';
 import type { Lane } from '../core/board/types.ts';
 import { initProject } from '../core/projects/init.ts';
@@ -26,12 +24,14 @@ import { noteBody } from '../server/routes/notes.ts';
 import { serveMain } from '../server/serve.ts';
 import { flagString, flagStrings, parseArgs, UsageError, type ParsedArgs } from './args.ts';
 import { startCommand } from './start.ts';
+import { overrideCommand, rulesCommand } from './rules.ts';
 import {
   backfillCommand,
   epicCommand,
   epicsCommand,
   groomCommand,
   hooksCommand,
+  issueCommand,
   recallCommand,
   setupCommand,
   storyCommand,
@@ -91,6 +91,8 @@ export const parity = {
   'deck issue': 'viewIssue',
   'deck review': 'reviewGate',
   'deck types': 'listSpecTypes',
+  'deck rules': 'loadRules',
+  'deck override': 'recordOverride',
 };
 
 export interface CliIo {
@@ -119,6 +121,8 @@ commands:
   review <id>                       attack the diff vs spec — blocks archive
   types [list] | types new <json-file> | types remove <id>
                                     spec-type registry (list · create-edit · remove)
+  rules [list|check|validate]       project law (deck.rules.yaml) — check runs machine gates
+  override <rule-id> --reason "<t>" record a user override on the active card
   init [--name <name>]              register + scaffold this project
   doctor                            report drift (all checks must pass)
   projects                          list registered projects
@@ -264,19 +268,7 @@ const commands: Record<string, Command> = {
   sync: syncCommand,
   'backfill-specs': backfillCommand,
   feat: (args, ctx) => startCommand(args, ctx, 'feat'),
-  issue: async (args, ctx) => {
-    const id = requiredId(args, 'issue <id>');
-    const project = resolveProject(ctx.registry, args, ctx.cwd);
-    const store = await getStore(project.path);
-    store.getCard(id); // typed 404 for unknown ids — before the no-map refusal
-    const map = getIssueMap(store, id);
-    if (map === undefined) {
-      throw new DeckError(`card ${id} has no mapped issue — publish it first`, { cardId: id });
-    }
-    const view = await viewIssue(project.path, map.issueNumber);
-    const p = ctx.pal;
-    return `${p.dim('#' + view.number)} ${view.state === 'open' ? p.color('primary', view.url) : view.url}`;
-  },
+  issue: issueCommand,
   fix: (args, ctx) => startCommand(args, ctx, 'fix'),
   docs: (args, ctx) => startCommand(args, ctx, 'docs'),
   style: (args, ctx) => startCommand(args, ctx, 'style'),
@@ -311,6 +303,8 @@ const commands: Record<string, Command> = {
     );
   },
   hooks: hooksCommand,
+  rules: rulesCommand,
+  override: overrideCommand,
   epic: epicCommand,
   epics: epicsCommand,
   story: storyCommand,
