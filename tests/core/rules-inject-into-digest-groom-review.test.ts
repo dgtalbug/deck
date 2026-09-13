@@ -4,6 +4,7 @@
 // review findings that a recorded override silences.
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { execSync } from 'node:child_process';
 import { join } from 'node:path';
 import { openStore } from '../../src/core/board/store.ts';
 import { convertToVerbItem } from '../../src/core/board/groom.ts';
@@ -36,6 +37,17 @@ function writeRules(yaml: string): void {
 
 beforeEach(async () => {
   dir = tmpProject('rules-inject-').path;
+  // Fail-closed review (engine/verify) binds the snapshot: the fixture needs
+  // a real git repo on the card's verb branch, base 'main' present.
+  const git = (command: string) => execSync(`git ${command}`, { cwd: dir, stdio: ['ignore', 'pipe', 'ignore'] });
+  git('init --initial-branch=main -q');
+  git('config user.email t@t');
+  git('config user.name t');
+  writeFileSync(join(dir, '.gitignore'), '.deck/\n');
+  writeFileSync(join(dir, 'a.txt'), 'one\n');
+  git('add .');
+  git('commit -q -m c1');
+  git('checkout -q -b feat/wire-rules-yaml-gates');
   store = await openStore(dir);
   const note = store.addNote('wire rules yaml gates');
   cardId = note.id;

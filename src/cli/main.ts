@@ -7,10 +7,11 @@ import { DeckError } from '../core/board/errors.ts';
 import { tweak } from '../core/board/groom.ts';
 import { moveLane } from '../core/board/lanes.ts';
 import { nextDigest } from '../core/board/next.ts';
-import { applyVerifyResult } from '../core/board/verify.ts';
+import { applyExplicitResult } from '../core/board/verify.ts';
 import { archiveVerb } from '../core/engine/verbs.ts';
 import { renderHookWarnings } from '../core/engine/hooks.ts';
-import { ensureVerifyLane, runVerification } from '../core/engine/verify.ts';
+import { runVerification } from '../core/engine/verify.ts';
+import { opsCommand } from './ops.ts';
 import { revertCommand } from './revert.ts';
 import { boardView, todoView } from '../core/board/views.ts';
 import type { Lane } from '../core/board/types.ts';
@@ -121,6 +122,9 @@ commands:
   tweak <id>                        promote a note to a tweak build
   verify <id> [--result clean|gaps]      compute gaps (or override the result)
   review <id>                       attack the diff vs spec — blocks archive
+  ops [list]                        unsettled operations (recovery ledger)
+  ops reconcile <id> --confirm|--clean
+                                    release a crashed/legacy operation explicitly
   types [list] | types new <json-file> | types remove <id>
                                     spec-type registry (list · create-edit · remove)
   rules [list|check|validate]       project law (deck.rules.yaml) — check runs machine gates
@@ -234,16 +238,15 @@ const commands: Record<string, Command> = {
       return 0;
     }
     // Explicit results land the card in verify; done is archive's alone.
-    ensureVerifyLane(store, id);
-    const body = verifyBody.parse({ result: explicit });
-    if (body.result === 'gaps') {
-      return cardSummary(applyVerifyResult(store, id, body.result, flagStrings(args.flags, 'task')));
+    const card = applyExplicitResult(store, id, verifyBody.parse({ result: explicit }).result, flagStrings(args.flags, 'task'));
+    if ('lane' in card && card.lane === 'verify') {
+      return `${cardSummary(card)}\nclean — card ${id} holds in verify; deck review + deck archive close it`;
     }
-    const card = store.getVerbItem(id);
-    return `${cardSummary(card)}\nclean — card ${id} holds in verify; deck review + deck archive close it`;
+    return cardSummary(card);
   },
   review: reviewCommand,
   types: typesCommand,
+  ops: opsCommand,
   init: async (args, ctx) => {
     const result = await initProject(ctx.registry, ctx.cwd, flagString(args.flags, 'name'));
     const p = ctx.pal;
