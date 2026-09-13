@@ -2,6 +2,10 @@
 // recursive CTEs, cycle-guarded via the path string, node-capped with an
 // explicit truncation flag. Only resolved edges are traversed, and every node
 // carries its ring depth; unresolved edges are never presented as resolved.
+//
+// E04 (engine/graph): edge collection is scoped to the selected neighborhood
+// (chunked, index-backed `IN` queries — never a whole-table scan), and each
+// query's facts plus metadata come from one consistent read snapshot.
 import type { Database } from 'bun:sqlite';
 
 export interface ImpactNode {
@@ -21,9 +25,16 @@ export interface ImpactResult {
   edges: Array<{ source: string; target: string; kind: string; resolution: string; confidence: number }>;
   truncated: boolean;
   cap: number;
+  // E04 (additive): every id in the selected neighborhood — includes folder
+  // nodes the walk passes through that carry no symbol/file facts. Edge
+  // collection is scoped to exactly this set.
+  selectedIds: string[];
 }
 
 const DEFAULT_CAP = 500;
+// SQLite's default host-parameter ceiling is 999; 500 keeps one index seek
+// per id comfortably inside a single statement.
+export const EDGE_BATCH_SIZE = 500;
 
 // Seed resolution: symbol name or fqn → candidate ids, most-connected first.
 export function findSymbol(db: Database, seed: string): Array<{ id: string; name: string; fqn: string; file_id: string }> {
@@ -65,25 +76,31 @@ export function impact(
     SELECT DISTINCT node_id, MIN(depth) AS depth
     FROM frontier WHERE node_id != ?
     GROUP BY node_id ORDER BY depth, node_id LIMIT ?`;
-  const rows = db.prepare(sql).all(seedId, seedId, maxDepth, seedId, cap + 1) as Array<{ node_id: string; depth: number }>;
-  const truncated = rows.length > cap;
-  const hit = rows.slice(0, cap);
-  const nodes: ImpactNode[] = [];
-  for (const row of hit) {
-    const symbol = db.query('SELECT name, fqn, fan_in, importance FROM g_symbol WHERE id = ?').get(row.node_id) as
-      | { name: string; fqn: string; fan_in: number; importance: number | null }
-      | null;
-    if (symbol !== null) {
-      nodes.push({ id: row.node_id, kind: 'symbol', name: symbol.name, detail: symbol.fqn, depth: row.depth, fanIn: symbol.fan_in, importance: symbol.importance });
-      continue;
+  // One read snapshot for the walk, the node facts, and the edges: a publish
+  // committing mid-query cannot show a half-old/half-new graph (E04 5.2).
+  const tx = db.transaction((run: () => ImpactResult) => run());
+  return tx(() => {
+    const rows = db.prepare(sql).all(seedId, seedId, maxDepth, seedId, cap + 1) as Array<{ node_id: string; depth: number }>;
+    const truncated = rows.length > cap;
+    const hit = rows.slice(0, cap);
+    const nodes: ImpactNode[] = [];
+    for (const row of hit) {
+      const symbol = db.query('SELECT name, fqn, fan_in, importance FROM g_symbol WHERE id = ?').get(row.node_id) as
+        | { name: string; fqn: string; fan_in: number; importance: number | null }
+        | null;
+      if (symbol !== null) {
+        nodes.push({ id: row.node_id, kind: 'symbol', name: symbol.name, detail: symbol.fqn, depth: row.depth, fanIn: symbol.fan_in, importance: symbol.importance });
+        continue;
+      }
+      const file = db.query('SELECT relative_path FROM g_file WHERE id = ?').get(row.node_id) as { relative_path: string } | null;
+      if (file !== null) {
+        nodes.push({ id: row.node_id, kind: 'file', name: file.relative_path.split('/').pop() ?? file.relative_path, detail: file.relative_path, depth: row.depth, fanIn: null, importance: null });
+      }
     }
-    const file = db.query('SELECT relative_path FROM g_file WHERE id = ?').get(row.node_id) as { relative_path: string } | null;
-    if (file !== null) {
-      nodes.push({ id: row.node_id, kind: 'file', name: file.relative_path.split('/').pop() ?? file.relative_path, detail: file.relative_path, depth: row.depth, fanIn: null, importance: null });
-    }
-  }
-  const edges = edgesAmong(db, [seedId, ...hit.map((row) => row.node_id)]);
-  return { seed: seedId, direction, nodes, edges, truncated, cap };
+    const selectedIds = [seedId, ...hit.map((row) => row.node_id)];
+    const edges = edgesAmong(db, selectedIds);
+    return { seed: seedId, direction, nodes, edges, truncated, cap, selectedIds };
+  });
 }
 
 // why = the callers-only walk (upstream impact): who reaches this symbol.
@@ -91,16 +108,39 @@ export function why(db: Database, seedId: string, cap = DEFAULT_CAP): ImpactResu
   return impact(db, seedId, { direction: 'in', kinds: ['CALLS', 'REFERENCES'], cap });
 }
 
-function edgesAmong(db: Database, ids: string[]): ImpactResult['edges'] {
+// Edges between the selected nodes only: chunked, index-backed IN queries
+// (idx_edge_source) instead of materializing every resolved edge in the
+// graph. Deterministic order — source, target, kind — independent of table
+// insertion order; tiers and confidence ride along untouched.
+function edgesAmong(db: Database, ids: string[], batchSize = EDGE_BATCH_SIZE): ImpactResult['edges'] {
   const set = new Set(ids);
-  const rows = db.query('SELECT source_id, target_id, kind, resolution, confidence FROM g_edge WHERE target_id IS NOT NULL').all() as Array<{
-    source_id: string;
-    target_id: string;
-    kind: string;
-    resolution: string;
-    confidence: number;
-  }>;
+  const chunks: string[][] = [];
+  for (let i = 0; i < ids.length; i += batchSize) chunks.push(ids.slice(i, i + batchSize));
+  const rows: Array<{ source_id: string; target_id: string; kind: string; resolution: string; confidence: number }> = [];
+  for (const chunk of chunks) {
+    const placeholders = chunk.map(() => '?').join(', ');
+    rows.push(
+      ...db
+        .query(
+          `SELECT source_id, target_id, kind, resolution, confidence FROM g_edge ` +
+            `WHERE source_id IN (${placeholders}) AND target_id IS NOT NULL ` +
+            'ORDER BY source_id, target_id, kind',
+        )
+        .all(...chunk) as typeof rows,
+    );
+  }
   return rows
     .filter((row) => set.has(row.source_id) && set.has(row.target_id))
     .map((row) => ({ source: row.source_id, target: row.target_id, kind: row.kind, resolution: row.resolution, confidence: row.confidence }));
+}
+
+// Test/audit instrumentation: the EXPLAIN QUERY PLAN of the scoped edge read —
+// proves rows are fetched via idx_edge_source for the selected ids rather than
+// a whole-graph scan (a constant query count alone would not show that).
+export function explainEdgeNeighborhood(db: Database, ids: string[]): Array<Record<string, unknown>> {
+  const chunk = ids.slice(0, EDGE_BATCH_SIZE);
+  const placeholders = chunk.map(() => '?').join(', ');
+  return db
+    .query(`EXPLAIN QUERY PLAN SELECT source_id, target_id, kind FROM g_edge WHERE source_id IN (${placeholders}) AND target_id IS NOT NULL ORDER BY source_id, target_id, kind`)
+    .all(...chunk) as Array<Record<string, unknown>>;
 }
