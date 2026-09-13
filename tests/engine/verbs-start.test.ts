@@ -180,7 +180,9 @@ describe('context pack', () => {
     expect(digest.wipBlockedBy).toBeDefined();
     expect(digest.context).toMatch(/branch: (feat|fix)\//);
     expect(digest.context).toContain('issue: #21');
-    expect(digest.context).toContain('## Remaining tasks');
+    // E02 packet: the checklist appears as the materialized Tasks/Checklist sections
+    expect(digest.context).toContain('## Tasks');
+    expect(digest.context).toContain('## Checklist');
     expect(digest.context.length).toBeLessThanOrEqual(8000); // ≤2k tokens at ~4 chars
   });
 });

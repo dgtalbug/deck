@@ -6,12 +6,12 @@ import { ZodError } from 'zod';
 import { DeckError } from '../core/board/errors.ts';
 import { tweak } from '../core/board/groom.ts';
 import { moveLane } from '../core/board/lanes.ts';
-import { nextDigest } from '../core/board/next.ts';
 import { applyExplicitResult } from '../core/board/verify.ts';
 import { archiveVerb } from '../core/engine/verbs.ts';
 import { renderHookWarnings } from '../core/engine/hooks.ts';
 import { runVerification } from '../core/engine/verify.ts';
 import { opsCommand } from './ops.ts';
+import { nextCommand, checkpointCliCommand } from './next.ts';
 import { revertCommand } from './revert.ts';
 import { boardView, todoView } from '../core/board/views.ts';
 import type { Lane } from '../core/board/types.ts';
@@ -118,7 +118,9 @@ commands:
   move <id> --to <lane>             move a card (manual lanes only)
   reorder <id> [--after <id2>]      move a card within its lane
   block <id> [reason] / unblock <id>
-  next                              WIP-aware next digest for the engine
+  next [--ready]                     resume-first next digest; --ready peeks the queue, read-only
+  checkpoint <card-id>               print the card's session checkpoint
+  checkpoint <card-id> add "<text>" [--kind <k>] [--id <id>] [--expect-rev <n>] [--basis <sha>]
   tweak <id>                        promote a note to a tweak build
   verify <id> [--result clean|gaps]      compute gaps (or override the result)
   review <id>                       attack the diff vs spec — blocks archive
@@ -208,11 +210,8 @@ const commands: Record<string, Command> = {
     const store = await getStore(project.path);
     return cardSummary(store.setBlocked(id));
   },
-  next: async (args, ctx) => {
-    const project = resolveProject(ctx.registry, args, ctx.cwd);
-    const store = await getStore(project.path);
-    return nextDigest(store).context;
-  },
+  next: nextCommand,
+  checkpoint: checkpointCliCommand,
   tweak: async (args, ctx) => {
     const id = requiredId(args, 'tweak <id>');
     const project = resolveProject(ctx.registry, args, ctx.cwd);

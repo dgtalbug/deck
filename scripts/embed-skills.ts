@@ -6,13 +6,15 @@ import { join } from 'node:path';
 // (deck setup installs it into detected hosts). Unlike ui-assets (a build
 // artifact, gitignored), this file is COMMITTED: it is authored content
 // that ships, and committing it keeps tests + runtime working on fresh
-// clones before any build. Re-run after editing .agents/skills/deck-*/.
+// clones before any build. The authored source of truth is the TRACKED
+// src/skills/deck-*/SKILL.md (E02 DECK-ARCH-020 — fresh-clone
+// reproducibility); re-run after editing those.
 
 const root = process.cwd();
-const skillsDir = join(root, '.agents', 'skills');
+const skillsDir = join(root, 'src', 'skills');
 
 if (!existsSync(skillsDir)) {
-  console.error('embed-skills: .agents/skills not found');
+  console.error('embed-skills: src/skills not found — the tracked authored source is missing');
   process.exit(1);
 }
 
@@ -24,7 +26,7 @@ for (const entry of readdirSync(skillsDir, { withFileTypes: true })) {
   assets[`${entry.name}/SKILL.md`] = readFileSync(file, 'utf8');
 }
 if (Object.keys(assets).length === 0) {
-  console.error('embed-skills: no deck-* skills found under .agents/skills');
+  console.error('embed-skills: no deck-* skills found under src/skills');
   process.exit(1);
 }
 

@@ -1,10 +1,12 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { convertToVerbItem } from '../../../src/core/board/groom.ts';
+import { moveLane } from '../../../src/core/board/lanes.ts';
 import { nextDigest } from '../../../src/core/board/next.ts';
 import { openStore, type DocumentStore } from '../../../src/core/board/store.ts';
-import { SESSIONS_DIR } from '../../../src/core/board/memory.ts';
+import { SESSIONS_DIR, recall } from '../../../src/core/board/memory.ts';
+import { writeCheckpoint, sourceDigest } from '../../../src/core/board/checkpoint.ts';
 import { tmpProject } from '../../helpers.ts';
 
 // memory-recall — the paired file for the "Recall in the context pack"
@@ -72,5 +74,51 @@ describe('recall in the context pack', () => {
     expect(digest.context.length).toBeLessThanOrEqual(8000);
     const section = digest.context.split('## Recall (memory)')[1];
     expect((section ?? '').length).toBeLessThanOrEqual(1001); // 1000 + leading newline
+  });
+});
+
+describe('checkpoint precedence over historical recall', () => {
+  test('current-card checkpoint rides the digest directly; unrelated history stays in recall', () => {
+    const dir = join(project.path, SESSIONS_DIR);
+    mkdirSync(dir, { recursive: true });
+    // historical memory: an unrelated old card's session bullet
+    writeFileSync(
+      join(dir, 'ancient-card.md'),
+      'card: ancient-card\nverb: feat\nbranch: b\n\n## Learnings\n\n- ancient unrelated memory line\n',
+    );
+    // a current ACTIVE card with a checkpoint bound to its current spec bytes
+    const note = store.addNote('checkpoint precedence card');
+    const item = convertToVerbItem(store, {
+      noteId: note.id,
+      proposedVerb: 'feat',
+      refinedTitle: 'checkpoint precedence card',
+      research: { codebaseFindings: [] },
+      specDeltas: [],
+      tasks: ['one'],
+      openQuestions: [],
+    });
+    moveLane(store, item.id, 'active', 'engine');
+    const specPath = join(project.path, store.getVerbItem(item.id).specPath, 'spec.md');
+    const specBytes = readFileSync(specPath, 'utf8');
+    writeCheckpoint(project.path, item.id, {
+      text: 'the current decision lives in the checkpoint',
+      kind: 'decision',
+      basis: sourceDigest(specBytes),
+    });
+
+    const digest = nextDigest(store);
+    // current beats historical: the checkpoint section is present and labeled current
+    expect(digest.cardId).toBe(item.id);
+    expect(digest.context).toContain('the current decision lives in the checkpoint');
+    expect(digest.context).not.toContain('HISTORICAL');
+    // and the current decision is NOT reached through recall ranking —
+    // searching history still finds the ancient line, never the checkpoint's
+    const hits = recall(store, 'ancient unrelated memory');
+    expect(hits.some((hit) => hit.startsWith('ancient-card '))).toBe(true);
+  });
+
+  test('a healthy index shows no memory diagnostics in the digest', () => {
+    const digest = nextDigest(store);
+    expect(digest.context).not.toContain('## Memory status');
   });
 });

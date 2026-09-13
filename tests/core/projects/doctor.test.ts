@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { runDoctor } from '../../../src/core/projects/doctor.ts';
+import { HOST_SEED, installSkillPack } from '../../../src/core/projects/harness.ts';
 import { initProject } from '../../../src/core/projects/init.ts';
 import { ProjectRegistry } from '../../../src/core/projects/registry.ts';
 import { buildServer } from '../../../src/server/serve.ts';
@@ -49,12 +50,13 @@ describe('runDoctor', () => {
     Bun.spawnSync(['git', 'init', proj.path]);
     stubGh();
     await initProject(registry, proj.path);
+    installSkillPack(proj.path, [...HOST_SEED]); // a healthy project has the pack installed
     const server = buildServer({ port: port as number, registry });
     try {
       const checks = await runDoctor(registry, proj.path);
       const failed = checks.filter((entry) => !entry.pass);
       expect(failed).toEqual([]);
-      expect(checks.length).toBe(8); // +issue map (v0.4.0)
+      expect(checks.length).toBe(9); // +issue map (v0.4.0), +skill pack (E02)
     } finally {
       server.stop(true);
     }

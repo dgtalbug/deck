@@ -17,7 +17,7 @@ describe('the skill seed covers the graph verbs', () => {
 
   test('deck-impact owns the graph command; the authored sources match the seed', () => {
     const authored = readFileSync(
-      join(import.meta.dir, '..', '..', '.agents', 'skills', 'deck-impact', 'SKILL.md'),
+      join(import.meta.dir, '..', '..', 'src', 'skills', 'deck-impact', 'SKILL.md'),
       'utf8',
     );
     expect(skillAssets['deck-impact/SKILL.md']).toBe(authored);

@@ -8,7 +8,7 @@ import { listHooks } from '../core/engine/hooks.ts';
 import { renderFindings, reviewGate } from '../core/engine/verify.ts';
 import { getSpecType, listSpecTypes, removeSpecType, upsertSpecType } from '../core/board/types-registry.ts';
 import { typeBody } from '../server/routes/types.ts';
-import { recall } from '../core/board/memory.ts';
+import { recallDetail } from '../core/board/memory.ts';
 import { epicRollups } from '../core/board/views.ts';
 import { getIssueMap } from '../core/board/specstore.ts';
 import { viewIssue } from '../core/git/issues.ts';
@@ -105,15 +105,17 @@ export async function backfillCommand(args: ParsedArgs, ctx: RunContext): Promis
 }
 
 // `deck recall <query>` — the pinned recall(query)→string[] contract at the
-// terminal: one matched memory line per row.
+// terminal. Index problems are surfaced, never swallowed: stale/error prints
+// its diagnostic after the results.
 export async function recallCommand(args: ParsedArgs, ctx: RunContext): Promise<string> {
   const query = args.positionals.join(' ');
   if (query.trim().length === 0) throw new UsageError('usage: deck recall <query>');
   const project = resolveProject(ctx.registry, args, ctx.cwd);
   const store = await getStore(project.path);
-  const hits = recall(store, query);
-  if (hits.length === 0) return `no memory matches '${query.trim()}'`;
-  return hits.join('\n');
+  const detail = recallDetail(store, query);
+  const lines = detail.results.length === 0 ? [`no memory matches '${query.trim()}'`] : detail.results;
+  if (detail.status === 'stale' || detail.status === 'error') lines.push(`warning: ${detail.message}`);
+  return lines.join('\n');
 }
 
 // `deck setup` — deterministic host onboarding: idempotent register +

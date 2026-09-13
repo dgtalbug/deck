@@ -150,4 +150,7 @@ export interface NextDigest {
   verb?: VerbName | undefined;
   context: string;
   wipBlockedBy?: string | undefined;
+  // Empty-board result (E02 board/cli): friendly no-work digest; the board
+  // was not mutated. cardId/title are '' when set.
+  empty?: boolean | undefined;
 }

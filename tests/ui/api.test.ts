@@ -62,7 +62,9 @@ describe('boardApi against a live server', () => {
     expect(note.title).toBe('api note');
     const board = await boardApi.fetchBoard('uiproj');
     expect(board.lanes.todo.map((card) => card.id)).toContain(note.id);
-    await expect(boardApi.fetchNext('uiproj')).rejects.toThrow(/groomed card/);
+    // E02: a todo-only board is a friendly empty digest, not a 404
+    const emptyDigest = await boardApi.fetchNext('uiproj');
+    expect(emptyDigest.empty).toBe(true);
   });
 
   test('groom converts; move respects MANUAL_TRANSITIONS; reorder/block/unblock/demote work', async () => {
@@ -107,7 +109,7 @@ describe('boardApi against a live server', () => {
     // at limit, next names the card to finish instead
     const digest = await boardApi.fetchNext('uiproj');
     expect(digest.wipBlockedBy).toBeDefined();
-    expect(digest.context).toContain('Remaining tasks');
+    expect(digest.context).toContain('## Tasks');
   });
 
   test('unknown project → 404 ApiError', async () => {

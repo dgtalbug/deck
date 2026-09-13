@@ -59,12 +59,14 @@ describe('json-rpc error contract', () => {
         jsonrpc: '2.0',
         id: 4,
         method: 'tools/call',
-        params: { name: 'next_digest', arguments: { project: 'errproj' } },
+        // E02: next_digest on an empty board is a friendly empty result, no
+      // longer a typed error — the typed-error path uses verify instead.
+      params: { name: 'verify', arguments: { project: 'errproj', cardId: 'no-such-card' } },
       }),
       mcp,
     );
     const result = JSON.parse(out[0]!) as { result: { isError: boolean; content: Array<{ text: string }> } };
-    // empty queue → NotFoundError → isError result (not a protocol error)
+    // unknown card → NotFoundError → isError result (not a protocol error)
     expect(result.result.isError).toBe(true);
     await handleFrame(registry, JSON.stringify({ jsonrpc: '2.0', id: 5, method: 'ping' }), mcp);
     expect(JSON.parse(out[1]!)).toMatchObject({ id: 5, result: {} });

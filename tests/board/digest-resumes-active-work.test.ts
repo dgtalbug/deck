@@ -1,6 +1,6 @@
-// digest-resumes-active (deck-next-breaks fix): the nextDigest contract —
-// WHEN any active card exists and the groomed queue is empty, the digest is
-// that card's build pack, never a lookup failure, regardless of WIP limit.
+// digest-resumes-active (deck-next-breaks fix, E02 resume-first): the
+// nextDigest contract — the most-advanced active card leads, including when
+// WIP has spare capacity; the empty board is a friendly non-mutating result.
 import { describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -44,17 +44,25 @@ describe('nextDigest resumes active work', () => {
     expect(digest.context).toContain('branch:');
   });
 
-  test('active card + non-empty groomed queue still prefers the queue top', async () => {
+  test('active card + non-empty groomed queue resumes the active card first', async () => {
     const store = await fresh();
     const active = convertToVerbItem(store, proposal(store.addNote('busy').id));
     moveLane(store, active.id, 'active', 'engine');
     const queued = convertToVerbItem(store, proposal(store.addNote('next up').id));
-    expect(nextDigest(store).cardId).toBe(queued.id);
+    const digest = nextDigest(store);
+    expect(digest.cardId).toBe(active.id); // resume-first, even with spare WIP
+    expect(digest.context).toContain('resume this card first');
+    // read-only: both lanes untouched
+    expect(store.getVerbItem(queued.id).lane).toBe('groomed');
+    expect(store.getVerbItem(active.id).lane).toBe('active');
   });
 
-  test('empty board still refuses with the typed not-found', async () => {
+  test('empty board is a friendly no-work result, board untouched', async () => {
     const store = await fresh();
-    expect(() => nextDigest(store)).toThrow(/top-of-queue/);
+    const digest = nextDigest(store);
+    expect(digest.empty).toBe(true);
+    expect(digest.context).toContain('no work');
+    expect(store.listCards('todo')).toHaveLength(0);
   });
 
   test('cleanup', () => {

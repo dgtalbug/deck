@@ -146,9 +146,7 @@ export function replaceManaged(existing: string, label: string, content: string)
 export interface SkillPackOutcome {
   written: string[]; // "<host>/<skill>" entries (fresh installs + fenced upgrades)
   skipped: string[]; // user-modified files without a fence, named, untouched
-}
-
-export function installSkillPack(
+}export function installSkillPack(
   projectPath: string,
   hosts: Array<{ id: string; skillsDir: string }>,
   assets: Record<string, string> = skillAssets,
@@ -181,4 +179,60 @@ export function installSkillPack(
     }
   }
   return outcome;
+}
+
+// --- drift classification + repair preview (E02 DECK-ARCH-020) ---------------
+
+export type SkillRegionStatus = 'missing' | 'current' | 'stale' | 'customized';
+
+export interface SkillFileStatus {
+  file: string; // "<host>/<skill>/SKILL.md"
+  status: SkillRegionStatus;
+}
+
+export interface SkillPackStatus {
+  files: SkillFileStatus[];
+  // Repair preview: exactly which managed files `deck setup` would change
+  // (missing → fresh write, stale → managed upgrade), named without any
+  // bytes being touched. Customized files are never repairable.
+  repairable: string[];
+  unrepairable: string[];
+}
+
+// Read-only classification of one installed managed file against its asset:
+// current (fence body matches the asset), stale (missing, legacy-pristine, or
+// a drifted fence body — all safe managed repairs), customized (fence-less
+// user content — never overwritten).
+function classifyInstalled(existing: string, content: string, label: string): SkillRegionStatus {
+  const upgraded = replaceManaged(existing, label, content);
+  if (upgraded === null) return existing === content ? 'stale' : 'customized';
+  return upgraded === existing ? 'current' : 'stale';
+}
+
+// Doctor/setup preview: per detected host, every shipped skill classified.
+// Missing and stale are drift the safe repair command fixes; customized is
+// user content that survives both setup and repair.
+export function skillPackStatus(
+  projectPath: string,
+  hosts: readonly { id: string; skillsDir: string }[],
+  assets: Record<string, string> = skillAssets,
+): SkillPackStatus {
+  const detected = detectHosts(projectPath, hosts as AgentHost[]);
+  const files: SkillFileStatus[] = [];
+  for (const host of detected) {
+    for (const [rel, content] of Object.entries(assets)) {
+      const file = join(projectPath, host.skillsDir, rel);
+      const name = `${host.id}/${rel}`;
+      if (!existsSync(file)) {
+        files.push({ file: name, status: 'missing' });
+        continue;
+      }
+      files.push({ file: name, status: classifyInstalled(readFileSync(file, 'utf8'), content, rel) });
+    }
+  }
+  return {
+    files,
+    repairable: files.filter((f) => f.status === 'missing' || f.status === 'stale').map((f) => f.file),
+    unrepairable: files.filter((f) => f.status === 'customized').map((f) => f.file),
+  };
 }

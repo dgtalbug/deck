@@ -68,6 +68,8 @@ export interface NextDigest {
   verb?: Verb;
   context: string;
   wipBlockedBy?: string;
+  // Empty-board digest (E02 board/cli): friendly no-work result, board untouched.
+  empty?: boolean;
 }
 
 // GET /<project>/git — mirrors src/core/git/digest.ts (local facts only).

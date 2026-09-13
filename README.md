@@ -12,18 +12,20 @@ and a GitHub loop — one binary, one server, every agent.
 
 ## Status — what's real today
 
-deck is early and building in the open. The **board, CLI, server, UI, and git/gh layer are shipped and live-verified** (310 tests green). The **SDD engine verbs are in active build** — the plan and decision ledger live in [`.meta/sdd-engine.md`](.meta/sdd-engine.md).
+deck is early and building in the open. The **board, CLI, server, UI, the SDD engine verbs, and the git/gh layer are shipped and live-verified** (768 tests green). The plan and decision ledger live in [`.meta/sdd-engine.md`](.meta/sdd-engine.md).
 
 **Working now:**
 
 - **Board core** — `todo → groomed → active → verify → done` lanes on SQLite (WAL for concurrent agents, FTS5-ready), engine-owned lane law (humans move `todo ↔ groomed` only; `active`/`verify`/`done` are engine events), WIP limits, transactional event outbox.
 - **Three doors, one core** — the same core functions behind a REST/SSE server ([OpenAPI 0.3.0](http://127.0.0.1:3325/openapi.json)), a CLI, and a single-file compiled binary.
-- **CLI** — `deck note · board · groom · move · reorder · block · unblock · next · tweak · verify · init · doctor · projects · serve`.
+- **CLI** — `deck note · board · groom · move · reorder · block · unblock · next · tweak · feat/fix/… · verify · review · archive · recall · checkpoint · ops · rules · graph · init · doctor · projects · serve`.
 - **Web UI** — dark-default board at `http://127.0.0.1:3325` with live SSE updates, note capture in one action, card detail, groom form, deep-linkable `?view=todo|git`, guarded git view (branch/merge/commit/stash/PR), skeleton loading states.
 - **Git + gh** — 13 guarded git operations plus PR create/list behind typed `GhUnavailable` handling; `gh` resolved beyond `PATH`.
 - **Fast lane** — `deck tweak` promotes a one-line note straight to a build; ceremony scales with blast radius, never the other way around.
-
-**Building next (the engine):** `deck feat`/`fix` end-to-end, specs stored in the deck database and **published as GitHub issues when implementation starts**, a deterministic verify-converge loop, a lean review gate, and archive → merge PR → changelog. Full plan: [`.meta/sdd-engine.md`](.meta/sdd-engine.md).
+- **Resume-first `deck next`** — the most-advanced active card leads the digest (bounded ≤8k-char packet: scope, tasks, laws, checkpoint, recall); `deck next --ready` peeks at the queue read-only without starting or reserving anything; an empty board says so plainly.
+- **Session checkpoints** — `deck checkpoint <id>` reads the card's durable decisions; `deck checkpoint <id> add "<text>" --kind decision|gotcha|remaining|blocker` writes one (revision-checked, retry-safe, human text never overwritten). Current-card checkpoints ride the `deck next` digest; stale ones are labeled historical.
+- **Trustworthy recall** — session memory stays authoritative Markdown; the FTS index rebuilds transactionally from a content signature (mtime games can't fool it), queries are literal, and stale/error diagnostics surface in `deck recall` and the digest instead of pretending the memory is empty.
+- **Tracked skill pack** — the fourteen `deck-*` runbooks are authored in `src/skills/`, embedded byte-for-byte into the binary, and `deck doctor` reports missing/stale/customized installs; `deck setup` repairs managed regions without touching your edits.
 
 ## Quick start
 
@@ -37,10 +39,10 @@ bun run build          # UI bundle + single-file ./deck binary
 
 ./deck serve           # board at http://127.0.0.1:3325
 ./deck note "first thought"
-./deck doctor          # 7/7 checks
+./deck doctor          # 9 checks
 ```
 
-Or run from source: `bun run dev` (server) · `bun test` (310 tests) · `bun run typecheck`.
+Or run from source: `bun run dev` (server) · `bun test` (768 tests) · `bun run typecheck`.
 
 ## The loop (where this is going)
 
@@ -56,8 +58,8 @@ deck note ─→ groom ─→ deck feat ──→ implement ──→ verify ─
 - **Specs live in the db, not markdown folders** — every groomed change carries its delta spec, research, and tasks as first-class data.
 - **Every spec gets a GitHub issue from birth** — grooming publishes a draft issue; starting the verb retargets it; labels mirror lanes; `deck sync` reconciles.
 - **The verb is the process** — spec types (`deck types`) are user-editable workflows: `fix` demands Reproduce + Root cause and cannot pass review without a red→green test; `feat` demands design sections when the blast radius grows; custom types carry their own sections, task laws, and git conventions, edited live without touching code.
-- **Agents get a full skill pack** — `deck setup` installs 11 composable runbook skills (capture → build → finish, plus git conventions, resume, sync) into every detected agent host's skills directory.
-- **The engine is deterministic** — deck computes checklists and gaps instantly; agents bring the intelligence via `deck next` (≤2k-token context packs).
+- **Agents get a full skill pack** — `deck setup` installs fourteen composable runbook skills (capture → build → finish, plus git conventions, resume, sync, graph lenses) into every detected agent host's skills directory — reproduced byte-for-byte from the tracked `src/skills/` source, with drift reported by `deck doctor`.
+- **The engine is deterministic** — deck computes checklists and gaps instantly; agents bring the intelligence via `deck next` (≤8k-char bounded context packets with source/revision status and required-read directives on overflow).
 - **No lock-in** — import/export adapters planned for openspec, spec-kit, backlog.md, and plain Markdown/JSON.
 
 ## Architecture

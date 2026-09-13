@@ -8,6 +8,7 @@ import { viewIssue } from '../git/issues.ts';
 import { runGit } from '../git/digest.ts';
 import { runGh } from '../git/gh.ts';
 import { AGENTS_END, AGENTS_START, agentsBlock, boardUrlFor } from './init.ts';
+import { HOST_SEED, skillPackStatus } from './harness.ts';
 import type { ProjectRegistry } from './registry.ts';
 
 // Read-only drift reporter (design D6): reuses the existing resolvers
@@ -105,8 +106,34 @@ export async function runDoctor(
   });
 
   checks.push(await mapDriftCheck(projectPath));
+  checks.push(skillPackCheck(projectPath));
 
   return checks;
+}
+
+// Skill-pack drift (E02 DECK-ARCH-020): missing/stale managed files are
+// repairable drift (deck setup is the safe repair command); a customized
+// file is user content — reported, never counted as drift to fix.
+function skillPackCheck(projectPath: string): DoctorCheck {
+  const status = skillPackStatus(projectPath, HOST_SEED);
+  if (status.files.length === 0) {
+    return { name: 'skill pack', pass: true, detail: 'skipped — no agent host detected' };
+  }
+  const missing = status.files.filter((f) => f.status === 'missing').length;
+  const stale = status.files.filter((f) => f.status === 'stale').length;
+  const current = status.files.filter((f) => f.status === 'current').length;
+  const customized = status.unrepairable;
+  const drifted = missing + stale;
+  const parts = [`${current} current`, customized.length > 0 ? `${customized.length} customized (user — left untouched)` : undefined];
+  if (drifted === 0) {
+    return { name: 'skill pack', pass: true, detail: parts.filter(Boolean).join(', ') || `${status.files.length} current` };
+  }
+  parts.unshift(`${missing} missing`, `${stale} stale`);
+  return {
+    name: 'skill pack',
+    pass: false,
+    detail: `drift: ${parts.filter(Boolean).join(', ')} — run \`deck setup\` to repair the managed files (${status.repairable.length} would change)`,
+  };
 }
 
 // Spec-store map drift (v0.4.0): every mapped issue must exist on GitHub,
