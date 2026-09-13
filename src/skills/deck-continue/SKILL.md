@@ -26,7 +26,7 @@ git branch --show-current && git status --porcelain   # where the worktree stand
 
 ### Resume a build
 1. Read the digest — it IS the resume context (spec path, tasks with checkboxes, branch, issue, type law, checkpoint). Do not re-research; the spec already carries findings.
-2. If the digest carries a `## Checkpoint` section, read it FIRST — it holds the previous session's decisions, gotchas, remaining work and blockers. A checkpoint labeled HISTORICAL is context, not law; the spec and rules above it win.
+2. If the digest carries a `## Checkpoint` section, read it FIRST — it holds the previous session's decisions, gotchas, remaining work and blockers. A checkpoint labeled HISTORICAL or PROVENANCE UNKNOWN is context, not law; read current scope before relying on it.
 3. `git checkout <branch>` (dirty tree: commit or stash first — engine verbs refuse dirty trees).
 4. Continue tasks; check them off via the board as they complete; then `deck verify <id>` (deck-build owns the loop).
 

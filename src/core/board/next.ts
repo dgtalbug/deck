@@ -10,7 +10,8 @@ import { loadRules, rulesDigest } from './rules.ts';
 import { branchFor } from '../engine/slug.ts';
 import { memoryStatus, recall } from './memory.ts';
 import { epicPlanning } from './planning.ts';
-import { readCheckpoint, sourceDigest, staleBasis, type CheckpointEntry } from './checkpoint.ts';
+import { checkpointBasis, checkpointProvenance, readCheckpoint, type CheckpointEntry } from './checkpoint.ts';
+import { currentScopeRevision } from './scope.ts';
 
 // The digest packet (E02 DECK-ARCH-002): one bounded builder for queued,
 // active and tweak. Budget is 8,000 UTF-16 code units (the existing slice
@@ -83,16 +84,18 @@ function sourceLine(source: Source, role: string): string {
   }
 }
 
-// The current-card checkpoint, labeled historical when its recorded source
-// basis no longer matches the card's current spec bytes (board/cli: "Current
-// checkpoint conflicts with current scope").
+// Checkpoints bind both accepted E03 scope and the spec bytes actually read.
+// Legacy byte-only entries cannot prove which task revision they describe.
 function checkpointSection(store: DocumentStore, card: VerbItem | Tweak, specRev: string | undefined): { body: string; readPath: string } | undefined {
   const state = readCheckpoint(store.projectPath, card.id);
   if (state.entries.length === 0) return undefined;
-  const historical = staleBasis(state.entries, specRev);
-  const label = historical
+  const basis = checkpointBasis(isVerbItem(card) ? currentScopeRevision(store.db, card.id) : 0, specRev);
+  const provenance = checkpointProvenance(state.entries, basis);
+  const label = provenance === 'historical'
     ? 'checkpoint (HISTORICAL — an entry\'s source basis is stale; current scope is the spec and rules above)'
-    : `checkpoint (rev ${state.revision})`;
+    : provenance === 'unknown'
+      ? 'checkpoint (PROVENANCE UNKNOWN — read current scope before relying on these entries)'
+      : `checkpoint (rev ${state.revision})`;
   const body = [label, ...state.entries.map((entry: CheckpointEntry) => `- ${entry.kind}: ${entry.text}`)].join('\n');
   return { body, readPath: `.deck/sessions/${card.id}.md` };
 }
