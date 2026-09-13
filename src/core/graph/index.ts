@@ -389,14 +389,12 @@ function deleteFileGraph(db: Database, relativePath: string): void {
   db.query('DELETE FROM g_file WHERE relative_path = ?').run(relativePath);
   db.query("DELETE FROM symbols_fts WHERE file_id = ?").run(fileId);
 }
-
 function countSymbols(db: Database): number {
   return (db.query('SELECT COUNT(*) AS n FROM g_symbol').get() as { n: number }).n;
 }
 function countEdges(db: Database): number {
   return (db.query('SELECT COUNT(*) AS n FROM g_edge').get() as { n: number }).n;
 }
-
 export function graphExists(projectPath: string): boolean {
   return existsSync(join(projectPath, '.deck', 'graph.sqlite'));
 }

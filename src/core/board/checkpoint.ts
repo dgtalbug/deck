@@ -12,8 +12,8 @@
 // write and is the compare-and-swap token: a write carrying expectRevision
 // refuses on mismatch without touching the file. Writers serialize through
 // an exclusive lock directory (mkdir is atomic; rename alone is not CAS).
-// Source basis is the sha256-16 of the exact source bytes the writer read —
-// `unknown` is the explicit pre-E03 value when no revision is available.
+// New basis binds E03 scope revision and exact spec bytes. Legacy digest-only
+// entries remain readable, but cannot prove E03 task-scope provenance.
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { SESSIONS_DIR, sessionPath } from './memory.ts';
@@ -32,7 +32,7 @@ export class CheckpointBoundsError extends Error {}
 export interface CheckpointEntry {
   id: string;
   kind: CheckpointKind;
-  basis: string; // sha256-16 of the source bytes read, or 'unknown'
+  basis: string; // scope:<revision>:<sha16>, legacy sha16, or 'unknown'
   text: string;
 }
 
@@ -45,6 +45,11 @@ export interface CheckpointState {
 
 export function sourceDigest(text: string): string {
   return new Bun.CryptoHasher('sha256').update(text).digest('hex').slice(0, 16);
+}
+
+export function checkpointBasis(scopeRevision: number, sourceRevision: string | undefined): string {
+  if (sourceRevision === undefined) return 'unknown';
+  return scopeRevision > 0 ? `scope:${scopeRevision}:${sourceRevision}` : sourceRevision;
 }
 
 const FENCE_START = /^<!-- deck:checkpoint rev=(\d+) -->$/;
@@ -82,12 +87,22 @@ export function readCheckpoint(projectPath: string, cardId: string): CheckpointS
   return parseCheckpoint(readFileSync(path, 'utf8'));
 }
 
-// Stale basis check: a checkpoint is historical when any entry's basis
-// disagrees with the current bytes of the source it claims to describe
-// (`unknown` bases are explicitly unknown, never falsely stale).
-export function staleBasis(entries: CheckpointEntry[], currentSourceDigest: string | undefined): boolean {
-  if (currentSourceDigest === undefined) return false;
-  return entries.some((entry) => entry.basis !== 'unknown' && entry.basis !== currentSourceDigest);
+// A legacy digest cannot establish which E03 task-scope revision was read.
+// Preserve it as context, but never present it as proven current scope.
+export function checkpointProvenance(entries: CheckpointEntry[], currentBasis: string): 'current' | 'historical' | 'unknown' {
+  let unknown = false;
+  for (const entry of entries) {
+    if (entry.basis === 'unknown' || currentBasis === 'unknown') {
+      unknown = true;
+    } else if (/^scope:\d+:[0-9a-f]{16}$/.test(entry.basis)) {
+      if (entry.basis !== currentBasis) return 'historical';
+    } else if (currentBasis.startsWith('scope:')) {
+      unknown = true;
+    } else if (entry.basis !== currentBasis) {
+      return 'historical';
+    }
+  }
+  return unknown ? 'unknown' : 'current';
 }
 
 interface CheckpointWrite {

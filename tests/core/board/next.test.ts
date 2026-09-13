@@ -2,10 +2,14 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { convertToVerbItem, tweak } from '../../../src/core/board/groom.ts';
+import { updateGroom } from '../../../src/core/board/crud.ts';
 import { moveLane } from '../../../src/core/board/lanes.ts';
 import { nextDigest, readyWork } from '../../../src/core/board/next.ts';
 import { openStore, type DocumentStore } from '../../../src/core/board/store.ts';
-import { writeCheckpoint, sourceDigest } from '../../../src/core/board/checkpoint.ts';
+import { writeCheckpoint, sourceDigest, checkpointBasis } from '../../../src/core/board/checkpoint.ts';
+import { currentScopeRevision } from '../../../src/core/board/scope.ts';
+import { checkpointCommand } from '../../../src/cli/checkpoint.ts';
+import { parseArgs } from '../../../src/cli/args.ts';
 import { tmpProject } from '../../helpers.ts';
 
 // E02 board/cli + DECK-ARCH-002: the bounded packet builder (queued, active,
@@ -128,7 +132,7 @@ describe('packet builder (queued)', () => {
     const item = groomed('checkpoint probe');
     const card = store.getVerbItem(item.id);
     const specBytes = readFileSync(join(path, card.specPath, 'spec.md'), 'utf8');
-    writeCheckpoint(path, card.id, { text: 'we chose the packet assembler', kind: 'decision', basis: sourceDigest(specBytes) });
+    writeCheckpoint(path, card.id, { text: 'we chose the packet assembler', kind: 'decision', basis: checkpointBasis(currentScopeRevision(store.db, card.id), sourceDigest(specBytes)) });
     const fresh = nextDigest(store);
     expect(fresh.context).toContain('## Checkpoint');
     expect(fresh.context).toContain('we chose the packet assembler');
@@ -138,6 +142,46 @@ describe('packet builder (queued)', () => {
     const stale = nextDigest(store);
     expect(stale.context).toContain('HISTORICAL');
     writeFileSync(join(path, card.specPath, 'spec.md'), specBytes);
+  });
+
+  test('task-only scope revision makes a CLI checkpoint historical while progress does not', async () => {
+    const item = groomed('task scope checkpoint', ['first task']);
+    const card = store.getVerbItem(item.id);
+    const specPath = join(path, card.specPath, 'spec.md');
+    const specBytes = readFileSync(specPath, 'utf8');
+    const scopeBefore = currentScopeRevision(store.db, card.id);
+    await checkpointCommand(store, parseArgs(['checkpoint', card.id, 'add', 'decision at original scope']));
+    expect(nextDigest(store).context).not.toContain('HISTORICAL');
+    expect(nextDigest(store).context).not.toContain('PROVENANCE UNKNOWN');
+
+    store.syncTasks(card.id, card.tasks.map((task) => ({ ...task, done: true })), 'engine');
+    expect(currentScopeRevision(store.db, card.id)).toBe(scopeBefore);
+    expect(nextDigest(store).context).not.toContain('HISTORICAL');
+
+    updateGroom(store, card.id, {
+      noteId: card.id,
+      proposedVerb: 'feat',
+      refinedTitle: card.title,
+      research: { codebaseFindings: [] },
+      specDeltas: [],
+      tasks: ['first task', 'second task'],
+      taskOps: [{ op: 'keep', id: card.tasks[0]!.id }, { op: 'add', title: 'second task' }],
+      openQuestions: [],
+      expectedRevision: scopeBefore,
+    });
+    expect(readFileSync(specPath, 'utf8')).toBe(specBytes);
+    expect(currentScopeRevision(store.db, card.id)).toBe(scopeBefore + 1);
+    expect(nextDigest(store).context).toContain('HISTORICAL');
+  });
+
+  test('legacy byte-only checkpoint remains readable but cannot claim E03 scope provenance', () => {
+    const item = groomed('legacy checkpoint basis');
+    const card = store.getVerbItem(item.id);
+    const specBytes = readFileSync(join(path, card.specPath, 'spec.md'), 'utf8');
+    writeCheckpoint(path, card.id, { text: 'old entry', kind: 'decision', basis: sourceDigest(specBytes) });
+    const digest = nextDigest(store);
+    expect(digest.context).toContain('old entry');
+    expect(digest.context).toContain('PROVENANCE UNKNOWN');
   });
 });
 

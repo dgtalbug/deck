@@ -8,21 +8,26 @@
 // compare-and-swap live in the core (checkpoint.ts), so CLI, runbooks and
 // future doors share one conflict law.
 import { UsageError, type ParsedArgs } from './args.ts';
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import {
-  CheckpointConflictError,
+  checkpointBasis,
   MAX_CHECKPOINT_TEXT,
   readCheckpoint,
+  sourceDigest,
   writeCheckpoint,
   type CheckpointKind,
 } from '../core/board/checkpoint.ts';
 import type { DocumentStore } from '../core/board/store.ts';
+import { currentScopeRevision } from '../core/board/scope.ts';
+import { isVerbItem } from '../core/board/types.ts';
 
 export async function checkpointCommand(store: DocumentStore, args: ParsedArgs): Promise<string> {
   const cardId = args.positionals[0];
   if (cardId === undefined) throw new UsageError('usage: deck checkpoint <card-id> [add "<text>" --kind <kind>]');
   // Card identity: the checkpoint door refuses unknown cards instead of
   // creating orphan session files.
-  store.getCard(cardId);
+  const card = store.getCard(cardId);
   const sub = args.positionals[1];
   if (sub === undefined) {
     const state = readCheckpoint(store.projectPath, cardId);
@@ -54,12 +59,19 @@ export async function checkpointCommand(store: DocumentStore, args: ParsedArgs):
   }
   const basisFlag = args.flags['basis'];
   const idFlag = args.flags['id'];
+  const specPath = isVerbItem(card) ? join(store.projectPath, card.specPath, 'spec.md') : undefined;
+  const sourceRevision = specPath !== undefined && existsSync(specPath)
+    ? sourceDigest(readFileSync(specPath, 'utf8'))
+    : undefined;
+  const basis = typeof basisFlag === 'string'
+    ? basisFlag
+    : checkpointBasis(isVerbItem(card) ? currentScopeRevision(store.db, cardId) : 0, sourceRevision);
   // CheckpointConflictError passes through: a conflict is a real failure the
   // caller must see, not a usage mistake.
   const state = writeCheckpoint(store.projectPath, cardId, {
     text,
     kind,
-    basis: typeof basisFlag === 'string' ? basisFlag : undefined,
+    basis,
     id: typeof idFlag === 'string' ? idFlag : undefined,
     expectRevision,
   });
