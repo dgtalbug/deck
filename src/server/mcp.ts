@@ -4,7 +4,7 @@
 // direct core call on the same DocumentStore the CLI/HTTP doors use.
 import { boardView } from '../core/board/views.ts';
 import { nextDigest } from '../core/board/next.ts';
-import { applyVerifyResult } from '../core/board/verify.ts';
+import { applyExplicitResult } from '../core/board/verify.ts';
 import { runVerification } from '../core/engine/verify.ts';
 
 import { projectStore } from './stores.ts';
@@ -43,7 +43,8 @@ export const TOOLS: readonly ToolDescriptor[] = [
   },
   {
     name: 'task_sync',
-    description: 'Apply an explicit verify result to a card (applyVerifyResult core)',
+    description:
+      'Apply an explicit verify result to a card (applyExplicitResult core — verbs hold in verify on clean, tweaks close; completion is archive finalization alone)',
     inputSchema: {
       type: 'object',
       properties: {
@@ -90,7 +91,7 @@ export async function callTool(registry: ProjectRegistry, name: string, params: 
         throw new InvalidParamsError('cardId/result');
       }
       const newTasks = Array.isArray(params['newTasks']) ? (params['newTasks'] as string[]) : [];
-      return applyVerifyResult(store, cardId, result, newTasks);
+      return applyExplicitResult(store, cardId, result, newTasks);
     }
     case 'verify': {
       const cardId = params['cardId'];

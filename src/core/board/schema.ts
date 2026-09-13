@@ -81,9 +81,31 @@ export const userVerbs = sqliteTable('user_verbs', {
   registeredAt: text('registered_at').notNull(),
 });
 
+// Execution ownership (engine/ownership): one row per engine operation —
+// the atomic start reservation, the checkout guard, and the recovery
+// ledger. DDL lives in open-state (engine-owned, idempotent); this is the
+// typed shape queries use.
+export const operations = sqliteTable('operations', {
+  id: text('id').primaryKey(),
+  cardId: text('card_id').notNull(),
+  kind: text('kind', { enum: ['start', 'continue', 'review', 'archive'] })
+    .$type<'start' | 'continue' | 'review' | 'archive'>()
+    .notNull(),
+  owner: text('owner').notNull(),
+  checkout: text('checkout').notNull(),
+  state: text('state', {
+    enum: ['reserved', 'active', 'recovery-required', 'completed', 'compensated'],
+  })
+    .$type<'reserved' | 'active' | 'recovery-required' | 'completed' | 'compensated'>()
+    .notNull(),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+});
+
 export type CardRow = typeof cards.$inferSelect;
 export type TaskRow = typeof tasks.$inferSelect;
 export type SpecRow = typeof specs.$inferSelect;
 export type IssueMapRow = typeof issueMap.$inferSelect;
 export type PublishQueueRow = typeof publishQueue.$inferSelect;
 export type UserVerbRow = typeof userVerbs.$inferSelect;
+export type OperationRow = typeof operations.$inferSelect;

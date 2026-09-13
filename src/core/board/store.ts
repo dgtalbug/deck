@@ -16,7 +16,7 @@ import { toEpic, toNote, toTweak, toVerbItem } from './mappers.ts';
 import { isNote } from './types.ts';
 import { emitEvent } from '../events/outbox.ts';
 import { withMomentSync } from '../engine/moments.ts';
-import { ensureEngineState } from './open-state.ts';
+import { ensureEngineState, assertWriterAllowed } from './open-state.ts';
 
 // The board database filename inside a project's .deck/ — one constant shared
 // by the store, doctor, and the CLI's printed facts so they cannot drift.
@@ -72,6 +72,9 @@ export class DocumentStore {
     // exclusive lock, which throws SQLITE_BUSY without the wait.
     sqlite.exec('PRAGMA busy_timeout = 5000');
     sqlite.exec('PRAGMA journal_mode = WAL');
+    // Writer fence BEFORE migrations: a db written by a newer deck refuses an
+    // older binary before it can write anything at all.
+    assertWriterAllowed(sqlite);
     const db = drizzle({ client: sqlite });
     // Fresh-board DDL races between processes: retry (the journal makes the
     // loser a no-op). Compiled binaries carry the journal embedded.
@@ -89,7 +92,7 @@ export class DocumentStore {
         await Bun.sleep(50 * (attempt + 1));
       }
     }
-    await ensureEngineState(sqlite);
+    await ensureEngineState(sqlite, projectPath);
     const config = await readDeckConfig(projectPath);
     return new DocumentStore(projectPath, dbPath, db, config.board?.wipLimit ?? 3, sqlite);
   }

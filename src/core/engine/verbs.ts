@@ -2,27 +2,26 @@
 // one shared engine (the verb is data, not a branch in logic). Start =
 // engine transition groomed→active, publish-at-start (queued offline,
 // never blocking), guarded branch create with full compensation on refusal.
-// Archive = spec-generated PR merged --no-ff, card → done through the
-// existing verify core, mapped issue closed, branch deleted.
+// The archive side lives in archive.ts; the review gate in review.ts.
 import { DeckError } from '../board/errors.ts';
-import { assertUnderWip, moveLane } from '../board/lanes.ts';
-import { applyVerifyResult } from '../board/verify.ts';
-import { newestSpecVersion, getIssueMap, deleteIssueMap, dequeuePublish } from '../board/specstore.ts';
+import { assertUnderWip, mostAdvancedActive, moveLane } from '../board/lanes.ts';
+import { getIssueMap, deleteIssueMap, dequeuePublish } from '../board/specstore.ts';
 import { publishSpec } from '../board/publish.ts';
-import { listQueue } from '../board/specstore.ts';
-import { closeIssue } from '../git/issues.ts';
 import { GhUnavailableError, GitOpError } from '../git/errors.ts';
-import { runGit } from '../git/digest.ts';
 import { rmSync } from 'node:fs';
+import { eq } from 'drizzle-orm';
+import { createBranch } from '../git/ops.ts';
+import { runTx, type DocumentStore } from '../board/store.ts';
+import { cards } from '../board/schema.ts';
 import {
-  createBranch,
-  createPullRequest,
-  deleteBranch,
-  mergeBranch,
-  pushRemote,
-  switchBranch,
-} from '../git/ops.ts';
-import type { DocumentStore } from '../board/store.ts';
+  activateOperation,
+  canonicalCheckout,
+  completeOperation,
+  compensateOperation,
+  ownerToken,
+  reserveOperationInTx,
+  type Operation,
+} from './ownership.ts';
 import { getSpecType, sectionGate } from '../board/types-registry.ts';
 import type { VerbName, VerbItem } from '../board/types.ts';
 
@@ -30,34 +29,13 @@ import type { VerbName, VerbItem } from '../board/types.ts';
 // itself (engine lanes refuse title edits, so the slug cannot drift).
 import { branchFor } from './slug.ts';
 import { scaffoldSession, sessionPath } from '../board/memory.ts';
-import { archiveTail, ReviewBlockedError, reviewGate } from './verify.ts';
+import { assertCleanTree } from './archive.ts';
 import { runMomentPost, runMomentPre, type MomentPayload } from './moments.ts';
 import type { HookWarning } from './hooks.ts';
 export { branchFor };
-
-async function assertCleanTree(projectPath: string): Promise<void> {
-  const status = await runGit(projectPath, ['status', '--porcelain']);
-  if (status.code !== 0) {
-    throw new DeckError(`cannot inspect the working tree in ${projectPath}`, {
-      output: `${status.stdout}${status.stderr}`.trim(),
-    });
-  }
-  if (status.stdout.trim() !== '') {
-    throw new DeckError(
-      `working tree is not clean — commit or stash before starting a verb build`,
-      { dirty: status.stdout.trim() },
-    );
-  }
-}
-
-async function defaultBranch(projectPath: string): Promise<string> {
-  const remote = await runGit(projectPath, ['symbolic-ref', '--short', 'refs/remotes/origin/HEAD'], 5000);
-  if (remote.code === 0) {
-    const short = remote.stdout.trim().replace(/^origin\//, '');
-    if (short.length > 0) return short;
-  }
-  return 'main';
-}
+// The archive door shares this module's door surface (tests + CLI import
+// archiveVerb from here); the implementation is archive.ts.
+export { archiveVerb } from './archive.ts';
 
 // --- start ------------------------------------------------------------------
 
@@ -71,6 +49,10 @@ export interface StartOutcome {
 
 // D2 order: transition → publish → branch. A refusal after the transition
 // compensates back to groomed — a refusal must leave zero side effects.
+// engine/ownership: the start is RESERVED atomically (state + WIP counting
+// reservations + checkout guard in one transaction) before any awaited hook;
+// completion, release and compensation are owner-conditional, so concurrent
+// starts yield exactly one owner and a loser can never reset the winner.
 export async function startVerb(
   store: DocumentStore,
   id: string,
@@ -102,11 +84,45 @@ export async function startVerb(
   }
   assertUnderWip(store);
 
+  // The reservation transaction: serialized lane re-read, checkout guard,
+  // WIP (counting reservations) and the reservation INSERT — one
+  // BEGIN IMMEDIATE transaction, before any awaited hook runs.
+  const owner = ownerToken;
+  const checkout = canonicalCheckout(store.projectPath);
+  let operation: Operation | undefined;
+  runTx(store.db, (tx) => {
+    const row = tx.select().from(cards).where(eq(cards.id, id)).get();
+    if (row === undefined || row.lane !== 'groomed' || row.verb !== verb) {
+      throw new DeckError(
+        `card ${id} is not claimable as '${verb}' from lane '${row?.lane ?? 'missing'}' — state changed under the start`,
+        { cardId: id, lane: row?.lane ?? 'missing', verb },
+      );
+    }
+    operation = reserveOperationInTx(tx, {
+      cardId: id,
+      kind: 'start',
+      owner,
+      checkout,
+      wip: {
+        limit: store.wipLimit,
+        activeCount: store.activeCount(),
+        topCardId: mostAdvancedActive(store)?.id ?? 'unknown',
+      },
+    });
+  });
+
   // feat moment pre: a blocking hook refuses the start before the lane
-  // moves, the branch is created, or the issue publishes.
-  await runMomentPre(store, 'feat', startPayload(store, card, 'groomed'));
+  // moves, the branch is created, or the issue publishes. The reservation
+  // compensates — no public active transition happened.
+  try {
+    await runMomentPre(store, 'feat', startPayload(store, card, 'groomed'));
+  } catch (error) {
+    compensateOperation(store, operation!.id);
+    throw error;
+  }
 
   moveLane(store, id, 'active', 'engine');
+  activateOperation(store, operation!.id); // fail-closed if recovered elsewhere
   let publish;
   try {
     publish = await publishSpec(store, id); // queues on offline, never blocks
@@ -117,6 +133,7 @@ export async function startVerb(
     }
   } catch (error) {
     moveLane(store, id, 'groomed', 'engine'); // compensate
+    compensateOperation(store, operation!.id);
     throw error;
   }
   const branch = branchFor(card, verb);
@@ -126,6 +143,7 @@ export async function startVerb(
     scaffoldSession(store.projectPath, id, verb, branch); // the memory slot
   } catch (error) {
     moveLane(store, id, 'groomed', 'engine'); // compensate — no side effects
+    compensateOperation(store, operation!.id);
     rmSync(sessionPath(store.projectPath, id), { force: true }); // ... including the session file
     // ... and the publish side: the map row must not outlive the failed
     // start. The remote issue cannot be unwritten — report it as drift.
@@ -149,6 +167,9 @@ export async function startVerb(
     }
     throw error;
   }
+  // The start has fully committed: the reservation completes (owner-
+  // conditional — a reconciled operation refuses here, fail-closed).
+  completeOperation(store, operation!.id);
   const started = store.getVerbItem(id);
   // The feat post phase (and the pinned onVerbStart convention event inside
   // it) fires only after the start has fully committed.
@@ -184,140 +205,6 @@ function startPayload(
     card,
     timestamp: new Date().toISOString(),
   };
-}
-
-// --- archive ------------------------------------------------------------------
-
-export interface ArchiveOutcome {
-  card: VerbItem;
-  prUrl: string;
-  issueNumber: number;
-  tail: { changelog: string; release: string | null; warnings: string[] };
-  /** best-effort follow-ups that failed after the card reached done */
-  warnings: string[];
-  hookWarnings: HookWarning[];
-}
-
-// Minimal archive: the PR body IS the spec (zero hand-written markdown),
-// the merge is --no-ff, done arrives through applyVerifyResult, and the
-// mapped issue closes. gh offline refuses BEFORE any mutation — a merge is
-// the one place the network is load-bearing.
-export async function archiveVerb(store: DocumentStore, id: string): Promise<ArchiveOutcome> {
-  const card = store.getVerbItem(id);
-  if (card.lane !== 'active' && card.lane !== 'verify') {
-    throw new DeckError(
-      `card ${id} is in ${card.lane} — archive runs on an active or verify verb item`,
-      { cardId: id, lane: card.lane },
-    );
-  }
-  const map = getIssueMap(store, id);
-  if (map === undefined) {
-    // The start ran; the publish may simply still be queued (gh offline).
-    if (listQueue(store).some((entry: { cardId: string }) => entry.cardId === id)) {
-      throw new DeckError(
-        `card ${id}'s issue publish is still queued (gh was offline at start) — run deck sync to flush it, then archive`,
-        { cardId: id },
-      );
-    }
-    throw new DeckError(`card ${id} has no published issue — run its verb start first`, { cardId: id });
-  }
-  const version = newestSpecVersion(store, id);
-  if (version === undefined) {
-    throw new DeckError(`card ${id} has no spec version to build the PR body from`, { cardId: id });
-  }
-
-  // Refuse loudly before mutating when the publication cannot close.
-  const probe = await runGit(store.projectPath, ['rev-parse', '--git-dir'], 3000);
-  if (probe.code !== 0) {
-    throw new DeckError(`cannot archive outside a git repository`, { cardId: id });
-  }
-
-  const branch = branchFor(card, card.verb);
-  const base = await defaultBranch(store.projectPath);
-
-  // The review gate blocks archive while any finding stands (P1c D5) —
-  // before any mutation, nothing to unwind.
-  const findings = await reviewGate(store, id);
-  if (findings.length > 0) throw new ReviewBlockedError(id, findings);
-
-  // archive moment pre: blocks before the push/PR/merge sequence begins.
-  await runMomentPre(store, 'archive', {
-    moment: 'archive',
-    cardId: id,
-    lane: card.lane,
-    verb: card.verb,
-    branch,
-    issueNumber: map.issueNumber,
-    result: null,
-    card,
-    timestamp: new Date().toISOString(),
-  });
-
-  // Guarded sequence on clean trees only. gh cannot open a PR for a branch
-  // the remote has never seen — push the verb branch first, and push the
-  // merge after, so the loop closes on the remote too.
-  await assertCleanTree(store.projectPath);
-  const remote = await runGit(store.projectPath, ['remote']);
-  if (remote.stdout.trim() === '') {
-    throw new DeckError('archive requires a git remote — push the repository to origin first', {
-      cardId: id,
-    });
-  }
-  const current = await runGit(store.projectPath, ['rev-parse', '--abbrev-ref', 'HEAD']);
-  if (current.stdout.trim() !== branch) {
-    await switchBranch(store.projectPath, branch);
-  }
-  await pushRemote(store.projectPath);
-  const pr = await createPullRequest(store.projectPath, {
-    title: `merge: ${branch} — ${card.title}`,
-    base,
-    body: version.markdown,
-  });
-  await switchBranch(store.projectPath, base);
-  await mergeBranch(store.projectPath, branch, {
-    noFf: true,
-    message: `merge: ${branch} — ${card.title}`,
-  });
-  await pushRemote(store.projectPath);
-
-  // Card → verify → done through the existing cores (never a raw lane write).
-  if (card.lane === 'active') moveLane(store, id, 'verify', 'engine');
-  applyVerifyResult(store, id, 'clean');
-
-  // Post-done follow-ups are best-effort by construction: the merge is
-  // pushed and the card is done — a failing issue close or branch delete
-  // must NOT throw into an unretryable state (archive refuses done cards).
-  // Failures become warnings; deck sync reports the leftover drift.
-  const warnings: string[] = [];
-  try {
-    await closeIssue(store.projectPath, map.issueNumber);
-  } catch (error) {
-    warnings.push(
-      `issue #${map.issueNumber} not closed: ${error instanceof Error ? error.message : String(error)}`,
-    );
-  }
-  try {
-    await deleteBranch(store.projectPath, branch);
-  } catch (error) {
-    warnings.push(`branch ${branch} not deleted: ${error instanceof Error ? error.message : String(error)}`);
-  }
-  const tail = await archiveTail(store, id, pr.url);
-  warnings.push(...tail.warnings);
-  const done = store.getVerbItem(id);
-  // The archive post phase (and the pinned onArchive convention event inside
-  // it) fires after the loop has fully closed.
-  const hookWarnings = await runMomentPost(store, 'archive', {
-    moment: 'archive',
-    cardId: id,
-    lane: done.lane,
-    verb: done.verb,
-    branch,
-    issueNumber: map.issueNumber,
-    result: null,
-    card: done,
-    timestamp: new Date().toISOString(),
-  });
-  return { card: done, prUrl: pr.url, issueNumber: map.issueNumber, tail, warnings, hookWarnings };
 }
 
 // Kept for the offline-at-archive refusal contract (design D5): callers

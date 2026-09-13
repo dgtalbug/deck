@@ -3,6 +3,7 @@
 // digest's type law.
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync, writeFileSync, chmodSync, mkdirSync } from 'node:fs';
+import { execSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openStore } from '../../src/core/board/store.ts';
@@ -65,9 +66,20 @@ esac
 
 beforeAll(async () => {
   dir = mkdtempSync(join(tmpdir(), 'spec-type-registry-'));
-  mkdirSync(join(dir, '.git'), { recursive: true });
   binDir = join(dir, 'bin');
   mkdirSync(binDir, { recursive: true });
+  // Fail-closed review (engine/verify) binds the snapshot: the fixture needs
+  // a real git repo (not a faked .git dir) with base 'main' and the verb
+  // branch the fix card below reviews on.
+  const git = (command: string) => execSync(`git ${command}`, { cwd: dir, stdio: ['ignore', 'pipe', 'ignore'] });
+  git('init --initial-branch=main -q');
+  git('config user.email t@t');
+  git('config user.name t');
+  writeFileSync(join(dir, '.gitignore'), '.deck/\nbin/\n');
+  writeFileSync(join(dir, 'a.txt'), 'one\n');
+  git('add .');
+  git('commit -q -m c1');
+  git('checkout -q -b fix/typed-change');
   store = await openStore(dir);
 });
 

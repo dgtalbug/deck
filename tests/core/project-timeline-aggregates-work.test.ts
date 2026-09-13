@@ -71,7 +71,13 @@ function gitRepo(): string {
   return git('rev-parse HEAD').toString().trim();
 }
 
+function waitDistinctTimestamp(): void {
+  // distinct createdAt under a loaded shared test process
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 3);
+}
+
 function groom(title: string, tasks: string[]): string {
+  waitDistinctTimestamp(); // the note is created first — space it from any prior write
   const proposal: GroomProposal = {
     noteId: store.addNote(title).id,
     proposedVerb: 'feat',
@@ -82,14 +88,14 @@ function groom(title: string, tasks: string[]): string {
     openQuestions: [],
   };
   const id = convertToVerbItem(store, proposal).id;
-  // distinct createdAt under a loaded shared test process
-  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 3);
+  waitDistinctTimestamp();
   return id;
 }
 
 describe('project timeline aggregation', () => {
   test('aggregates epics, cards and done events newest-first', async () => {
     store.addEpic('timeline epic');
+    waitDistinctTimestamp(); // the epic's createdAt must sort below the cards'
     const a = groom('card a builds', ['one']);
     const b = groom('card b ships', ['one', 'two']);
     await new Promise((resolve) => setTimeout(resolve, 5));
