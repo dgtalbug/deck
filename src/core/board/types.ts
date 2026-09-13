@@ -142,7 +142,31 @@ export interface GroomProposal {
   specDeltas: Delta[];
   tasks: string[];
   openQuestions: string[];
+  // E03 DECK-ARCH-011 identity-bearing edit operations (re-groom only).
+  // Absent = legacy title-only payload: no-op/reorder still preserves
+  // identity, but any title change refuses as ambiguous instead of guessing.
+  taskOps?: TaskOp[] | undefined;
+  criterionOps?: CriterionOp[] | undefined;
+  // Expected current scope revision for re-groom (stale-writer refusal).
+  expectedRevision?: number | undefined;
 }
+
+// Explicit task edit operations. `keep`/`rename` reference an existing task
+// id; `add` mints one; `remove` retires it. Array order after applying ops
+// is the checklist order.
+export type TaskOp =
+  | { op: 'keep'; id: string }
+  | { op: 'rename'; id: string; title: string }
+  | { op: 'add'; title: string }
+  | { op: 'remove'; id: string };
+
+// Explicit criterion edit operations over the accepted spec deltas.
+// `classify` attaches a stable id to a legacy (unclassified) criterion.
+export type CriterionOp =
+  | { op: 'keep'; title: string }
+  | { op: 'classify'; title: string }
+  | { op: 'remove'; title: string }
+  | { op: 'supersede'; title: string; replacement: string };
 
 export interface NextDigest {
   cardId: string;

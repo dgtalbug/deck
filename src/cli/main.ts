@@ -12,6 +12,7 @@ import { renderHookWarnings } from '../core/engine/hooks.ts';
 import { runVerification } from '../core/engine/verify.ts';
 import { opsCommand } from './ops.ts';
 import { nextCommand, checkpointCliCommand } from './next.ts';
+import { depsCommand, epicPlanCommand } from './planning.ts';
 import { revertCommand } from './revert.ts';
 import { boardView, todoView } from '../core/board/views.ts';
 import type { Lane } from '../core/board/types.ts';
@@ -125,8 +126,7 @@ commands:
   verify <id> [--result clean|gaps]      compute gaps (or override the result)
   review <id>                       attack the diff vs spec — blocks archive
   ops [list]                        unsettled operations (recovery ledger)
-  ops reconcile <id> --confirm|--clean
-                                    release a crashed/legacy operation explicitly
+  ops reconcile <id> --confirm|--clean   release a crashed/legacy operation explicitly
   types [list] | types new <json-file> | types remove <id>
                                     spec-type registry (list · create-edit · remove)
   rules [list|check|validate]       project law (deck.rules.yaml) — check runs machine gates
@@ -146,7 +146,9 @@ commands:
   setup                             onboard agent hosts (adapter table + detection)
   skill new <name>                 scaffold a skill pack from the pinned template
   mcp                              MCP stdio server (JSON-RPC 2.0, four tools)
-  epic "<title>" / epic <id>        create an epic, or print its story tree
+  epic "<title>" / epic <id>        create an epic, or print its story tree + criteria
+  epic-plan <id> intent|link|defer|ack   epic intent/criteria authoring (revision-checked)
+  deps <card> [list|add|remove|set <p>…] story dependency edges (cycle-checked)
   epics                            list epics with done/total rollup
   story <epicId> "<title>"          capture a story attached to an epic
   archive <id>                     merge the PR, close the issue, card → done
@@ -314,6 +316,8 @@ const commands: Record<string, Command> = {
   override: overrideCommand,
   epic: epicCommand,
   epics: epicsCommand,
+  deps: depsCommand,
+  'epic-plan': epicPlanCommand,
   story: storyCommand,
   setup: setupCommand,
   skill: skillCommand,

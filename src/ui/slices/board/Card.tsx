@@ -142,6 +142,19 @@ export function Card({ card, actions, dnd, flash }: { card: UiCard; actions: Car
             <TriangleAlert size={11} /> blocked
           </span>
         ) : null}
+        {card.unmetDeps !== undefined && card.unmetDeps.length > 0 ? (
+          <span
+            class="badge b-warning"
+            title={`waiting on: ${card.unmetDeps.map((dep) => `${dep.id} [${dep.lane}]`).join(', ')}`}
+          >
+            <TriangleAlert size={11} /> {card.unmetDeps.length} prereq{card.unmetDeps.length === 1 ? '' : 's'}
+          </span>
+        ) : null}
+        {card.reviewNeeded === true ? (
+          <span class="badge b-warning" title="an upstream prerequisite reopened — re-check this story against current scope">
+            <TriangleAlert size={11} /> review-needed
+          </span>
+        ) : null}
         {kind === 'note' ? (
           <button
             class="btn btn-outline"

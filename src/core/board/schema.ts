@@ -23,6 +23,9 @@ export const cards = sqliteTable('cards', {
   research: text('research'), // JSON-encoded Research
   blockedReason: text('blocked_reason'),
   blockedAt: text('blocked_at'),
+  // E03 scope identity: current accepted-scope revision (null = legacy card,
+  // criterion identity unclassified until a reviewed edit supplies it).
+  scopeRevision: integer('scope_revision'),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
 });
@@ -109,3 +112,81 @@ export type IssueMapRow = typeof issueMap.$inferSelect;
 export type PublishQueueRow = typeof publishQueue.$inferSelect;
 export type UserVerbRow = typeof userVerbs.$inferSelect;
 export type OperationRow = typeof operations.$inferSelect;
+
+// --- E03 planning state (raw DDL in open-state.ts; typed shapes here) ------
+
+// Immutable accepted-scope revisions per card: the digest covers canonical
+// scope (identity + titles + order), never checkbox progress or render.
+export const scopeRevisions = sqliteTable('scope_revisions', {
+  cardId: text('card_id').notNull(),
+  revision: integer('revision').notNull(),
+  digest: text('digest').notNull(),
+  operations: text('operations').notNull(), // JSON op summary for lineage
+  createdAt: text('created_at').notNull(),
+});
+
+// Stable criterion identity per card. Legacy cards have no rows here —
+// criterion identity stays `unclassified` until a reviewed edit supplies it.
+export const scopeItems = sqliteTable('scope_items', {
+  cardId: text('card_id').notNull(),
+  id: text('id').notNull(),
+  kind: text('kind', { enum: ['criterion'] }).$type<'criterion'>().notNull(),
+  title: text('title').notNull(),
+  state: text('state', { enum: ['active', 'removed', 'superseded'] })
+    .$type<'active' | 'removed' | 'superseded'>()
+    .notNull(),
+  firstRevision: integer('first_revision').notNull(),
+  lastRevision: integer('last_revision').notNull(),
+});
+
+// Epic intent: versioned parent constraints (optional — title-only is valid).
+export const epicIntent = sqliteTable('epic_intent', {
+  epicId: text('epic_id').primaryKey(),
+  revision: integer('revision').notNull(),
+  intent: text('intent').notNull(),
+  updatedAt: text('updated_at').notNull(),
+});
+
+// Epic acceptance criteria with stable IDs; deferral is explicit.
+export const epicCriteria = sqliteTable('epic_criteria', {
+  epicId: text('epic_id').notNull(),
+  id: text('id').notNull(),
+  title: text('title').notNull(),
+  state: text('state', { enum: ['active', 'deferred', 'removed'] })
+    .$type<'active' | 'deferred' | 'removed'>()
+    .notNull(),
+  deferral: text('deferral'),
+  firstRevision: integer('first_revision').notNull(),
+});
+
+// Coverage: a criterion is covered by one or more child VerbItems. Duplicate
+// links are visible data, not silently collapsed.
+export const epicCriterionLinks = sqliteTable('epic_criterion_links', {
+  epicId: text('epic_id').notNull(),
+  criterionId: text('criterion_id').notNull(),
+  childId: text('child_id').notNull(),
+  createdAt: text('created_at').notNull(),
+});
+
+// A child's acknowledgement of the parent revision it planned against.
+export const childAcknowledgements = sqliteTable('child_acknowledgements', {
+  cardId: text('card_id').primaryKey(),
+  epicId: text('epic_id').notNull(),
+  revision: integer('revision').notNull(),
+  acknowledgedAt: text('acknowledged_at').notNull(),
+});
+
+// Same-project story dependency edges: card depends_on prerequisite.
+export const storyDeps = sqliteTable('story_deps', {
+  cardId: text('card_id').notNull(),
+  dependsOn: text('depends_on').notNull(),
+  createdAt: text('created_at').notNull(),
+});
+
+export type ScopeRevisionRow = typeof scopeRevisions.$inferSelect;
+export type ScopeItemRow = typeof scopeItems.$inferSelect;
+export type EpicIntentRow = typeof epicIntent.$inferSelect;
+export type EpicCriterionRow = typeof epicCriteria.$inferSelect;
+export type EpicCriterionLinkRow = typeof epicCriterionLinks.$inferSelect;
+export type ChildAcknowledgementRow = typeof childAcknowledgements.$inferSelect;
+export type StoryDepRow = typeof storyDeps.$inferSelect;

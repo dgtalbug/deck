@@ -2,13 +2,14 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { DocumentStore } from './store.ts';
 import type { NextDigest, TaskState, VerbItem } from './types.ts';
-import { mostAdvancedActive, topOfQueue } from './lanes.ts';
+import { firstReady, mostAdvancedActive } from './lanes.ts';
 import { isVerbItem, isTweak, type Tweak } from './types.ts';
 import { getIssueMap } from './specstore.ts';
 import { getSpecType } from './types-registry.ts';
 import { loadRules, rulesDigest } from './rules.ts';
 import { branchFor } from '../engine/slug.ts';
 import { memoryStatus, recall } from './memory.ts';
+import { epicPlanning } from './planning.ts';
 import { readCheckpoint, sourceDigest, staleBasis, type CheckpointEntry } from './checkpoint.ts';
 
 // The digest packet (E02 DECK-ARCH-002): one bounded builder for queued,
@@ -127,6 +128,25 @@ function mandatorySections(store: DocumentStore, card: VerbItem | Tweak, mode: '
   }
   const parent = parentLine(store, card);
   if (parent !== undefined) header.push(parent);
+  // E03 DECK-ARCH-015: bounded parent intent reference — revision, criterion
+  // count and uncovered titles only; the full epic document is a direct read.
+  if (card.epicId !== undefined) {
+    try {
+      const planning = epicPlanning(store, card.epicId);
+      if (planning.revision > 0) {
+        const uncoveredTitles = planning.criteria
+          .filter((criterion) => criterion.state === 'active' && criterion.coveredBy.length === 0)
+          .slice(0, 3)
+          .map((criterion) => criterion.title);
+        header.push(
+          `parent intent: rev ${planning.revision}, ${planning.criteria.length} criteria` +
+            (uncoveredTitles.length > 0 ? `, uncovered: ${uncoveredTitles.join('; ')}` : ''),
+        );
+      }
+    } catch {
+      // parent planning is optional context — never a digest failure
+    }
+  }
 
   const sections: Section[] = [];
   if (isVerbItem(card)) {
@@ -287,16 +307,47 @@ export function nextDigest(store: DocumentStore): NextDigest {
     };
     return wipBlocked ? { ...digest, wipBlockedBy: digest.cardId } : digest;
   }
-  const top = topOfQueue(store);
-  if (top !== undefined) return queuedDigest(store, top);
+  // Dependency-aware selection: skip stories with unmet prerequisites, keep
+  // queue order among eligible ones, and explain the skipped work.
+  const ready = firstReady(store);
+  if (ready.card !== undefined) return queuedDigest(store, ready.card);
+  const firstSkipped = ready.skipped[0];
+  if (firstSkipped !== undefined) {
+    return {
+      cardId: firstSkipped.card.id,
+      title: firstSkipped.card.title,
+      verb: firstSkipped.card.verb,
+      context: [
+        `# ${firstSkipped.card.verb}: ${firstSkipped.card.title} — BLOCKED by prerequisites`,
+        `card: ${firstSkipped.card.id}`,
+        '## Prerequisites (must reach done first)',
+        ...firstSkipped.blockers.map((blocker) => `- ${blocker.id} — ${blocker.title} [${blocker.lane}]`),
+      ].join('\n'),
+    };
+  }
   return noWorkDigest(store);
 }
 
-// Explicit ready-work discovery: the queued packet, read-only — no start, no
+// Explicit ready-work discovery: the ready queue, read-only — no start, no
 // reservation, no lane change (board/cli "Explicit ready-work discovery").
+// Unmet prerequisites are named, never silently skipped.
 export function readyWork(store: DocumentStore): NextDigest {
-  const top = topOfQueue(store);
-  if (top !== undefined) return queuedDigest(store, top);
+  const ready = firstReady(store);
+  if (ready.card !== undefined) return queuedDigest(store, ready.card);
+  const lines: string[] = [];
+  for (const entry of ready.skipped) {
+    lines.push(
+      `- ${entry.card.id} (${entry.card.verb}: ${entry.card.title}) blocked by: ` +
+        entry.blockers.map((blocker) => `${blocker.id} [${blocker.lane}]`).join(', '),
+    );
+  }
+  if (lines.length > 0) {
+    return {
+      cardId: '',
+      title: '',
+      context: ['# nothing ready — every queued story waits on prerequisites', ...lines].join('\n'),
+    };
+  }
   const blockedOn = mostAdvancedActive(store);
   if (blockedOn !== undefined) {
     return {

@@ -9,6 +9,7 @@ import { renderFindings, reviewGate } from '../core/engine/verify.ts';
 import { getSpecType, listSpecTypes, removeSpecType, upsertSpecType } from '../core/board/types-registry.ts';
 import { typeBody } from '../server/routes/types.ts';
 import { recallDetail } from '../core/board/memory.ts';
+import { renderEpicRead } from './planning.ts';
 import { epicRollups } from '../core/board/views.ts';
 import { getIssueMap } from '../core/board/specstore.ts';
 import { viewIssue } from '../core/git/issues.ts';
@@ -104,9 +105,8 @@ export async function backfillCommand(args: ParsedArgs, ctx: RunContext): Promis
   return lines.join('\n');
 }
 
-// `deck recall <query>` — the pinned recall(query)→string[] contract at the
-// terminal. Index problems are surfaced, never swallowed: stale/error prints
-// its diagnostic after the results.
+// `deck recall <query>` — pinned recall(query)→string[] at the terminal;
+// stale/error prints its diagnostic after the results.
 export async function recallCommand(args: ParsedArgs, ctx: RunContext): Promise<string> {
   const query = args.positionals.join(' ');
   if (query.trim().length === 0) throw new UsageError('usage: deck recall <query>');
@@ -220,37 +220,18 @@ export async function epicCommand(args: ParsedArgs, ctx: RunContext): Promise<st
   // A single token shaped like a LEGACY id (slug + 4-char tail) that resolves
   // to nothing is still a lookup miss — refuse, don't create an epic named
   // after a dead id.
-  let isId = false;
-  try {
-    store.getEpic(first);
-    isId = true;
-  } catch {
-    isId = false;
-  }
+  const isId = (() => {
+    try {
+      store.getEpic(first);
+      return true;
+    } catch {
+      return false;
+    }
+  })();
   if (!isId && args.positionals.length === 1 && /^[a-z0-9]+(-[a-z0-9]+)*-[a-z0-9]{4}$/.test(first)) {
     throw new NotFoundError('epic', first);
   }
-  if (isId) {
-    const epic = store.getEpic(first);
-    const stories = store.epicStories(first);
-    const done = stories.filter((story) => 'lane' in story && story.lane === 'done').length;
-    const lines = [
-      `${p.color('primary', '♠')} ${p.bold(`epic — ${epic.title}`)}`,
-      '',
-      `  ${p.dim('id')}      ${epic.id}`,
-      `  ${p.dim('rollup')} ${done}/${stories.length} stories done`,
-      '',
-    ];
-    if (stories.length === 0) {
-      lines.push('  (no stories — deck story <epicId> "<title>" adds one)');
-    }
-    for (const story of stories) {
-      const lane = 'lane' in story ? story.lane : 'todo';
-      const tasks = 'tasks' in story ? ` ${story.tasks.filter((task) => task.done).length}/${story.tasks.length}` : '';
-      lines.push(`  ${story.id}  [${lane}]${tasks}  ${story.title}`);
-    }
-    return lines.join('\n');
-  }
+  if (isId) return renderEpicRead(store, first, p);
   const epic = store.addEpic(args.positionals.join(' '));
   return [
     `${p.color('primary', '♠')} epic created — ${epic.title}`,

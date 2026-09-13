@@ -5,6 +5,7 @@ import { cards } from './schema.ts';
 import { runTx, type DocumentStore } from './store.ts';
 import { MANUAL_TRANSITIONS, isTweak, isVerbItem, type Card, type Lane, type Tweak, type VerbItem } from './types.ts';
 import { emitEvent } from '../events/outbox.ts';
+import { unmetDependencies } from './planning.ts';
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -48,6 +49,30 @@ export function assertUnderWip(store: DocumentStore): void {
 
 export function activeCount(store: DocumentStore): number {
   return store.activeCount();
+}
+
+export interface ReadySelection {
+  card: VerbItem | undefined;
+  // Deterministic queue order preserved: every skipped story appears here in
+  // queue order with the unmet prerequisite named (id + current lane).
+  skipped: Array<{ card: VerbItem; blockers: Array<{ id: string; lane: string; title: string }> }>;
+}
+
+// Dependency-aware ready selection (E03 DECK-ARCH-016): walks the groomed
+// queue in order, returns the first story whose prerequisites are all lane
+// `done`, and explains every story skipped before it. Read-only.
+export function firstReady(store: DocumentStore): ReadySelection {
+  const queue = store
+    .listCards('groomed')
+    .filter(isVerbItem)
+    .filter((card) => card.blocked === undefined);
+  const skipped: ReadySelection['skipped'] = [];
+  for (const card of queue) {
+    const blockers = unmetDependencies(store, card.id);
+    if (blockers.length === 0) return { card, skipped };
+    skipped.push({ card, blockers });
+  }
+  return { card: undefined, skipped };
 }
 
 export function topOfQueue(store: DocumentStore): VerbItem | undefined {

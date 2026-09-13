@@ -108,7 +108,7 @@ describe('deleteCard', () => {
 });
 
 describe('updateGroom', () => {
-  test('revises research/tasks, preserves done-state by title, rewrites spec files', async () => {
+  test('revises research/tasks, preserves identity and done-state by id, rewrites spec files', async () => {
     const store = await setup();
     const note = store.addNote('groom target');
     const item = convertToVerbItem(store, proposal({ noteId: note.id }));
@@ -121,6 +121,8 @@ describe('updateGroom', () => {
       'engine',
     );
 
+    // E03 DECK-ARCH-011: task edits are identity-bearing operations — keep
+    // t1, rename t2 in place, add one. Done-state survives by id, not title.
     const revised = updateGroom(store, item.id, {
       ...proposal({
         noteId: item.id,
@@ -129,15 +131,20 @@ describe('updateGroom', () => {
         research: { codebaseFindings: ['found it', 'found more'], blastRadius: ['src/ui'], sections: { reproduce: 'steps', rca: 'cause' } },
         tasks: ['implement lanes', 'wire sse better', 'add tests'],
       }),
+      taskOps: [
+        { op: 'keep', id: 't1' },
+        { op: 'rename', id: 't2', title: 'wire sse better' },
+        { op: 'add', title: 'add tests' },
+      ],
     });
 
     expect(revised.title).toBe('engine core revised');
     expect(revised.verb).toBe('fix');
     expect(revised.research.blastRadius).toEqual(['src/ui']);
-    expect(revised.tasks.map((task) => [task.title, task.done])).toEqual([
-      ['implement lanes', true], // surviving title keeps its done-state
-      ['wire sse better', false], // reworded → new work
-      ['add tests', false],
+    expect(revised.tasks.map((task) => [task.id, task.title, task.done])).toEqual([
+      ['t1', 'implement lanes', true], // surviving id keeps its done-state
+      ['t2', 'wire sse better', false], // renamed in place — same identity
+      [expect.any(String), 'add tests', false], // added → new id
     ]);
     // specPath never changes, even on a verb change
     expect(revised.specPath).toBe(item.specPath);
@@ -151,15 +158,14 @@ describe('updateGroom', () => {
     expect(specMd).toContain('- found more');
   });
 
-  test('open questions do not gate an edit', async () => {
+  test('open questions gate an edit — the shared readiness policy (E03)', async () => {
     const store = await setup();
     const note = store.addNote('groom target');
     const item = convertToVerbItem(store, proposal({ noteId: note.id }));
-    const revised = updateGroom(store, item.id, {
-      ...proposal({ noteId: item.id }),
-      openQuestions: ['still open?'],
-    });
-    expect(revised.id).toBe(item.id);
+    // DECK-ARCH-008: re-groom applies the same policy as initial groom.
+    expect(() =>
+      updateGroom(store, item.id, { ...proposal({ noteId: item.id }), openQuestions: ['still open?'] }),
+    ).toThrow(/unanswered open questions/);
   });
 
   test('non-verb card 404s; engine lane refuses', async () => {

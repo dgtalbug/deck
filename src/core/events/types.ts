@@ -9,7 +9,13 @@ export type BoardEventType =
   | 'card.unblocked'
   | 'card.done'
   | 'card.updated'
-  | 'card.deleted';
+  | 'card.deleted'
+  // E03 planning events (scope identity, epic intent, dependency edges)
+  | 'card.deps.updated'
+  | 'epic.intent.updated'
+  | 'epic.criterion.linked'
+  | 'epic.criterion.deferred'
+  | 'epic.parent.acknowledged';
 
 export interface CardLanePayload {
   id: string;
@@ -33,11 +39,18 @@ export interface CardDonePayload {
   wikiPath: string;
 }
 
+// E03 planning events carry free-form detail payloads (id + context fields).
+export interface PlanningEventPayload {
+  id: string;
+  [key: string]: unknown;
+}
+
 export type BoardEventPayload =
   | CardLanePayload
   | CardTasksPayload
   | CardBlockedPayload
-  | CardDonePayload;
+  | CardDonePayload
+  | PlanningEventPayload;
 
 export interface BoardEvent {
   rowid: number;

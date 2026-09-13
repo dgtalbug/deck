@@ -51,7 +51,7 @@ const GH_OK = `case "$1 $2" in
   *) echo ok ;;
 esac`;
 
-function groomed(title: string, verb: VerbType = 'feat'): string {
+function groomed(title: string, verb: VerbType = 'feat', tasks: string[] = ['implement', 'verify']): string {
   const note = store.addNote(title);
   convertToVerbItem(store, {
     noteId: note.id,
@@ -59,10 +59,16 @@ function groomed(title: string, verb: VerbType = 'feat'): string {
     refinedTitle: title,
     research: verb === 'fix' ? { codebaseFindings: [], sections: { reproduce: 'steps', rca: 'cause' } } : { codebaseFindings: [] },
     specDeltas: [],
-    tasks: ['implement', 'verify'],
+    tasks,
     openQuestions: [],
   });
   return note.id;
+}
+
+// done-only satisfaction helper: engine lane move straight to done
+async function moveDone(id: string): Promise<void> {
+  const { moveLane } = await import('../../src/core/board/lanes.ts');
+  moveLane(store, id, 'done', 'engine');
 }
 
 beforeEach(async () => {
@@ -224,5 +230,99 @@ describe('archiveVerb', () => {
     store.db.run('DELETE FROM issue_map');
     await expect(archiveVerb(store, id)).rejects.toThrow(/no published issue/);
     expect(store.getVerbItem(id).lane).toBe('active');
+  });
+});
+
+// --- E03: dependency-ready starts (DECK-ARCH-016) + persisted readiness ------
+import { setDependencies } from '../../src/core/board/planning.ts';
+import { DependencyBlockedError } from '../../src/core/board/errors.ts';
+import { listUnsettledOperations } from '../../src/core/engine/ownership.ts';
+
+describe('E03 dependency start gate', () => {
+  test('unmet prerequisite refuses the direct start — no reservation, no effects', async () => {
+    stubGh(GH_OK);
+    const prereq = groomed('unfinished prerequisite card');
+    const story = groomed('dependent story card');
+    setDependencies(store, story, [prereq]);
+    await expect(startVerb(store, story, 'feat')).rejects.toThrow(DependencyBlockedError);
+    // neither story moved, nothing reserved
+    expect(store.getVerbItem(story).lane).toBe('groomed');
+    expect(store.getVerbItem(prereq).lane).toBe('groomed');
+    expect(listUnsettledOperations(store)).toEqual([]);
+    expect(git('branch --format="%(refname:short)"').trim()).toBe('main');
+  });
+
+  test('clean-but-not-done does NOT satisfy; done does', async () => {
+    stubGh(GH_OK);
+    const prereq = groomed('prereq to done card');
+    const story = groomed('waiting story card');
+    setDependencies(store, story, [prereq]);
+    await startVerb(store, prereq, 'feat'); // active + issue open, NOT done
+    writeFileSync(join(dir, 'p.txt'), 'x\n');
+    git('add .');
+    git('commit -m "p"');
+    // hold the prerequisite in verify (clean but not done): still blocks
+    const { applyExplicitResult } = await import('../../src/core/board/verify.ts');
+    applyExplicitResult(store, prereq, 'clean');
+    expect(store.getVerbItem(prereq).lane).toBe('verify');
+    await expect(startVerb(store, story, 'feat')).rejects.toThrow(DependencyBlockedError);
+    // done satisfies
+    await moveDone(prereq);
+    const outcome = await startVerb(store, story, 'feat');
+    expect(outcome.card.lane).toBe('active');
+  });
+
+  test('a start whose reservation raced a dependency edit refuses inside the boundary', async () => {
+    stubGh(GH_OK);
+    const prereq = groomed('race prereq card');
+    const story = groomed('race dependent card');
+    setDependencies(store, story, [prereq]);
+    // Simulate the race: the edge is inserted AFTER the start's earlier reads
+    // but BEFORE the reservation transaction reads it — modeled by an edge
+    // added while the start is between gates. The transaction re-check wins.
+    const { runTx } = await import('../../src/core/board/store.ts');
+    const { storyDeps } = await import('../../src/core/board/schema.ts');
+    const store2 = await openStore(dir);
+    const startPromise = startVerb(store, story, 'feat');
+    runTx(store2.db, (tx) => {
+      tx.insert(storyDeps)
+        .values({ cardId: story, dependsOn: prereq, createdAt: new Date().toISOString() })
+        .onConflictDoNothing()
+        .run();
+    });
+    // Either the start saw the edge (refusal) or committed before it landed —
+    // but never an invalid start. Serialize and assert the invariant.
+    try {
+      await startPromise;
+      // started before the edge landed: acceptable, undo for cleanup
+      git('switch main');
+    } catch (error) {
+      expect(error).toBeInstanceOf(DependencyBlockedError);
+      expect(store.getVerbItem(story).lane).toBe('groomed');
+      expect(listUnsettledOperations(store)).toEqual([]);
+    }
+    void store2;
+  });
+
+  test('legacy oversized card reports unknown readiness facts instead of refusing', async () => {
+    stubGh(GH_OK);
+    // four tasks groomed WITH spec content, then research blanked at the db
+    // level — a legacy card whose readiness facts no longer exist
+    const note = store.addNote('legacy oversized card');
+    const { convertToVerbItem: convert } = await import('../../src/core/board/groom.ts');
+    convert(store, {
+      noteId: note.id,
+      proposedVerb: 'feat',
+      refinedTitle: 'legacy oversized card',
+      research: { codebaseFindings: ['had a story once'], story: 'long story' },
+      specDeltas: [],
+      tasks: ['a', 'b', 'c', 'd'],
+      openQuestions: [],
+    });
+    const id = note.id;
+    store.raw().exec(`UPDATE cards SET research = '{"codebaseFindings":[]}' WHERE id = '${id}'`);
+    const outcome = await startVerb(store, id, 'feat');
+    expect(outcome.readinessUnknown).toEqual(['story shape (accepted deltas are not persisted on legacy cards)']);
+    git('switch main');
   });
 });

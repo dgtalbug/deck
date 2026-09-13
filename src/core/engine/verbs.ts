@@ -3,7 +3,7 @@
 // engine transition groomed→active, publish-at-start (queued offline,
 // never blocking), guarded branch create with full compensation on refusal.
 // The archive side lives in archive.ts; the review gate in review.ts.
-import { DeckError } from '../board/errors.ts';
+import { DeckError, DependencyBlockedError } from '../board/errors.ts';
 import { assertUnderWip, mostAdvancedActive, moveLane } from '../board/lanes.ts';
 import { getIssueMap, deleteIssueMap, dequeuePublish } from '../board/specstore.ts';
 import { publishSpec } from '../board/publish.ts';
@@ -11,8 +11,8 @@ import { GhUnavailableError, GitOpError } from '../git/errors.ts';
 import { rmSync } from 'node:fs';
 import { eq } from 'drizzle-orm';
 import { createBranch } from '../git/ops.ts';
-import { runTx, type DocumentStore } from '../board/store.ts';
-import { cards } from '../board/schema.ts';
+import { runTx, type DocumentStore, type Tx } from '../board/store.ts';
+import { cards, storyDeps } from '../board/schema.ts';
 import {
   activateOperation,
   canonicalCheckout,
@@ -45,6 +45,8 @@ export interface StartOutcome {
   issueNumber: number | null;
   queued: boolean;
   hookWarnings: HookWarning[];
+  // E03: persisted readiness facts that could not be re-derived at start.
+  readinessUnknown?: string[] | undefined;
 }
 
 // D2 order: transition → publish → branch. A refusal after the transition
@@ -82,6 +84,17 @@ export async function startVerb(
       { cardId: id, verb, missing: missingSections },
     );
   }
+  // E03 DECK-ARCH-008: persisted readiness facts the current rules cannot
+  // re-derive (accepted deltas are not persisted) are labeled unknown —
+  // never inferred as answered.
+  const persistedSpecContent =
+    (card.research.story ?? '').trim() !== '' ||
+    card.research.codebaseFindings.length > 0 ||
+    Object.values(card.research.sections ?? {}).some((content) => content.trim() !== '');
+  const readinessUnknown: string[] = [];
+  if (card.tasks.length > 3 && !persistedSpecContent) {
+    readinessUnknown.push('story shape (accepted deltas are not persisted on legacy cards)');
+  }
   assertUnderWip(store);
 
   // The reservation transaction: serialized lane re-read, checkout guard,
@@ -98,6 +111,12 @@ export async function startVerb(
         { cardId: id, lane: row?.lane ?? 'missing', verb },
       );
     }
+    // E03 DECK-ARCH-016: prerequisite readiness is re-checked INSIDE the E01
+    // reservation boundary — a concurrent dependency edit or prerequisite
+    // state change either commits before this read or the start refuses.
+    // Satisfaction is lane `done` (engine policy), not a clean review.
+    const blockers = unmetDependenciesInTx(tx, id);
+    if (blockers.length > 0) throw new DependencyBlockedError(id, blockers);
     operation = reserveOperationInTx(tx, {
       cardId: id,
       kind: 'start',
@@ -183,6 +202,7 @@ export async function startVerb(
     issueNumber: publish.issueNumber,
     queued: publish.queued,
     hookWarnings,
+    ...(readinessUnknown.length > 0 ? { readinessUnknown } : {}),
   };
 }
 
@@ -216,4 +236,19 @@ export async function assertGhReachable(projectPath: string): Promise<void> {
   if (result === null || result.code !== 0) {
     throw new GhUnavailableError(result === null ? '' : `${result.stdout}${result.stderr}`.trim());
   }
+}
+
+// Prerequisite satisfaction is lane `done` (engine policy): a clean verify
+// holds in verify and does NOT satisfy dependents. Runs inside the caller's
+// transaction so dependency edits and starts serialize at the same boundary.
+function unmetDependenciesInTx(tx: Tx, cardId: string): Array<{ id: string; lane: string; title: string }> {
+  const edges = tx.select().from(storyDeps).where(eq(storyDeps.cardId, cardId)).all();
+  const blockers: Array<{ id: string; lane: string; title: string }> = [];
+  for (const edge of edges) {
+    const dep = tx.select().from(cards).where(eq(cards.id, edge.dependsOn)).get();
+    if (dep === undefined || dep.lane !== 'done') {
+      blockers.push({ id: edge.dependsOn, lane: dep?.lane ?? 'missing', title: dep?.title ?? 'missing' });
+    }
+  }
+  return blockers;
 }

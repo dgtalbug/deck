@@ -12,6 +12,7 @@ import { emitEvent } from '../events/outbox.ts';
 import { assertUnderWip } from './lanes.ts';
 import { recordSpecVersion, renderCardSpec, enqueuePublish } from './specstore.ts';
 import { runMomentPostSync, runMomentPreSync } from '../engine/moments.ts';
+import { applyCriterionOps, recordScopeRevision } from './scope.ts';
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -80,39 +81,12 @@ export function convertToVerbItem(store: DocumentStore, proposal: GroomProposal)
       { noteId: proposal.noteId, verb: proposal.proposedVerb },
     );
   }
-  // Spec-type gate (shared with verb start): the registry's required
-  // sections for this type must be present in the proposal. Existence
-  // first so the typed 404 contract wins over the gate.
-  store.getNote(proposal.noteId);
-  const type = getSpecType(store, proposal.proposedVerb);
-  const missing = sectionGate(type, proposal.research);
-  if (missing.length > 0) {
-    throw new DeckError(
-      `groom proposal for ${proposal.noteId} as '${proposal.proposedVerb}' is missing required ` +
-        `section(s): ${missing.join(', ')} — fill them and re-groom`,
-      { noteId: proposal.noteId, verb: proposal.proposedVerb, missing },
-    );
-  }
-  // Shape law (jira-style direction): >3 tasks is story-shaped — the spec
-  // must say what and why, or the work belongs in an epic of smaller cards.
-  const hasSpecContent =
-    (proposal.research.story ?? '').trim() !== '' ||
-    proposal.specDeltas.length > 0 ||
-    proposal.research.codebaseFindings.length > 0;
-  if (proposal.tasks.length > 3 && !hasSpecContent) {
-    throw new DeckError(
-      `groom proposal for ${proposal.noteId} is story-shaped (${proposal.tasks.length} tasks) ` +
-        `without a spec — write the story (what & why, findings) or split it into an epic of smaller cards`,
-      { noteId: proposal.noteId, tasks: proposal.tasks.length },
-    );
-  }
-  if (proposal.openQuestions.length > 0) {
-    throw new DeckError(
-      `groom proposal for ${proposal.noteId} has ${proposal.openQuestions.length} ` +
-        `unanswered open questions — answer them before accepting`,
-      { noteId: proposal.noteId, openQuestions: proposal.openQuestions },
-    );
-  }
+  store.getNote(proposal.noteId); // existence first so the typed 404 wins over the gate
+  const type = getSpecType(store, proposal.proposedVerb); // the digest renders this type's sections
+  // E03 DECK-ARCH-008: ONE proportional readiness policy for every accepted
+  // edit — initial groom, re-groom and the persisted start recheck all call
+  // this validator; refusals happen before any state or artifact write.
+  assertGroomReady(store, proposal, `groom proposal for ${proposal.noteId}`);
   // groom moment: pre sees the still-a-note card; a blocking hook refuses the
   // promotion before any state changes. Post fires after the full conversion
   // (tasks, spec, publish queue) has landed.
@@ -158,6 +132,17 @@ export function convertToVerbItem(store: DocumentStore, proposal: GroomProposal)
         .values({ cardId: proposal.noteId, idx: index, id: newTaskId(), title, done: false })
         .run();
     }
+    // Scope identity at birth (DECK-ARCH-011): criteria from the accepted
+    // deltas get stable ids; the first immutable scope revision is recorded.
+    const taskRows = tx.select().from(tasks).where(eq(tasks.cardId, proposal.noteId)).all();
+    const activeTitles = [...new Set(proposal.specDeltas.map((delta) => delta.requirement.trim()).filter(Boolean))];
+    const criteria = applyCriterionOps(tx, proposal.noteId, 0, [], activeTitles, undefined, true);
+    recordScopeRevision(
+      tx,
+      proposal.noteId,
+      { verb: proposal.proposedVerb, title: proposal.refinedTitle, tasks: taskRows, criteria },
+      ['initial groom'],
+    );
     emitEvent(tx, 'card.groomed', { id: proposal.noteId, lane: 'groomed', position });
   });
   const item = store.getVerbItem(proposal.noteId);
@@ -175,6 +160,46 @@ export function convertToVerbItem(store: DocumentStore, proposal: GroomProposal)
     timestamp: new Date().toISOString(),
   });
   return item;
+}
+
+// The one proportional readiness policy (DECK-ARCH-008): unresolved open
+// questions, required registry sections, and story-shaped proposals without
+// sufficient spec content refuse here — with an actionable message and
+// before ANY state/artifact effect. `subject` names the door in the error.
+export function assertGroomReady(
+  store: DocumentStore,
+  proposal: Pick<GroomProposal, 'proposedVerb' | 'refinedTitle' | 'research' | 'specDeltas' | 'tasks' | 'openQuestions'>,
+  subject: string,
+): void {
+  const type = getSpecType(store, proposal.proposedVerb);
+  const missing = sectionGate(type, proposal.research);
+  if (missing.length > 0) {
+    throw new DeckError(
+      `${subject} as '${proposal.proposedVerb}' is missing required section(s): ${missing.join(', ')} — ` +
+        `fill them and retry`,
+      { verb: proposal.proposedVerb, missing },
+    );
+  }
+  // Shape law (jira-style direction): >3 tasks is story-shaped — the spec
+  // must say what and why, or the work belongs in an epic of smaller cards.
+  // A task-sized proposal (≤3 tasks) stays minimal — no story narrative.
+  const hasSpecContent =
+    (proposal.research.story ?? '').trim() !== '' ||
+    proposal.specDeltas.length > 0 ||
+    proposal.research.codebaseFindings.length > 0;
+  if (proposal.tasks.length > 3 && !hasSpecContent) {
+    throw new DeckError(
+      `${subject} is story-shaped (${proposal.tasks.length} tasks) without a spec — ` +
+        `write the story (what & why, findings) or split it into an epic of smaller cards`,
+      { tasks: proposal.tasks.length },
+    );
+  }
+  if (proposal.openQuestions.length > 0) {
+    throw new DeckError(
+      `${subject} has ${proposal.openQuestions.length} unanswered open questions — answer them before accepting`,
+      { openQuestions: proposal.openQuestions },
+    );
+  }
 }
 
 // Registry id → label map for materializeSpec's section rendering.

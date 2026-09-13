@@ -37,6 +37,9 @@ export interface UiCard {
   blocked?: BlockedView;
   requirement?: string;
   epicId?: string;
+  // E03 planning status (board/store): unmet prerequisites + review-needed.
+  unmetDeps?: Array<{ id: string; lane: string; title: string }>;
+  reviewNeeded?: boolean;
   createdAt?: string;
   updatedAt?: string;
 }

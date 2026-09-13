@@ -134,3 +134,66 @@ describe('setBlocked / syncTasks', () => {
     expect(() => store.syncTasks(note.id, [], 'engine')).toThrow(NotFoundError);
   });
 });
+
+// --- E03: dependency DAG + legacy migration (DECK-ARCH-016, DECK-ARCH-011) ---
+import { DependencyBlockedError, StaleWriterError } from '../../../src/core/board/errors.ts';
+import {
+  listDependencies,
+  setDependencies,
+  unmetDependencies,
+} from '../../../src/core/board/planning.ts';
+import { moveLane } from '../../../src/core/board/lanes.ts';
+import { deleteCard } from '../../../src/core/board/crud.ts';
+import { currentScopeRevision } from '../../../src/core/board/scope.ts';
+
+describe('E03 dependency graph', () => {
+  test('legacy story without edges is eligible everywhere (no-edge migration)', () => {
+    const note = store.addNote('legacy no-edge story');
+    const item = convertToVerbItem(store, proposal(note.id));
+    expect(listDependencies(store, item.id)).toEqual([]);
+    expect(unmetDependencies(store, item.id)).toEqual([]);
+  });
+
+  test('add/remove edges round-trip; unmet names the blocking story and lane', () => {
+    const a = convertToVerbItem(store, proposal(store.addNote('dep story a').id));
+    const b = convertToVerbItem(store, proposal(store.addNote('dep story b').id));
+    setDependencies(store, b.id, [a.id]);
+    expect(listDependencies(store, b.id)).toEqual([a.id]);
+    moveLane(store, a.id, 'active', 'engine'); // started but not done → unmet
+    expect(unmetDependencies(store, b.id)).toEqual([{ id: a.id, lane: 'active', title: a.title }]);
+    moveLane(store, a.id, 'done', 'engine'); // done-only satisfaction
+    expect(unmetDependencies(store, b.id)).toEqual([]);
+    setDependencies(store, b.id, []); // explicit edge removal
+    expect(listDependencies(store, b.id)).toEqual([]);
+  });
+
+  test('self-links, cycles and missing references refuse atomically', () => {
+    const a = convertToVerbItem(store, proposal(store.addNote('dag story a').id));
+    const b = convertToVerbItem(store, proposal(store.addNote('dag story b').id));
+    setDependencies(store, b.id, [a.id]);
+    expect(() => setDependencies(store, a.id, [a.id])).toThrow(/cannot depend on itself/);
+    expect(() => setDependencies(store, a.id, [b.id])).toThrow(/cycle/); // a→b→a
+    expect(() => setDependencies(store, a.id, ['no-such-card'])).toThrow(/not a story in this project/);
+    // atomic: nothing changed
+    expect(listDependencies(store, a.id)).toEqual([]);
+    expect(listDependencies(store, b.id)).toEqual([a.id]);
+  });
+
+  test('deleting a referenced prerequisite refuses until the edges are removed', () => {
+    const a = convertToVerbItem(store, proposal(store.addNote('referenced prereq').id));
+    const b = convertToVerbItem(store, proposal(store.addNote('dependent story').id));
+    setDependencies(store, b.id, [a.id]);
+    expect(() => deleteCard(store, a.id)).toThrow(/prerequisite of/);
+    expect(store.getCard(a.id)).toBeDefined();
+    setDependencies(store, b.id, []);
+    deleteCard(store, a.id); // now it goes
+    expect(() => store.getCard(a.id)).toThrow(NotFoundError);
+  });
+
+  test('stale-writer dependency edit refuses without writing', () => {
+    const a = convertToVerbItem(store, proposal(store.addNote('dep stale probe').id));
+    const current = currentScopeRevision(store.db, a.id);
+    expect(() => setDependencies(store, a.id, [], current + 3)).toThrow(StaleWriterError);
+    expect(listDependencies(store, a.id)).toEqual([]);
+  });
+});

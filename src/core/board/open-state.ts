@@ -153,4 +153,82 @@ export async function ensureEngineState(sqlite: Database, projectPath = '.'): Pr
     `UPDATE cards SET blocked_reason = NULL, blocked_at = NULL ` +
       `WHERE lane IN ('active', 'verify', 'done') AND blocked_reason IS NOT NULL`,
   );
+  ensurePlanningState(sqlite);
+}
+
+// E03 planning state (scope identity, epic intent, dependency edges):
+// additive, idempotent raw DDL — legacy rows keep their shape and legacy
+// cards keep scope_revision NULL (criterion identity unclassified).
+function ensurePlanningState(sqlite: Database): void {
+  const cols = sqlite.query("PRAGMA table_info('cards')").all() as Array<{ name: string }>;
+  if (!cols.some((col) => col.name === 'scope_revision')) {
+    sqlite.exec('ALTER TABLE cards ADD COLUMN scope_revision INTEGER');
+  }
+  sqlite.exec(
+    `CREATE TABLE IF NOT EXISTS scope_revisions (
+      card_id TEXT NOT NULL,
+      revision INTEGER NOT NULL,
+      digest TEXT NOT NULL,
+      operations TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      PRIMARY KEY (card_id, revision)
+    )`,
+  );
+  sqlite.exec(
+    `CREATE TABLE IF NOT EXISTS scope_items (
+      card_id TEXT NOT NULL,
+      id TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      title TEXT NOT NULL,
+      state TEXT NOT NULL,
+      first_revision INTEGER NOT NULL,
+      last_revision INTEGER NOT NULL,
+      PRIMARY KEY (card_id, id)
+    )`,
+  );
+  sqlite.exec(
+    `CREATE TABLE IF NOT EXISTS epic_intent (
+      epic_id TEXT PRIMARY KEY NOT NULL,
+      revision INTEGER NOT NULL,
+      intent TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )`,
+  );
+  sqlite.exec(
+    `CREATE TABLE IF NOT EXISTS epic_criteria (
+      epic_id TEXT NOT NULL,
+      id TEXT NOT NULL,
+      title TEXT NOT NULL,
+      state TEXT NOT NULL,
+      deferral TEXT,
+      first_revision INTEGER NOT NULL,
+      PRIMARY KEY (epic_id, id)
+    )`,
+  );
+  sqlite.exec(
+    `CREATE TABLE IF NOT EXISTS epic_criterion_links (
+      epic_id TEXT NOT NULL,
+      criterion_id TEXT NOT NULL,
+      child_id TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      PRIMARY KEY (epic_id, criterion_id, child_id)
+    )`,
+  );
+  sqlite.exec(
+    `CREATE TABLE IF NOT EXISTS child_acknowledgements (
+      card_id TEXT PRIMARY KEY NOT NULL,
+      epic_id TEXT NOT NULL,
+      revision INTEGER NOT NULL,
+      acknowledged_at TEXT NOT NULL
+    )`,
+  );
+  sqlite.exec(
+    `CREATE TABLE IF NOT EXISTS story_deps (
+      card_id TEXT NOT NULL,
+      depends_on TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      PRIMARY KEY (card_id, depends_on)
+    )`,
+  );
+  sqlite.exec('CREATE INDEX IF NOT EXISTS story_deps_dep ON story_deps (depends_on)');
 }

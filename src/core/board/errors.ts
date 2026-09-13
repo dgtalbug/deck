@@ -68,3 +68,28 @@ export class NotFoundError extends DeckError {
     super(`${entity} '${id}' not found`, { entity, id });
   }
 }
+
+// E03 engine/verbs: a direct start whose declared prerequisites are not all
+// lane-done. Names the blockers; nothing was reserved or mutated.
+export class DependencyBlockedError extends DeckError {
+  constructor(cardId: string, blockers: Array<{ id: string; lane: string; title: string }>) {
+    const names = blockers.map((blocker) => `${blocker.id} (${blocker.lane})`).join(', ');
+    super(
+      `card ${cardId} depends on unfinished prerequisite(s): ${names} — ` +
+        `prerequisites must reach done before this story starts`,
+      { cardId, blockers },
+    );
+  }
+}
+
+// E03 planning authoring: a mutation carrying an expected revision that no
+// longer matches current state. Nothing was written; re-read and retry.
+export class StaleWriterError extends DeckError {
+  constructor(subject: string, expected: number, current: number) {
+    super(
+      `${subject} changed since you read it — expected revision ${expected}, current is ${current}; ` +
+        `re-read and resubmit against the current revision`,
+      { subject, expected, current },
+    );
+  }
+}

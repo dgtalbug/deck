@@ -1,17 +1,39 @@
 import type { DocumentStore } from './store.ts';
+import { unmetDependencies } from './planning.ts';
 import { isVerbItem, type Card, type Lane } from './types.ts';
 
 // Read-model views over the store. Routes (and later the CLI/UI) render
 // these; the shape is the API contract returned by GET /:project/board.
 export type CardView = Record<string, unknown>;
 
+// E03 planning status (board/store): unmet prerequisite ids and the
+// review-needed flag for in-flight work whose upstream reopened. Computed
+// live from stored edges + lanes — no counters to drift.
+export interface PlanningStatus {
+  blockers: Array<{ id: string; lane: string; title: string }>;
+  reviewNeeded: boolean;
+}
+
+export function planningStatus(store: DocumentStore, card: Card): PlanningStatus | undefined {
+  if (!isVerbItem(card)) return undefined;
+  const blockers = unmetDependencies(store, card.id);
+  const reviewNeeded =
+    blockers.length > 0 && (card.lane === 'active' || card.lane === 'verify' || card.lane === 'done');
+  if (blockers.length === 0 && !reviewNeeded) return undefined;
+  return { blockers, reviewNeeded };
+}
+
 // Verb items carry a progress badge ("done/total"); notes and tweaks render bare.
-export function cardView(card: Card): CardView {
+export function cardView(card: Card, planning?: PlanningStatus | undefined): CardView {
   if (!('lane' in card)) return { ...card };
   const view: CardView = { ...card };
   if (isVerbItem(card)) {
     const done = card.tasks.filter((task) => task.done).length;
     view['progress'] = `${done}/${card.tasks.length}`;
+  }
+  if (planning !== undefined) {
+    view['unmetDeps'] = planning.blockers;
+    view['reviewNeeded'] = planning.reviewNeeded;
   }
   return view;
 }
@@ -45,7 +67,7 @@ export function boardView(store: DocumentStore): BoardView {
   // not by filtering a flat list.
   const lanes = {} as Record<Lane, CardView[]>;
   for (const lane of LANES) {
-    lanes[lane] = store.listCards(lane).map(cardView);
+    lanes[lane] = store.listCards(lane).map((card) => cardView(card, planningStatus(store, card)));
   }
   return { lanes, epics: epicRollups(store) };
 }
@@ -59,7 +81,9 @@ export interface TodoView {
 export function todoView(store: DocumentStore): TodoView {
   return {
     view: 'todo',
-    cards: [...store.listCards('todo'), ...store.listCards('groomed')].map(cardView),
+    cards: [...store.listCards('todo'), ...store.listCards('groomed')].map((card) =>
+      cardView(card, planningStatus(store, card)),
+    ),
     epics: epicRollups(store),
   };
 }

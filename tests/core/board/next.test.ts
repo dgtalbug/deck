@@ -181,3 +181,113 @@ describe('resume-first selection + discovery', () => {
     expect(digest.context).toContain('resume this card first');
   });
 });
+
+// --- E03: parent intent references (DECK-ARCH-015) + dependency-aware queue ---
+import { epicPlanning, setDependencies, setEpicIntent, linkCriterion } from '../../../src/core/board/planning.ts';
+
+describe('E03 digest: parent intent + blocked queue', () => {
+  test('parent intent reference is bounded — revision, counts, uncovered titles only', () => {
+    // drain earlier groomed cards so queue order is fully controlled here too
+    for (const card of store.listCards('groomed')) moveLane(store, card.id, 'done', 'engine');
+    const epic = store.addEpic('parent intent epic');
+    setEpicIntent(store, epic.id, {
+      intent: 'the long parent narrative that must never be copied wholesale into the packet '.repeat(3),
+      criteria: [{ title: 'uncovered criterion alpha' }, { title: 'uncovered criterion beta' }],
+    });
+    const note = store.addNote('parent intent child');
+    const item = convertToVerbItem(store, {
+      noteId: note.id,
+      proposedVerb: 'feat',
+      refinedTitle: 'parent intent child',
+      research: { codebaseFindings: [] },
+      specDeltas: [],
+      tasks: ['one'],
+      openQuestions: [],
+    });
+    store.setEpic(item.id, epic.id);
+    const digest = nextDigest(store);
+    // uncovered titles ride the line in queue/criteria order — assert loosely
+    expect(digest.context).toMatch(/parent intent: rev 1, 2 criteria, uncovered: uncovered criterion (alpha|beta); uncovered criterion (alpha|beta)/);
+    // bounded: the full narrative is NOT in the packet
+    expect(digest.context).not.toContain('must never be copied wholesale into the packet the long parent narrative');
+    expect(digest.context.length).toBeLessThanOrEqual(8000);
+    // an epic without intent stays quiet
+    for (const card of store.listCards('groomed')) moveLane(store, card.id, 'done', 'engine');
+    const silent = store.addEpic('silent epic');
+    const note2 = store.addNote('no intent child');
+    const item2 = convertToVerbItem(store, {
+      noteId: note2.id,
+      proposedVerb: 'feat',
+      refinedTitle: 'no intent child',
+      research: { codebaseFindings: [] },
+      specDeltas: [],
+      tasks: ['one'],
+      openQuestions: [],
+    });
+    store.setEpic(item2.id, silent.id);
+    expect(nextDigest(store).context).not.toContain('parent intent:');
+    void item2;
+  });
+
+  test('blocked queue: digest explains prerequisites; ready discovery names them', () => {
+    for (const card of store.listCards('groomed')) moveLane(store, card.id, 'done', 'engine');
+    const prereq = convertToVerbItem(store, {
+      noteId: store.addNote('queue prereq story').id,
+      proposedVerb: 'feat',
+      refinedTitle: 'queue prereq story',
+      research: { codebaseFindings: [] },
+      specDeltas: [],
+      tasks: ['one'],
+      openQuestions: [],
+    });
+    const blocked = convertToVerbItem(store, {
+      noteId: store.addNote('queue blocked story').id,
+      proposedVerb: 'feat',
+      refinedTitle: 'queue blocked story',
+      research: { codebaseFindings: [] },
+      specDeltas: [],
+      tasks: ['one'],
+      openQuestions: [],
+    });
+    setDependencies(store, blocked.id, [prereq.id]);
+    // hold the prerequisite back in todo so the blocked story is the queue
+    // top (an active prerequisite would be resumed first instead)
+    moveLane(store, prereq.id, 'todo', 'engine');
+    const digest = nextDigest(store);
+    expect(digest.cardId).toBe(blocked.id); // still surfaces the first queued story...
+    expect(digest.context).toContain('BLOCKED by prerequisites');
+    expect(digest.context).toContain(`- ${prereq.id} — queue prereq story [todo]`);
+    // discovery explains without reserving
+    const peek = readyWork(store);
+    expect(peek.context).toContain('nothing ready');
+    expect(peek.context).toContain(`${blocked.id}`);
+    expect(peek.context).toContain(`${prereq.id} [todo]`);
+    // once the prerequisite reaches done, the blocked story is ready again
+    moveLane(store, prereq.id, 'verify', 'engine');
+    moveLane(store, prereq.id, 'done', 'engine');
+    expect(nextDigest(store).cardId).toBe(blocked.id);
+  });
+
+  test('criterion coverage reference: linking a child keeps the parent line accurate', () => {
+    for (const card of store.listCards('groomed')) moveLane(store, card.id, 'done', 'engine');
+    const epic = store.addEpic('coverage ref epic');
+    setEpicIntent(store, epic.id, { intent: 'coverage', criteria: [{ title: 'the only criterion' }] });
+    const note = store.addNote('coverage ref child');
+    const item = convertToVerbItem(store, {
+      noteId: note.id,
+      proposedVerb: 'feat',
+      refinedTitle: 'coverage ref child',
+      research: { codebaseFindings: [] },
+      specDeltas: [],
+      tasks: ['one'],
+      openQuestions: [],
+    });
+    store.setEpic(item.id, epic.id);
+    expect(nextDigest(store).context).toContain('uncovered: the only criterion');
+    const planning = epicPlanning(store, epic.id);
+    linkCriterion(store, epic.id, planning.criteria[0]!.id, item.id);
+    const digest = nextDigest(store);
+    expect(digest.context).toContain('parent intent: rev 1, 1 criteria'); // no uncovered left
+    expect(digest.context).not.toContain('uncovered:');
+  });
+});

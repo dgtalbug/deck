@@ -12,7 +12,7 @@ and a GitHub loop — one binary, one server, every agent.
 
 ## Status — what's real today
 
-deck is early and building in the open. The **board, CLI, server, UI, the SDD engine verbs, and the git/gh layer are shipped and live-verified** (768 tests green). The plan and decision ledger live in [`.meta/sdd-engine.md`](.meta/sdd-engine.md).
+deck is early and building in the open. The **board, CLI, server, UI, the SDD engine verbs, and the git/gh layer are shipped and live-verified** (796 tests green). The plan and decision ledger live in [`.meta/sdd-engine.md`](.meta/sdd-engine.md).
 
 **Working now:**
 
@@ -26,6 +26,7 @@ deck is early and building in the open. The **board, CLI, server, UI, the SDD en
 - **Session checkpoints** — `deck checkpoint <id>` reads the card's durable decisions; `deck checkpoint <id> add "<text>" --kind decision|gotcha|remaining|blocker` writes one (revision-checked, retry-safe, human text never overwritten). Current-card checkpoints ride the `deck next` digest; stale ones are labeled historical.
 - **Trustworthy recall** — session memory stays authoritative Markdown; the FTS index rebuilds transactionally from a content signature (mtime games can't fool it), queries are literal, and stale/error diagnostics surface in `deck recall` and the digest instead of pretending the memory is empty.
 - **Tracked skill pack** — the fourteen `deck-*` runbooks are authored in `src/skills/`, embedded byte-for-byte into the binary, and `deck doctor` reports missing/stale/customized installs; `deck setup` repairs managed regions without touching your edits.
+- **Versioned project intent (E03)** — epics carry optional intent + acceptance criteria with stable IDs (`deck epic-plan <id> intent/link/defer`), children acknowledge parent revisions, and the epic read shows uncovered criteria. Stories take dependency edges (`deck deps <story> add <prereq>`): ready selection skips blocked work and explains why, and a direct start re-checks every prerequisite inside the start reservation. Task/criterion identities survive re-grooms (no-op and reorder keep IDs; renames and removals are explicit ops), and accepted scope carries immutable revisions distinct from the publication checksum — checking a box never changes scope identity.
 
 ## Quick start
 
@@ -42,7 +43,7 @@ bun run build          # UI bundle + single-file ./deck binary
 ./deck doctor          # 9 checks
 ```
 
-Or run from source: `bun run dev` (server) · `bun test` (768 tests) · `bun run typecheck`.
+Or run from source: `bun run dev` (server) · `bun test` (796 tests) · `bun run typecheck`.
 
 ## The loop (where this is going)
 

@@ -1,13 +1,13 @@
-import { eq } from 'drizzle-orm';
-import { DeckError, EngineOwnedError, NotFoundError } from './errors.ts';
-import { newTaskId } from './ids.ts';
-import { materializeSpec, sectionLabels } from './groom.ts';
+import { asc, eq } from 'drizzle-orm';
+import { DeckError, EngineOwnedError, NotFoundError, StaleWriterError } from './errors.ts';
+import { assertGroomReady, materializeSpec, sectionLabels } from './groom.ts';
 import { getSpecType, sectionGate } from './types-registry.ts';
-import { cards, issueMap, publishQueue, specs, tasks } from './schema.ts';
+import { cards, issueMap, publishQueue, specs, storyDeps, tasks } from './schema.ts';
 import { runTx, type DocumentStore } from './store.ts';
 import type { Card, GroomProposal, Lane, VerbItem } from './types.ts';
 import { emitEvent } from '../events/outbox.ts';
 import { recordSpecVersion, renderCardSpec, enqueuePublish } from './specstore.ts';
+import { applyCriterionOps, applyTaskOps, currentScopeRevision, recordScopeRevision, scopeCriteria } from './scope.ts';
 
 // v0.2.0 card CRUD for the human-owned lanes: rename, hard delete, and
 // groom-content re-edit. Engine lanes (active/verify/done) refuse every
@@ -45,6 +45,17 @@ export function deleteCard(store: DocumentStore, id: string): void {
     if (row.type === 'epic') {
       tx.update(cards).set({ epicId: null, updatedAt: new Date().toISOString() }).where(eq(cards.epicId, id)).run();
     }
+    // E03 DECK-ARCH-016: a referenced prerequisite refuses deletion until the
+    // dependency edges are explicitly removed — blockers never cascade away.
+    const dependents = tx.select().from(storyDeps).where(eq(storyDeps.dependsOn, id)).all();
+    if (dependents.length > 0) {
+      throw new DeckError(
+        `card ${id} is a prerequisite of ${dependents.map((edge) => edge.cardId).join(', ')} — ` +
+          `remove those dependency edges first (deck deps <card> remove ${id})`,
+        { cardId: id, dependents: dependents.map((edge) => edge.cardId) },
+      );
+    }
+    tx.delete(storyDeps).where(eq(storyDeps.cardId, id)).run(); // outgoing edges die with the card
     tx.delete(tasks).where(eq(tasks.cardId, id)).run();
     // Cascade the card's derived rows too — a surviving issue_map/publish_queue/
     // specs row would make deck sync's drift loop crash on the dead card id
@@ -58,26 +69,49 @@ export function deleteCard(store: DocumentStore, id: string): void {
   });
 }
 
-// Re-edit an already-groomed verb item: title/verb/research/tasks replace,
-// specPath stays (stable engine references, no orphan dirs on verb change).
-// Task done-state survives by title match — a reworded task is new work.
+// Re-edit an already-groomed verb item (E03 DECK-ARCH-011): specPath stays
+// (stable engine references, no orphan dirs on verb change). Task and
+// criterion identities survive: the shared validator (DECK-ARCH-008) runs
+// first, then edits apply through explicit identity-bearing operations.
+// Title-only legacy payloads remain readable — no-op/reorder keeps ids — but
+// ambiguous title changes refuse instead of guessing. `expectedRevision`
+// refuses a stale writer before anything is written.
 export function updateGroom(store: DocumentStore, id: string, proposal: GroomProposal): VerbItem {
   const before = store.getVerbItem(id); // 404 when the id is not a verb item
-  // Same spec-type gate as the initial groom — re-grooming as a stricter
-  // type must not bypass the registry's required sections.
-  const missing = sectionGate(getSpecType(store, proposal.proposedVerb), proposal.research);
-  if (missing.length > 0) {
-    throw new DeckError(
-      `re-groom of ${id} as '${proposal.proposedVerb}' is missing required section(s): ` +
-        `${missing.join(', ')} — fill them and retry`,
-      { cardId: id, verb: proposal.proposedVerb, missing },
-    );
+  assertManualLane(id, before.lane, 'edit groom');
+  // Same proportional readiness policy as initial groom (DECK-ARCH-008) —
+  // one validator, refusal before DB/Markdown/publish effects.
+  assertGroomReady(store, proposal, `re-groom of ${id}`);
+  // Stale-writer refusal: identity edits carry the revision they were read at.
+  const identityEdit = proposal.taskOps !== undefined || proposal.criterionOps !== undefined;
+  if (proposal.expectedRevision !== undefined) {
+    const current = currentScopeRevision(store.db, id);
+    if (proposal.expectedRevision !== current) {
+      throw new StaleWriterError(`scope of ${id}`, proposal.expectedRevision, current);
+    }
   }
+  const doneById = new Map(before.tasks.map((task) => [task.id, task.done]));
+  const reviewed = identityEdit; // initial groom already classified; legacy cards classify on a reviewed edit
   runTx(store.db, (tx) => {
     const row = tx.select().from(cards).where(eq(cards.id, id)).get();
     if (!row) throw new NotFoundError('card', id);
     assertManualLane(id, row.lane, 'edit groom');
-    const doneByTitle = new Map(before.tasks.map((task) => [task.title, task.done]));
+    // Serialize the identity read with the write: the ops were computed
+    // against `before`, so the rows must still match inside the transaction.
+    const fresh = tx.select().from(tasks).where(eq(tasks.cardId, id)).orderBy(asc(tasks.idx)).all();
+    if (fresh.length !== before.tasks.length || fresh.some((task, index) => task.id !== before.tasks[index]!.id)) {
+      throw new StaleWriterError(`tasks of ${id}`, before.tasks.length, fresh.length);
+    }
+    const nextTasks = applyTaskOps(before.tasks, proposal.tasks, proposal.taskOps);
+    const existingCriteria = scopeCriteria(tx, id);
+    const activeTitles = [...new Set(proposal.specDeltas.map((delta) => delta.requirement.trim()).filter(Boolean))];
+    const criteria = applyCriterionOps(tx, id, currentScopeRevision(tx, id) + 1, existingCriteria, activeTitles, proposal.criterionOps, reviewed);
+    tx.delete(tasks).where(eq(tasks.cardId, id)).run();
+    for (const [index, task] of nextTasks.entries()) {
+      tx.insert(tasks)
+        .values({ cardId: id, idx: index, id: task.id, title: task.title, done: doneById.get(task.id) === true })
+        .run();
+    }
     tx.update(cards)
       .set({
         title: proposal.refinedTitle,
@@ -87,12 +121,12 @@ export function updateGroom(store: DocumentStore, id: string, proposal: GroomPro
       })
       .where(eq(cards.id, id))
       .run();
-    tx.delete(tasks).where(eq(tasks.cardId, id)).run();
-    for (const [index, title] of proposal.tasks.entries()) {
-      tx.insert(tasks)
-        .values({ cardId: id, idx: index, id: newTaskId(), title, done: doneByTitle.get(title) === true })
-        .run();
-    }
+    recordScopeRevision(
+      tx,
+      id,
+      { verb: proposal.proposedVerb, title: proposal.refinedTitle, tasks: nextTasks, criteria },
+      identityEdit ? ['identity-bearing re-groom'] : ['no-op/reorder re-groom'],
+    );
     emitEvent(tx, 'card.updated', { id, lane: row.lane });
   });
   const item = store.getVerbItem(id);

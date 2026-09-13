@@ -6,10 +6,21 @@ import { existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { readDeckConfig } from './config.ts';
-import { DeckError, HoldViolation, NotFoundError } from './errors.ts';
+import { DeckError, DependencyBlockedError, HoldViolation, NotFoundError, StaleWriterError } from './errors.ts';
 import { newCardId } from './ids.ts';
 import { endPosition, gapTooSmall, midpoint, renumberPositions } from './positions.ts';
-import { cards, tasks, userVerbs, type CardRow, type TaskRow } from './schema.ts';
+import {
+  cards,
+  childAcknowledgements,
+  epicCriteria,
+  epicCriterionLinks,
+  epicIntent,
+  storyDeps,
+  tasks,
+  userVerbs,
+  type CardRow,
+  type TaskRow,
+} from './schema.ts';
 import { Verb } from './types.ts';
 import type { Card, Epic, Lane, Note, TaskState, VerbItem } from './types.ts';
 import { toEpic, toNote, toTweak, toVerbItem } from './mappers.ts';
@@ -30,8 +41,8 @@ export type Tx = Parameters<Parameters<SQLiteBunDatabase['transaction']>[0]>[0];
 type SyncTxCallback = Parameters<SQLiteBunDatabase['transaction']>[0];
 
 // BEGIN IMMEDIATE takes the write lock up front (a deferred BEGIN upgrades
-// against a stale WAL snapshot and returns SQLITE_BUSY, ignoring
-// busy_timeout); the cast fits our void shape into drizzle's callback type.
+// against a stale WAL snapshot and SQLITE_BUSYs past busy_timeout); the cast
+// fits our void shape into drizzle's callback type.
 export function runTx(db: SQLiteBunDatabase, fn: (tx: Tx) => void): void {
   db.transaction(fn as unknown as SyncTxCallback, { behavior: 'immediate' });
 }
@@ -57,8 +68,7 @@ export class DocumentStore {
     this.wipLimit = wipLimit;
   }
 
-  // Raw handle for engine-owned state drizzle migrations cannot express
-  // (FTS5 virtual tables, user_verbs DDL).
+  // Raw handle for engine-owned state drizzle cannot own (FTS5, raw DDL).
   raw(): Database {
     return this.sqlite;
   }
@@ -72,8 +82,7 @@ export class DocumentStore {
     // exclusive lock, which throws SQLITE_BUSY without the wait.
     sqlite.exec('PRAGMA busy_timeout = 5000');
     sqlite.exec('PRAGMA journal_mode = WAL');
-    // Writer fence BEFORE migrations: a db written by a newer deck refuses an
-    // older binary before it can write anything at all.
+    // Writer fence BEFORE migrations: a newer deck's db refuses an older binary.
     assertWriterAllowed(sqlite);
     const db = drizzle({ client: sqlite });
     // Fresh-board DDL races between processes: retry (the journal makes the

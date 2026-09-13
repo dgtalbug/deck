@@ -23,6 +23,7 @@ import * as projectsDoctor from '../../src/core/projects/doctor.ts';
 import * as typesRegistry from '../../src/core/board/types-registry.ts';
 import * as boardRules from '../../src/core/board/rules.ts';
 import * as graphIndex from '../../src/core/graph/index.ts';
+import * as planning from '../../src/core/board/planning.ts';
 import { DocumentStore } from '../../src/core/board/store.ts';
 import { ProjectRegistry } from '../../src/core/projects/registry.ts';
 import { parity as cliParity } from '../../src/cli/main.ts';
@@ -71,6 +72,7 @@ const functions: Record<string, unknown> = {
   ...typesRegistry,
   ...boardRules,
   ...graphIndex,
+  ...planning,
   ...outbox,
   addNote: DocumentStore.prototype.addNote,
   reorder: DocumentStore.prototype.reorder,
