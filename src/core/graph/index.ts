@@ -4,15 +4,31 @@
 // cross-file resolution → tier stamping → folder tree → fan-in → PageRank →
 // counts. Schema-version or workspace-identity mismatch triggers a full
 // rebuild (cheap and sane at deck's scale — dextree's rule too).
+//
+// E04 (engine/graph): freshness and publication are explicit. Every index
+// run computes an input fingerprint (membership + content + extractor +
+// resolution + schema versions); a generation is marked complete ONLY when
+// resolution and derived facts publish atomically against that fingerprint.
+// Heuristic edges are re-resolved from scratch against the complete candidate
+// set each publication, so incremental facts match a clean rebuild.
 import { createHash } from 'node:crypto';
-import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Database } from 'bun:sqlite';
-import { extractFile, fileNodeId, resolveImportSpec, supportedLanguage } from './extractor.ts';
-import { readMeta, writeMeta, GRAPH_SCHEMA_VERSION, type GraphStatus } from './schema.ts';
+import { extractFile, fileNodeId, supportedLanguage } from './extractor.ts';
+import { readMeta, writeMeta, GRAPH_SCHEMA_VERSION, type GraphStatus, type GraphMeta } from './schema.ts';
 import { pageRank } from './pagerank.ts';
 
 const IGNORED = new Set(['node_modules', '.git', '.deck', 'dist', 'build', 'out', 'coverage', '.turbo', '.next', '.cache', 'origin.git', 'agent', 'dist-ui']);
+
+// Bumped when extraction or resolution semantics change — either bump changes
+// the input fingerprint and forces re-derivation (the graph is disposable).
+export const EXTRACTOR_VERSION = 1;
+export const RESOLUTION_VERSION = 2;
+
+export class ExtractionFailure extends Error {}
+export class StaleInputsError extends Error {}
+export class PublicationConflict extends Error {}
 
 export function walkSources(projectPath: string, dir: string = projectPath): string[] {
   const files: string[] = [];
@@ -44,6 +60,58 @@ export function gitOrigin(projectPath: string): string | null {
   }
 }
 
+interface ScannedInput {
+  relativePath: string;
+  source: string;
+  hash: string;
+}
+
+// Read every covered source ONCE — the same bytes are hashed, passed to
+// extraction, and (revalidated) at publication. A read failure here is an
+// explicit failure, never an empty file.
+export async function scanInputs(projectPath: string): Promise<ScannedInput[]> {
+  const scanned: ScannedInput[] = [];
+  for (const full of walkSources(projectPath)) {
+    const relativePath = relativeOf(projectPath, full);
+    let source: string;
+    try {
+      source = readFileSync(full, 'utf8');
+    } catch (error) {
+      throw new ExtractionFailure(`cannot read covered source ${relativePath}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    scanned.push({ relativePath, source, hash: sha256(source) });
+  }
+  return scanned.sort((a, b) => a.relativePath.localeCompare(b.relativePath));
+}
+
+// Deterministic identity of everything the graph derives from: membership,
+// content hashes, and the extraction/resolution/schema versions.
+export function computeInputFingerprint(inputs: ScannedInput[]): string {
+  const hasher = createHash('sha256');
+  hasher.update(`extractor:${EXTRACTOR_VERSION}\u0000resolution:${RESOLUTION_VERSION}\u0000schema:${GRAPH_SCHEMA_VERSION}\u0000`);
+  for (const input of inputs) {
+    hasher.update(`${input.relativePath}\u0000${input.hash}\u0000`);
+  }
+  return hasher.digest('hex');
+}
+
+// Fingerprint of the inputs CURRENTLY on disk — throws only if a file that
+// existed at scan time became unreadable; callers map that to `unchecked`.
+function currentFingerprint(projectPath: string): string {
+  const inputs: ScannedInput[] = [];
+  for (const full of walkSources(projectPath)) {
+    const relativePath = relativeOf(projectPath, full);
+    let source: string;
+    try {
+      source = readFileSync(full, 'utf8');
+    } catch (error) {
+      throw new ExtractionFailure(`cannot inspect ${relativePath}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    inputs.push({ relativePath, source, hash: sha256(source) });
+  }
+  return computeInputFingerprint(inputs.sort((a, b) => a.relativePath.localeCompare(b.relativePath)));
+}
+
 export function graphStatus(projectPath: string, db: Database): GraphStatus {
   const meta = readMeta(db);
   if (meta === null) return { state: 'absent', meta: null };
@@ -54,6 +122,22 @@ export function graphStatus(projectPath: string, db: Database): GraphStatus {
   if ((meta.origin ?? null) !== origin) {
     return { state: 'stale-workspace', meta, reason: 'repo origin changed' };
   }
+  if (!meta.complete) {
+    return { state: 'stale-sources', meta, reason: 'indexing was interrupted before a complete generation — run `deck graph index`' };
+  }
+  let current: string;
+  try {
+    current = currentFingerprint(projectPath);
+  } catch (error) {
+    return {
+      state: 'unchecked',
+      meta,
+      reason: `freshness could not be verified — ${error instanceof Error ? error.message : String(error)}`,
+    };
+  }
+  if (current !== meta.inputFingerprint) {
+    return { state: 'stale-sources', meta, reason: 'covered sources changed since the last complete index — run `deck graph index`' };
+  }
   return { state: 'ready', meta };
 }
 
@@ -63,6 +147,10 @@ export interface IndexOutcome {
   rebuilt: boolean;
   nodes: number;
   edges: number;
+  // E04: true when every relevant input matched the complete generation and
+  // all derivation was skipped.
+  noOp: boolean;
+  generation: number;
 }
 
 export async function indexGraph(projectPath: string, db: Database): Promise<IndexOutcome> {
@@ -72,42 +160,202 @@ export async function indexGraph(projectPath: string, db: Database): Promise<Ind
     db.exec('DELETE FROM g_file; DELETE FROM g_symbol; DELETE FROM g_edge; DELETE FROM g_folder; DELETE FROM symbols_fts;');
   }
 
-  const files = walkSources(projectPath);
+  // Scan once: these exact bytes are hashed, extracted, and revalidated at
+  // publication — no mixed snapshot can be advertised current.
+  const scanned = await scanInputs(projectPath);
+  const fingerprint = computeInputFingerprint(scanned);
+  const meta = readMeta(db);
+
+  // No-op derivation is refused unless the stored generation is COMPLETE and
+  // every relevant input (membership, hashes, extractor/resolution/schema)
+  // matches it.
+  if (!rebuilt && meta !== null && meta.complete && meta.inputFingerprint === fingerprint) {
+    return { indexed: 0, skipped: scanned.length, rebuilt: false, nodes: countSymbols(db), edges: countEdges(db), noOp: true, generation: meta.generation };
+  }
+
+  const baseGeneration = meta?.generation ?? 0;
   let indexed = 0;
   let skipped = 0;
-  for (const full of files) {
-    const relativePath = relativeOf(projectPath, full);
-    const source = readFileSync(full, 'utf8');
-    const hash = sha256(source);
-    const existing = db.query('SELECT hash FROM g_file WHERE relative_path = ?').get(relativePath) as { hash: string } | null;
-    if (existing !== null && existing.hash === hash) {
+  for (const input of scanned) {
+    const existing = db.query('SELECT hash FROM g_file WHERE relative_path = ?').get(input.relativePath) as { hash: string } | null;
+    if (existing !== null && existing.hash === input.hash) {
       skipped += 1;
       continue;
     }
-    await replaceFile(projectPath, db, relativePath, source, hash);
+    // Extracts the already-read bytes; a parse/read failure throws and the
+    // prior complete generation stays intact (meta is untouched so far).
+    await replaceFile(projectPath, db, input.relativePath, input.source, input.hash);
     indexed += 1;
   }
 
-  // Files deleted since the last index drop out here.
+  // Files deleted since the last index drop out here — membership via a path
+  // set, not a repeated array scan (E04 DECK-ARCH-025).
+  const currentPaths = new Set(scanned.map((input) => input.relativePath));
   for (const row of db.query('SELECT relative_path FROM g_file').all() as Array<{ relative_path: string }>) {
-    if (!files.some((full) => relativeOf(projectPath, full) === row.relative_path)) {
+    if (!currentPaths.has(row.relative_path)) {
       deleteFileGraph(db, row.relative_path);
     }
   }
 
-  finalize(db, projectPath);
-  return { indexed, skipped, rebuilt, nodes: countSymbols(db), edges: countEdges(db) };
+  const generation = publishFinalization(db, projectPath, fingerprint, baseGeneration);
+  return { indexed, skipped, rebuilt, nodes: countSymbols(db), edges: countEdges(db), noOp: false, generation };
+}
+
+// Publication (engine/graph "Only complete graph generations are published"):
+// resolution, derived facts, FTS state, and generation metadata commit in ONE
+// transaction. The publisher captured `baseGeneration` before extraction; if
+// another publisher committed since, we re-run against the newer base (the
+// facts on disk are already current-input) rather than overwrite it. Before
+// writing metadata the inputs are revalidated against the fingerprint that
+// was extracted — a mid-index source change rolls the whole publication back.
+export function publishFinalization(
+  db: Database,
+  projectPath: string,
+  fingerprint: string,
+  baseGeneration: number,
+  attempt = 0,
+): number {
+  if (attempt >= 3) {
+    throw new PublicationConflict(
+      'another indexer kept committing newer generations — retry `deck graph index` once the other publisher settles',
+    );
+  }
+  const currentBase = readMeta(db)?.generation ?? 0;
+  if (currentBase !== baseGeneration) {
+    // Stale base: the fact tables still describe the current inputs (same
+    // scan), so re-run against the newer base instead of overwriting it.
+    return publishFinalization(db, projectPath, fingerprint, currentBase, attempt + 1);
+  }
+  try {
+    const tx = db.transaction(() => {
+      const publishing = readMeta(db);
+      if ((publishing?.generation ?? 0) !== baseGeneration) {
+        throw new PublicationConflict('a newer generation committed during publication — retrying');
+      }
+      resolveAllEdges(db);
+      deriveFolders(db);
+      deriveMetrics(db);
+      // Revalidate BEFORE metadata: the inputs on disk must still hash to the
+      // fingerprint that was extracted, or nothing is published.
+      const now = currentFingerprint(projectPath);
+      if (now !== fingerprint) {
+        throw new StaleInputsError('covered sources changed while indexing — nothing published; run `deck graph index` again');
+      }
+      writeMeta(db, {
+        root: projectPath,
+        origin: gitOrigin(projectPath),
+        schemaVersion: GRAPH_SCHEMA_VERSION,
+        lastIndex: new Date().toISOString(),
+        fileCount: (db.query('SELECT COUNT(*) AS n FROM g_file').get() as { n: number }).n,
+        nodeCount: countSymbols(db),
+        edgeCount: countEdges(db),
+        inputFingerprint: fingerprint,
+        generation: baseGeneration + 1,
+        complete: true,
+      });
+    });
+    tx();
+    return baseGeneration + 1;
+  } catch (error) {
+    if (error instanceof PublicationConflict) {
+      return publishFinalization(db, projectPath, fingerprint, readMeta(db)?.generation ?? 0, attempt + 1);
+    }
+    throw error;
+  }
+}
+
+// Full workspace re-resolution (E04 engine/graph "Incremental resolution
+// remains valid"): every heuristic edge is demoted to unresolved and then
+// resolved against the COMPLETE candidate set — rename, deletion, import
+// changes and duplicate targets are invalidated by construction, so
+// incremental facts equal a clean rebuild. callee_name and import metadata
+// survive for unresolved edges.
+function resolveAllEdges(db: Database): void {
+  db.exec("UPDATE g_edge SET target_id = NULL, resolution = 'unresolved', confidence = 0.0 WHERE resolution = 'heuristic'");
+  // Workspace-wide symbol-name resolution for unresolved relation edges.
+  const unresolved = db.query(
+    "SELECT id, source_id, kind, meta FROM g_edge WHERE target_id IS NULL AND kind != 'IMPORTS' AND kind != 'RE_EXPORTS'",
+  ).all() as Array<{ id: string; source_id: string; kind: string; meta: string }>;
+  for (const edge of unresolved) {
+    const meta = JSON.parse(edge.meta) as Record<string, string>;
+    const name = meta['callee_name'];
+    if (name === undefined) continue;
+    const target = db.query(
+      "SELECT id FROM g_symbol WHERE name = ? AND kind IN ('function','method','class','interface') ORDER BY fqn LIMIT 1",
+    ).get(name) as { id: string } | null;
+    if (target !== null) {
+      db.query("UPDATE g_edge SET target_id = ?, resolution = 'heuristic', confidence = 0.6 WHERE id = ?").run(target.id, edge.id);
+    }
+  }
+  // IMPORTS edges the eager fs resolution missed (aliases): workspace-wide
+  // suffix match on the raw specifier.
+  const imports = db.query("SELECT id, meta FROM g_edge WHERE target_id IS NULL AND kind = 'IMPORTS'").all() as Array<{ id: string; meta: string }>;
+  for (const edge of imports) {
+    const meta = JSON.parse(edge.meta) as Record<string, string>;
+    const spec = meta['import_path'];
+    if (spec === undefined) continue;
+    const hit = db.query('SELECT relative_path FROM g_file WHERE relative_path LIKE ? ORDER BY relative_path LIMIT 1')
+      .get(`%${spec.replaceAll('\\', '/').replace(/^\.\//, '')}`) as { relative_path: string } | null;
+    if (hit !== null) {
+      db.query("UPDATE g_edge SET target_id = ?, resolution = 'heuristic', confidence = 0.6 WHERE id = ?").run(fileNodeId(hit.relative_path), edge.id);
+    }
+  }
+}
+
+// Folder tree: wholesale re-derivation from file paths (dextree's rule).
+function deriveFolders(db: Database): void {
+  db.exec('DELETE FROM g_folder');
+  const folderIds = new Set<string>();
+  for (const row of db.query('SELECT relative_path FROM g_file').all() as Array<{ relative_path: string }>) {
+    const segments = row.relative_path.split('/');
+    segments.pop();
+    let parent = '';
+    let path = '';
+    for (const segment of segments) {
+      path = path === '' ? segment : `${path}/${segment}`;
+      const id = 'd:' + createHash('sha256').update(path).digest('hex').slice(0, 20);
+      if (!folderIds.has(id)) {
+        db.query('INSERT INTO g_folder (id, path, parent_id) VALUES (?, ?, ?)').run(id, path, parent === '' ? null : 'd:' + createHash('sha256').update(parent).digest('hex').slice(0, 20));
+        folderIds.add(id);
+      }
+      parent = path;
+    }
+    if (path !== '') {
+      const id = 'd:' + createHash('sha256').update(path).digest('hex').slice(0, 20);
+      db.query('INSERT OR REPLACE INTO g_edge (id, source_id, target_id, kind, resolution, confidence, meta) VALUES (?, ?, ?, ?, ?, ?, ?)')
+        .run('c:' + createHash('sha256').update(`${path}\x1f${row.relative_path}`).digest('hex').slice(0, 20), id, fileNodeId(row.relative_path), 'CONTAINS', 'structural', 1.0, '{}');
+    }
+  }
+}
+
+// fan-in from resolved CALLS/REFERENCES; importance from PageRank over the
+// resolved directed graph (dextree's pinned numbers: α=0.85, tol 1e-6).
+function deriveMetrics(db: Database): void {
+  db.exec("UPDATE g_symbol SET fan_in = (SELECT COUNT(*) FROM g_edge e WHERE e.target_id = g_symbol.id AND e.kind IN ('CALLS','REFERENCES'))");
+  const nodes = (db.query('SELECT id FROM g_symbol').all() as Array<{ id: string }>).map((row) => row.id);
+  const edges = (db.query("SELECT source_id, target_id FROM g_edge WHERE kind = 'CALLS' AND target_id IS NOT NULL").all() as Array<{ source_id: string; target_id: string }>)
+    .map((row) => [row.source_id, row.target_id] as [string, string]);
+  const importance = pageRank(nodes, edges);
+  const update = db.query('UPDATE g_symbol SET importance = ? WHERE id = ?');
+  for (const [id, score] of importance) update.run(score, id);
 }
 
 async function replaceFile(projectPath: string, db: Database, relativePath: string, source: string, hash: string): Promise<void> {
   const result = await extractFile(projectPath, relativePath, source);
+  if (result === null) {
+    // The language is supported (walk filtered it) — null means the parse or
+    // language load failed. This is a failure, not an empty file: publishing
+    // it would look like a successful empty replacement.
+    throw new ExtractionFailure(
+      `extraction failed for ${relativePath} — the file is covered but could not be parsed; fix or exclude it before indexing`,
+    );
+  }
   const language = supportedLanguage(relativePath) ?? 'unknown';
   deleteFileGraph(db, relativePath);
   const tx = db.transaction(() => {
     const fileId = fileNodeId(relativePath);
     db.query('INSERT OR REPLACE INTO g_file (id, relative_path, language, loc, hash) VALUES (?, ?, ?, ?, ?)')
       .run(fileId, relativePath, language, source.split('\n').length, hash);
-    if (result === null) return;
     for (const symbol of result.symbols) {
       db.query('INSERT OR REPLACE INTO g_symbol (id, name, fqn, kind, file_id, start_line, end_line, entry_kind, arch_layer) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
         .run(symbol.id, symbol.name, symbol.fqn, symbol.kind, fileId, symbol.startLine, symbol.endLine, symbol.entryKind, symbol.archLayer);
@@ -140,87 +388,6 @@ function deleteFileGraph(db: Database, relativePath: string): void {
   db.query('DELETE FROM g_symbol WHERE file_id = ?').run(fileId);
   db.query('DELETE FROM g_file WHERE relative_path = ?').run(relativePath);
   db.query("DELETE FROM symbols_fts WHERE file_id = ?").run(fileId);
-}
-
-// The finalize pass: same-name cross-file resolution for still-NULL targets
-// (heuristic 0.6 — pass 2 would upgrade, never downgrade), tier stamping,
-// folder tree, fan-in, PageRank importance, counts.
-function finalize(db: Database, projectPath: string): void {
-  // Workspace-wide symbol-name resolution for unresolved relation edges.
-  const unresolved = db.query(
-    "SELECT id, source_id, kind, meta FROM g_edge WHERE target_id IS NULL AND kind != 'IMPORTS' AND kind != 'RE_EXPORTS'",
-  ).all() as Array<{ id: string; source_id: string; kind: string; meta: string }>;
-  for (const edge of unresolved) {
-    const meta = JSON.parse(edge.meta) as Record<string, string>;
-    const name = meta['callee_name'];
-    if (name === undefined) continue;
-    const target = db.query(
-      "SELECT id FROM g_symbol WHERE name = ? AND kind IN ('function','method','class','interface') ORDER BY fqn LIMIT 1",
-    ).get(name) as { id: string } | null;
-    if (target !== null) {
-      db.query("UPDATE g_edge SET target_id = ?, resolution = 'heuristic', confidence = 0.6 WHERE id = ?").run(target.id, edge.id);
-    }
-  }
-  // IMPORTS edges the eager fs resolution missed (aliases): workspace-wide
-  // suffix match on the raw specifier.
-  const imports = db.query("SELECT id, meta FROM g_edge WHERE target_id IS NULL AND kind = 'IMPORTS'").all() as Array<{ id: string; meta: string }>;
-  for (const edge of imports) {
-    const meta = JSON.parse(edge.meta) as Record<string, string>;
-    const spec = meta['import_path'];
-    if (spec === undefined) continue;
-    const hit = db.query('SELECT relative_path FROM g_file WHERE relative_path LIKE ? ORDER BY relative_path LIMIT 1')
-      .get(`%${spec.replaceAll('\\', '/').replace(/^\.\//, '')}`) as { relative_path: string } | null;
-    if (hit !== null) {
-      db.query("UPDATE g_edge SET target_id = ?, resolution = 'heuristic', confidence = 0.6 WHERE id = ?").run(fileNodeId(hit.relative_path), edge.id);
-    }
-  }
-
-  // Folder tree: wholesale re-derivation from file paths (dextree's rule).
-  db.exec('DELETE FROM g_folder');
-  const folderIds = new Set<string>();
-  for (const row of db.query('SELECT relative_path FROM g_file').all() as Array<{ relative_path: string }>) {
-    const segments = row.relative_path.split('/');
-    segments.pop();
-    let parent = '';
-    let path = '';
-    for (const segment of segments) {
-      path = path === '' ? segment : `${path}/${segment}`;
-      const id = 'd:' + createHash('sha256').update(path).digest('hex').slice(0, 20);
-      if (!folderIds.has(id)) {
-        db.query('INSERT INTO g_folder (id, path, parent_id) VALUES (?, ?, ?)').run(id, path, parent === '' ? null : 'd:' + createHash('sha256').update(parent).digest('hex').slice(0, 20));
-        folderIds.add(id);
-      }
-      parent = path;
-    }
-    if (path !== '') {
-      const id = 'd:' + createHash('sha256').update(path).digest('hex').slice(0, 20);
-      db.query('INSERT OR REPLACE INTO g_edge (id, source_id, target_id, kind, resolution, confidence, meta) VALUES (?, ?, ?, ?, ?, ?, ?)')
-        .run('c:' + createHash('sha256').update(`${path}\x1f${row.relative_path}`).digest('hex').slice(0, 20), id, fileNodeId(row.relative_path), 'CONTAINS', 'structural', 1.0, '{}');
-    }
-  }
-
-  // fan-in from resolved CALLS/REFERENCES; importance from PageRank over the
-  // resolved directed graph (dextree's pinned numbers: α=0.85, tol 1e-6).
-  db.exec("UPDATE g_symbol SET fan_in = (SELECT COUNT(*) FROM g_edge e WHERE e.target_id = g_symbol.id AND e.kind IN ('CALLS','REFERENCES'))");
-  const nodes = (db.query('SELECT id FROM g_symbol').all() as Array<{ id: string }>).map((row) => row.id);
-  const edges = (db.query("SELECT source_id, target_id FROM g_edge WHERE kind = 'CALLS' AND target_id IS NOT NULL").all() as Array<{ source_id: string; target_id: string }>)
-    .map((row) => [row.source_id, row.target_id] as [string, string]);
-  const importance = pageRank(nodes, edges);
-  const update = db.query('UPDATE g_symbol SET importance = ? WHERE id = ?');
-  const tx = db.transaction(() => {
-    for (const [id, score] of importance) update.run(score, id);
-  });
-  tx();
-
-  writeMeta(db, {
-    root: projectPath,
-    origin: gitOrigin(projectPath),
-    schemaVersion: GRAPH_SCHEMA_VERSION,
-    lastIndex: new Date().toISOString(),
-    fileCount: (db.query('SELECT COUNT(*) AS n FROM g_file').get() as { n: number }).n,
-    nodeCount: countSymbols(db),
-    edgeCount: countEdges(db),
-  });
 }
 
 function countSymbols(db: Database): number {

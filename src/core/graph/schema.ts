@@ -1,14 +1,17 @@
 // schema.ts: the graph store — a separate `.deck/graph.sqlite` so the card
 // store's blast radius stays zero and the graph is deletable at any time.
 // SQLite port of dextree's DuckDB schema (g_-prefixed tables), plus deck
-// upgrades: FTS5 symbol search and a generated import_path column so IMPORTS
-// edges resolve without metadata scans.
+// upgrades: FTS5 symbol search, a generated import_path column so IMPORTS
+// edges resolve without metadata scans, and (E04) input-fingerprint +
+// complete-generation metadata so freshness is provable, not assumed.
 import { Database } from 'bun:sqlite';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
 export const GRAPH_DB_NAME = 'graph.sqlite';
-export const GRAPH_SCHEMA_VERSION = 1;
+// E04: v2 adds input_fingerprint/generation/complete metadata — a v1 db
+// rebuilds on first index (the graph is a disposable cache).
+export const GRAPH_SCHEMA_VERSION = 2;
 
 export interface GraphMeta {
   root: string;
@@ -18,6 +21,12 @@ export interface GraphMeta {
   fileCount: number;
   nodeCount: number;
   edgeCount: number;
+  // E04 publication identity: the fingerprint of the inputs this generation
+  // was built from, a monotonic generation counter, and the completeness flag
+  // (0 = partial facts from an interrupted index — never advertised current).
+  inputFingerprint: string | null;
+  generation: number;
+  complete: boolean;
 }
 
 export function openGraph(projectPath: string): Database {
@@ -45,10 +54,25 @@ export function openGraph(projectPath: string): Database {
   // Deck upgrade over dextree: generated import_path + covering indexes so
   // IMPORTS resolution and k-hop walks never scan the edge table.
   db.exec('CREATE INDEX IF NOT EXISTS idx_edge_source ON g_edge (kind, source_id)');
+  // E04: neighborhood edge reads filter by source_id alone (the selected-id
+  // IN list) — justified by the bounded-query contract, pinned by EXPLAIN.
+  db.exec('CREATE INDEX IF NOT EXISTS idx_edge_source_id ON g_edge (source_id)');
   db.exec('CREATE INDEX IF NOT EXISTS idx_edge_target ON g_edge (kind, target_id)');
   db.exec('CREATE INDEX IF NOT EXISTS idx_symbol_file ON g_symbol (file_id)');
   db.exec('CREATE INDEX IF NOT EXISTS idx_symbol_name ON g_symbol (name)');
   db.exec('CREATE VIRTUAL TABLE IF NOT EXISTS symbols_fts USING fts5(name, fqn, file_id UNINDEXED)');
+  // E04 generation metadata: additive columns, idempotent (older dbs upgrade
+  // in place; the schema-version bump still forces a data rebuild).
+  const cols = db.query("PRAGMA table_info('g_meta')").all() as Array<{ name: string }>;
+  if (!cols.some((col) => col.name === 'input_fingerprint')) {
+    db.exec('ALTER TABLE g_meta ADD COLUMN input_fingerprint TEXT');
+  }
+  if (!cols.some((col) => col.name === 'generation')) {
+    db.exec('ALTER TABLE g_meta ADD COLUMN generation INTEGER NOT NULL DEFAULT 0');
+  }
+  if (!cols.some((col) => col.name === 'complete')) {
+    db.exec('ALTER TABLE g_meta ADD COLUMN complete INTEGER NOT NULL DEFAULT 0');
+  }
   return db;
 }
 
@@ -70,16 +94,25 @@ export function readMeta(db: Database): GraphMeta | null {
     fileCount: Number(row['file_count'] ?? 0),
     nodeCount: Number(row['node_count'] ?? 0),
     edgeCount: Number(row['edge_count'] ?? 0),
+    inputFingerprint: row['input_fingerprint'] === null || row['input_fingerprint'] === undefined ? null : String(row['input_fingerprint']),
+    generation: Number(row['generation'] ?? 0),
+    complete: Number(row['complete'] ?? 0) === 1,
   };
 }
 
 export function writeMeta(db: Database, meta: Omit<GraphMeta, 'id'>): void {
-  db.query('INSERT OR REPLACE INTO g_meta (id, root, origin, schema_version, last_index, file_count, node_count, edge_count) VALUES (1, ?, ?, ?, ?, ?, ?, ?)')
-    .run(meta.root, meta.origin, meta.schemaVersion, meta.lastIndex, meta.fileCount, meta.nodeCount, meta.edgeCount);
+  db.query(
+    'INSERT OR REPLACE INTO g_meta (id, root, origin, schema_version, last_index, file_count, node_count, edge_count, input_fingerprint, generation, complete) ' +
+      'VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+  )
+    .run(meta.root, meta.origin, meta.schemaVersion, meta.lastIndex, meta.fileCount, meta.nodeCount, meta.edgeCount, meta.inputFingerprint, meta.generation, meta.complete ? 1 : 0);
 }
 
 export interface GraphStatus {
-  state: 'absent' | 'stale-schema' | 'stale-workspace' | 'ready';
+  // E04 additive states: 'stale-sources' (inputs changed since the complete
+  // generation) and 'unchecked' (freshness could not be verified) — consumers
+  // that only know absent/stale/ready treat both as "not ready".
+  state: 'absent' | 'stale-schema' | 'stale-workspace' | 'stale-sources' | 'unchecked' | 'ready';
   meta: GraphMeta | null;
   reason?: string;
 }

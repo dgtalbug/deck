@@ -35,6 +35,8 @@ export async function graphCommand(args: ParsedArgs, ctx: RunContext): Promise<s
       if (status.state === 'absent') return 'absent — run `deck graph index`';
       if (status.state === 'stale-schema') return `stale — ${status.reason} (rebuilds automatically on next index)`;
       if (status.state === 'stale-workspace') return `stale — ${status.reason}`;
+      if (status.state === 'stale-sources') return `stale — ${status.reason}`;
+      if (status.state === 'unchecked') return `unchecked — ${status.reason} (status cannot prove freshness; never guessed ready)`;
       const meta = readMeta(db)!;
       return `ready — schema v${GRAPH_SCHEMA_VERSION} · ${meta.fileCount} files · ${meta.nodeCount} symbols · ${meta.edgeCount} edges (last index ${meta.lastIndex})`;
     }
