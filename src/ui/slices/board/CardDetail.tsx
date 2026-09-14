@@ -4,6 +4,7 @@ import {
   ArchiveRestore,
   BookOpen,
   Copy,
+  FileSearch,
   FileText,
   ListChecks,
   OctagonPause,
@@ -21,6 +22,8 @@ import { TextField } from '../../components/TextField.tsx';
 import { cardKind, progressParts } from './Card.tsx';
 import { VerbIcon } from './verbIcon.tsx';
 import { SpecView } from './specView.tsx';
+import { EvidenceView } from './EvidenceView.tsx';
+import { CapabilityView } from './CapabilityView.tsx';
 import type { EpicTreeStory, UiCard } from './api.ts';
 
 type Tab = 'tasks' | 'spec' | 'research';
@@ -320,9 +323,15 @@ export function EpicDetail(props: {
   tree: { epic: { id: string; title: string }; stories: EpicTreeStory[] };
   onOpenStory(id: string): void;
   onClose(): void;
+  project?: string;
+  fetchEvidenceBundle?: Parameters<typeof EvidenceView>[0]['fetchEvidenceBundle'];
+  fetchCapabilities?: Parameters<typeof CapabilityView>[0]['fetchCapabilities'];
+  fetchCapabilityPreview?: Parameters<typeof CapabilityView>[0]['fetchCapabilityPreview'];
 }): VNode {
   const { tree } = props;
   const done = tree.stories.filter((story) => story.lane === 'done').length;
+  const [showEvidence, setShowEvidence] = useState(false);
+  const [showCapabilities, setShowCapabilities] = useState(false);
   return (
     <Dialog open onClose={props.onClose} label={`epic detail: ${tree.epic.title}`}>
       <DialogHead
@@ -336,6 +345,30 @@ export function EpicDetail(props: {
         onClose={props.onClose}
       />
       <div style="margin-top:14px">
+        {props.fetchEvidenceBundle !== undefined && props.project !== undefined ? (
+          <button class="btn btn-outline" style="margin-bottom:12px" onClick={() => setShowEvidence(!showEvidence)}>
+            <FileSearch size={13} /> Evidence
+          </button>
+        ) : null}
+        {props.fetchCapabilities !== undefined && props.project !== undefined ? (
+          <button class="btn btn-outline" style="margin-bottom:12px;margin-left:8px" onClick={() => setShowCapabilities(!showCapabilities)}>
+            <ListChecks size={13} /> Capabilities
+          </button>
+        ) : null}
+        {showEvidence && props.fetchEvidenceBundle !== undefined && props.project !== undefined ? (
+          <div style="margin-bottom:14px">
+            <EvidenceView project={props.project} epicId={tree.epic.id} fetchEvidenceBundle={props.fetchEvidenceBundle} />
+          </div>
+        ) : null}
+        {showCapabilities && props.fetchCapabilities !== undefined && props.project !== undefined ? (
+          <div style="margin-bottom:14px">
+            <CapabilityView
+              project={props.project}
+              fetchCapabilities={props.fetchCapabilities}
+              {...(props.fetchCapabilityPreview !== undefined ? { fetchCapabilityPreview: props.fetchCapabilityPreview } : {})}
+            />
+          </div>
+        ) : null}
         {tree.stories.length === 0 ? (
           <p class="hint">no stories yet — deck story <span class="mono">{tree.epic.id}</span> &quot;&lt;title&gt;&quot; adds one</p>
         ) : (

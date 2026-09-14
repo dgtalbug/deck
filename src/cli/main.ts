@@ -22,6 +22,8 @@ import { noteBody } from '../server/routes/notes.ts';
 import { serveMain } from '../server/serve.ts';
 import { flagString, flagStrings, parseArgs, UsageError, type ParsedArgs } from './args.ts';
 import { startCommand } from './start.ts';
+import { evidenceCommand } from './evidence.ts';
+import { capabilityCommand } from './capability.ts';
 import { baselineCommand } from './baseline.ts';
 import { handoffCommand, taskCommand } from './collab.ts';
 import { workspaceCommand } from './workspace.ts';
@@ -102,6 +104,8 @@ export const parity = {
   'deck handoff': 'offerHandoff',
   'deck workspace': 'createWorkspace',
   'deck baseline': 'captureSourceBaseline',
+  'deck evidence': 'collectEvidenceBundleSnapshot',
+  'deck capability': 'previewCapabilityProjection',
 };
 
 export interface CliIo {
@@ -133,6 +137,10 @@ commands:
   baseline advise <card-id> [--query "<text>"] [--strategy baseline|graph]
                                       EXPERIMENTAL: bounded retrieval preview (not promoted; advisory only)
   checkpoint <card-id>               print the card's session checkpoint
+  evidence export <epic-id> --out <directory> | evidence view <bundle.json>
+                                    write local bundle.json + review.md evidence snapshot
+  capability preview <delta-file> | capability apply <preview-id> --accept
+                                    preview and explicitly accept local capability projection changes
   checkpoint <card-id> add "<text>" [--kind <k>] [--id <id>] [--expect-rev <n>] [--basis <sha>]
   tweak <id>                        promote a note to a tweak build
   verify <id> [--result clean|gaps]      compute gaps (or override the result)
@@ -234,6 +242,8 @@ const commands: Record<string, Command> = {
   },
   next: nextCommand,
   baseline: baselineCommand,
+  evidence: evidenceCommand,
+  capability: capabilityCommand,
   checkpoint: checkpointCliCommand,
   tweak: async (args, ctx) => {
     const id = requiredId(args, 'tweak <id>');

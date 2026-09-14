@@ -18,12 +18,15 @@ import * as lanes from '../../src/core/board/lanes.ts';
 import * as next from '../../src/core/board/next.ts';
 import * as verify from '../../src/core/board/verify.ts';
 import * as views from '../../src/core/board/views.ts';
+import * as boardSummaries from '../../src/core/board/summaries.ts';
 import * as outbox from '../../src/core/events/outbox.ts';
 import * as summary from '../../src/core/projects/summary.ts';
 import * as projectsInit from '../../src/core/projects/init.ts';
 import * as projectsDoctor from '../../src/core/projects/doctor.ts';
 import * as typesRegistry from '../../src/core/board/types-registry.ts';
 import * as boardRules from '../../src/core/board/rules.ts';
+import * as evidenceBundle from '../../src/core/board/evidence-bundle.ts';
+import * as capabilityProjection from '../../src/core/board/capability-projection.ts';
 import * as graphIndex from '../../src/core/graph/index.ts';
 import * as planning from '../../src/core/board/planning.ts';
 import * as taskPatches from '../../src/core/board/task-patches.ts';
@@ -44,6 +47,7 @@ import { parity as sseParity } from '../../src/server/sse.ts';
 import { parity as epicsParity } from '../../src/server/routes/epics.ts';
 import { parity as typesParity } from '../../src/server/routes/types.ts';
 import { parity as deliveryParity } from '../../src/server/routes/delivery.ts';
+import { parity as capabilitiesParity } from '../../src/server/routes/capabilities.ts';
 
 // Route → core parity (epic rule): every route maps to exactly one core
 // function with the same name — endpoint tests double as CLI tests.
@@ -79,11 +83,14 @@ const functions: Record<string, unknown> = {
   ...next,
   ...verify,
   ...views,
+  ...boardSummaries,
   ...summary,
   ...projectsInit,
   ...projectsDoctor,
   ...typesRegistry,
   ...boardRules,
+  ...evidenceBundle,
+  ...capabilityProjection,
   ...graphIndex,
   ...planning,
   ...outbox,
@@ -93,7 +100,7 @@ const functions: Record<string, unknown> = {
   list: ProjectRegistry.prototype.list,
 };
 
-const parityTables = [homeParity, boardParity, notesParity, cardsParity, specsParity, engineParity, deliveryParity, gitParity, sseParity, epicsParity, typesParity];
+const parityTables = [homeParity, boardParity, notesParity, cardsParity, specsParity, engineParity, deliveryParity, gitParity, sseParity, epicsParity, typesParity, capabilitiesParity];
 
 describe('route-to-core parity', () => {
   test('every declared route maps to an existing core function', () => {

@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { render } from 'preact';
 import { CardDetail, type DetailActions } from '../../src/ui/slices/board/CardDetail.tsx';
+import { EpicDetail } from '../../src/ui/slices/board/CardDetail.tsx';
 import { GroomForm } from '../../src/ui/slices/board/GroomForm.tsx';
 import type { GroomInput, UiCard } from '../../src/ui/slices/board/api.ts';
 import { installDom } from './dom.ts';
@@ -158,5 +159,121 @@ describe('GroomForm (task 6.5)', () => {
     await new Promise((resolve) => setTimeout(resolve, 30));
     expect(rejects).toBe(1);
     expect(accepted).toEqual([]);
+  });
+});
+
+describe('EpicDetail evidence view', () => {
+  test('loads evidence on demand and renders sanitized bundle markdown', async () => {
+    const win = installDom();
+    const container = win.document.createElement('div');
+    win.document.body.appendChild(container);
+    let calls = 0;
+    render(
+      <EpicDetail
+        tree={{ epic: { id: 'epic-1', title: 'Portable evidence' }, stories: [] }}
+        project="deck"
+        fetchEvidenceBundle={async () => {
+          calls += 1;
+          return {
+            schema: 'deck.evidence-bundle',
+            version: '1.0.0',
+            project: { id: 'project:deck', name: 'deck <unsafe>' },
+            snapshot: { digest: 'a'.repeat(64), createdAt: null },
+            epics: [],
+            stories: [],
+            decisions: [],
+            evidence: [],
+            deliveries: [],
+            omissions: [{ field: 'links', reason: 'unsafe-link', note: 'javascript link omitted' }],
+            extensions: {},
+          };
+        }}
+        onOpenStory={() => undefined}
+        onClose={() => undefined}
+      />,
+      container,
+    );
+
+    expect(calls).toBe(0);
+    const button = [...container.querySelectorAll('button')].find((item) => item.textContent?.includes('Evidence')) as unknown as HTMLButtonElement;
+    button.click();
+    for (let i = 0; i < 10 && !container.textContent?.includes('Evidence Bundle: deck'); i++) {
+      await new Promise((resolve) => setTimeout(resolve, 30));
+    }
+
+    expect(calls).toBe(1);
+    expect(container.textContent).toContain('Evidence Bundle: deck');
+    expect(container.innerHTML).not.toContain('<unsafe>');
+    expect(container.textContent).toContain('unsafe-link');
+  });
+});
+
+describe('EpicDetail capability view', () => {
+  test('loads current capabilities and keeps conflicted preview separate', async () => {
+    const win = installDom();
+    const container = win.document.createElement('div');
+    win.document.body.appendChild(container);
+    render(
+      <EpicDetail
+        tree={{ epic: { id: 'epic-1', title: 'Living capabilities' }, stories: [] }}
+        project="deck"
+        fetchCapabilities={async () => ({
+          statements: [{
+            capabilityId: 'capability:evidence',
+            statementId: 'statement:lineage',
+            text: 'Applied capability text.',
+            digest: 'a'.repeat(64),
+            state: 'current',
+            sourceCardId: 'card:story',
+            sourceCriterionId: 'criterion:c-1',
+            sourceScopeRevision: 1,
+            evidenceId: 'evidence:ev-1',
+            deliveryId: 'delivery:dl-1',
+            sourceDrift: 'none',
+          }],
+        })}
+        fetchCapabilityPreview={async () => ({
+          id: 'cap-prev-conflict',
+          batchId: 'batch:conflict',
+          preview: {
+            changes: [{
+              op: 'add',
+              deltaId: 'delta:conflict',
+              capabilityId: 'capability:evidence',
+              statementId: 'statement:conflict',
+              before: null,
+              after: 'Conflicted capability text.',
+            }],
+            conflicts: [{ deltaId: 'delta:conflict', reason: 'cannot add an existing current statement' }],
+            statements: [],
+          },
+          resolution: null,
+        })}
+        onOpenStory={() => undefined}
+        onClose={() => undefined}
+      />,
+      container,
+    );
+
+    const button = [...container.querySelectorAll('button')].find((item) => item.textContent?.includes('Capabilities')) as unknown as HTMLButtonElement;
+    button.click();
+    for (let i = 0; i < 10 && !container.textContent?.includes('Applied capability text.'); i++) {
+      await new Promise((resolve) => setTimeout(resolve, 30));
+    }
+    expect(container.textContent).toContain('Applied capability text.');
+    expect(container.textContent).not.toContain('Conflicted capability text.');
+
+    const input = container.querySelector('input') as unknown as HTMLInputElement;
+    input.value = 'cap-prev-conflict';
+    input.dispatchEvent(new win.Event('input', { bubbles: true }) as unknown as Event);
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    const load = [...container.querySelectorAll('button')].find((item) => item.textContent?.includes('Load preview')) as unknown as HTMLButtonElement;
+    load.click();
+    for (let i = 0; i < 10 && !container.textContent?.includes('cannot add an existing current statement'); i++) {
+      await new Promise((resolve) => setTimeout(resolve, 30));
+    }
+
+    expect(container.textContent).toContain('cannot add an existing current statement');
+    expect(container.textContent).toContain('Conflicted capability text.');
   });
 });

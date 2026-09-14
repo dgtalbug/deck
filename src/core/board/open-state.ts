@@ -154,6 +154,7 @@ export async function ensureEngineState(sqlite: Database, projectPath = '.'): Pr
   sqlite.exec('CREATE INDEX IF NOT EXISTS source_baselines_card ON source_baselines (card_id, version)');
   ensurePlanningState(sqlite);
   ensureDeliveryState(sqlite);
+  ensureCapabilityState(sqlite);
   ensureCollaborationState(sqlite);
 }
 
@@ -372,4 +373,73 @@ function ensureDeliveryState(sqlite: Database): void {
       .query("INSERT INTO deck_meta (key, value) VALUES ('provider_ledger_migrated', '1')")
       .run();
   }
+}
+
+function ensureCapabilityState(sqlite: Database): void {
+  sqlite.exec(
+    `CREATE TABLE IF NOT EXISTS capability_statements (
+      id TEXT PRIMARY KEY NOT NULL,
+      capability_id TEXT NOT NULL,
+      statement_id TEXT NOT NULL,
+      version INTEGER NOT NULL,
+      text TEXT NOT NULL,
+      digest TEXT NOT NULL,
+      source_card_id TEXT NOT NULL,
+      source_criterion_id TEXT NOT NULL,
+      source_scope_revision INTEGER NOT NULL,
+      evidence_id TEXT NOT NULL,
+      delivery_id TEXT NOT NULL,
+      state TEXT NOT NULL,
+      projection_version_id TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    )`,
+  );
+  sqlite.exec('CREATE INDEX IF NOT EXISTS capability_statements_current ON capability_statements (capability_id, statement_id, state)');
+  sqlite.exec(
+    `CREATE TABLE IF NOT EXISTS capability_previews (
+      id TEXT PRIMARY KEY NOT NULL,
+      batch_id TEXT NOT NULL,
+      base_digest TEXT NOT NULL,
+      source_digest TEXT NOT NULL,
+      content_digest TEXT NOT NULL,
+      preview_json TEXT NOT NULL,
+      state TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    )`,
+  );
+  sqlite.exec('CREATE INDEX IF NOT EXISTS capability_previews_batch ON capability_previews (batch_id, state)');
+  sqlite.exec(
+    `CREATE TABLE IF NOT EXISTS capability_versions (
+      id TEXT PRIMARY KEY NOT NULL,
+      version INTEGER NOT NULL,
+      base_digest TEXT NOT NULL,
+      content_digest TEXT NOT NULL,
+      preview_id TEXT NOT NULL,
+      accepted_by TEXT NOT NULL,
+      rationale TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    )`,
+  );
+  sqlite.exec('CREATE INDEX IF NOT EXISTS capability_versions_version ON capability_versions (version)');
+  sqlite.exec(
+    `CREATE TABLE IF NOT EXISTS capability_deltas (
+      id TEXT PRIMARY KEY NOT NULL,
+      batch_id TEXT NOT NULL,
+      delta_id TEXT NOT NULL,
+      op TEXT NOT NULL,
+      capability_id TEXT NOT NULL,
+      statement_id TEXT NOT NULL,
+      statement_digest TEXT,
+      source_card_id TEXT NOT NULL,
+      source_criterion_id TEXT NOT NULL,
+      source_scope_revision INTEGER NOT NULL,
+      evidence_id TEXT NOT NULL,
+      delivery_id TEXT NOT NULL,
+      preview_id TEXT NOT NULL,
+      applied_version_id TEXT,
+      created_at TEXT NOT NULL,
+      UNIQUE (delta_id)
+    )`,
+  );
+  sqlite.exec('CREATE INDEX IF NOT EXISTS capability_deltas_preview ON capability_deltas (preview_id)');
 }

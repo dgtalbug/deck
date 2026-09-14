@@ -286,6 +286,10 @@ export function Board({ project, api = boardApi, subscribe = subscribeBoardEvent
             tree={epicTree}
             onOpenStory={(id) => setParam('card', id)}
             onClose={() => setParam('card', null)}
+            project={project}
+            {...(api.fetchEvidenceBundle !== undefined ? { fetchEvidenceBundle: api.fetchEvidenceBundle } : {})}
+            {...(api.fetchCapabilities !== undefined ? { fetchCapabilities: api.fetchCapabilities } : {})}
+            {...(api.fetchCapabilityPreview !== undefined ? { fetchCapabilityPreview: api.fetchCapabilityPreview } : {})}
           />
         )
       ) : detailCard === undefined && route.value.card !== null && (historyDetail === null || !store.loaded.value) ? (
