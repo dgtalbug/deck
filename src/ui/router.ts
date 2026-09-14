@@ -1,6 +1,6 @@
 import { signal } from '@preact/signals';
 
-export type BoardViewMode = 'kanban' | 'todo' | 'git' | 'timeline';
+export type BoardViewMode = 'kanban' | 'todo' | 'git' | 'timeline' | 'history';
 
 export interface Route {
   project: string | null;
@@ -20,7 +20,7 @@ export function parseLocation(): Route {
   const viewParam = params.get('view');
   return {
     project,
-    view: viewParam === 'todo' || viewParam === 'git' || viewParam === 'timeline' ? viewParam : 'kanban',
+    view: viewParam === 'todo' || viewParam === 'git' || viewParam === 'timeline' || viewParam === 'history' ? viewParam : 'kanban',
     card: params.get('card'),
   };
 }

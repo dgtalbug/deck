@@ -54,10 +54,19 @@ export function epicRollups(store: DocumentStore): EpicRollup[] {
   });
 }
 
+// Ordinary board reads show live work only; epic rollups deliberately stay
+// inclusive of historical children so live parents keep accurate totals.
+function isLive(card: Card): boolean {
+  return !('historyAt' in card && card.historyAt !== undefined);
+}
+
 export function boardView(store: DocumentStore): BoardView {
   const lanes = {} as Record<Lane, CardView[]>;
   for (const lane of LANES) {
-    lanes[lane] = store.listCards(lane).map((card) => cardView(card, planningStatus(store, card)));
+    lanes[lane] = store
+      .listCards(lane)
+      .filter(isLive)
+      .map((card) => cardView(card, planningStatus(store, card)));
   }
   return { lanes, epics: epicRollups(store) };
 }
@@ -71,7 +80,7 @@ export interface TodoView {
 export function todoView(store: DocumentStore): TodoView {
   return {
     view: 'todo',
-    cards: [...store.listCards('todo'), ...store.listCards('groomed')].map((card) =>
+    cards: [...store.listCards('todo'), ...store.listCards('groomed')].filter(isLive).map((card) =>
       cardView(card, planningStatus(store, card)),
     ),
     epics: epicRollups(store),

@@ -6,6 +6,27 @@ export interface SseHandlers {
   onError(): void;
 }
 
+// A frame larger than this or a burst faster than one refetch per window is
+// not worth parsing in the browser: reconnect and refetch authoritatively.
+const FRAME_BUFFER_CAP = 64 * 1024;
+const COALESCE_WINDOW_MS = 50;
+
+export function coalescingEmitter(emit: (events: BoardEvent[]) => void): (events: BoardEvent[]) => void {
+  let pending: BoardEvent[] = [];
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  return (events) => {
+    pending = pending.concat(events);
+    if (timer === null) {
+      timer = setTimeout(() => {
+        timer = null;
+        const batch = pending;
+        pending = [];
+        if (batch.length > 0) emit(batch);
+      }, COALESCE_WINDOW_MS);
+    }
+  };
+}
+
 export interface SseSubscription {
   stop(): void;
 }
@@ -37,12 +58,29 @@ function connectEvents(url: string, source: EsLike, handlers: SseHandlers, wasOp
     'card.created', 'card.groomed', 'card.moved', 'card.tasks.updated',
     'card.blocked', 'card.unblocked', 'card.done', 'card.updated', 'card.deleted',
   ];
+  const emitCoalesced = coalescingEmitter(handlers.onEvents);
+  const refetchAuthoritatively = () => {
+    if (wasOpen()) handlers.onOpen();
+  };
   for (const type of types) {
     source.addEventListener(type, (event) => {
-      handlers.onEvents([{ ...(JSON.parse(event.data) as BoardEvent), type }]);
+      const parsed = parseEventData(event.data);
+      if (parsed === null) {
+        refetchAuthoritatively();
+        return;
+      }
+      emitCoalesced([{ ...parsed, type }]);
     });
   }
-  void wasOpen;
+}
+
+function parseEventData(data: string): BoardEvent | null {
+  if (data.length > FRAME_BUFFER_CAP) return null;
+  try {
+    return JSON.parse(data) as BoardEvent;
+  } catch {
+    return null;
+  }
 }
 
 function subscribeWithEventSource(url: string, handlers: SseHandlers): SseSubscription {
@@ -87,20 +125,27 @@ function subscribeWithFetchStream(url: string, handlers: SseHandlers): SseSubscr
   const readStream = async (body: ReadableStream<Uint8Array>, emit: (events: BoardEvent[]) => void): Promise<void> => {
     const reader = body.getReader();
     const decoder = new TextDecoder();
+    const emitCoalesced = coalescingEmitter(emit);
     let buffer = '';
     while (true) {
       const { done, value } = await reader.read();
       if (done) return;
       buffer += decoder.decode(value, { stream: true });
+      if (buffer.length > FRAME_BUFFER_CAP) {
+        // bounded frame parsing: drop the backlog and let reconnect refetch
+        throw new Error('frame buffer overrun');
+      }
       const frames = buffer.split('\n\n');
       buffer = frames.pop() ?? '';
       const events: BoardEvent[] = [];
       for (const frame of frames) {
         const data = frame.split('\n').find((line) => line.startsWith('data: '));
-        if (data === undefined) continue; 
-        events.push(JSON.parse(data.slice(6)) as BoardEvent);
+        if (data === undefined) continue;
+        const parsed = parseEventData(data.slice(6));
+        if (parsed === null) throw new Error('invalid SSE frame');
+        events.push(parsed);
       }
-      if (events.length > 0) emit(events); 
+      if (events.length > 0) emitCoalesced(events);
     }
   };
 

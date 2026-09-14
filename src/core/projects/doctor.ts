@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { z } from 'zod';
 import { issueMap } from '../board/schema.ts';
 import { newestSpecVersion } from '../board/specstore.ts';
 import { BOARD_DB_NAME } from '../board/store.ts';
@@ -15,7 +16,20 @@ export interface DoctorCheck {
   name: string;
   pass: boolean;
   detail?: string | undefined;
+  /** Additive per-row remote outcomes for bounded diagnostics; legacy readers ignore it. */
+  rows?: Array<{ issue: number; status: 'checked' | 'error' | 'skipped'; reason?: string; durationMs: number }>;
 }
+
+// Bounded read-only diagnostics: concurrency, per-call and whole-phase
+// deadlines. Unknown is never reported as verified healthy.
+export const diagnosticOptions = z.object({
+  remoteConcurrency: z.number().int().min(1).max(8).default(4),
+  remoteTimeoutMs: z.number().int().positive().default(5_000),
+  remoteDeadlineMs: z.number().int().positive().default(30_000),
+});
+export type DiagnosticOptions = z.infer<typeof diagnosticOptions>;
+
+const RATE_LIMIT_PATTERN = /rate limit|too many requests/i;
 
 async function reachable(url: string): Promise<boolean> {
   try {
@@ -29,7 +43,9 @@ async function reachable(url: string): Promise<boolean> {
 export async function runDoctor(
   registry: ProjectRegistry,
   projectPath: string,
+  options: Partial<DiagnosticOptions> = {},
 ): Promise<DoctorCheck[]> {
+  const opts = diagnosticOptions.parse(options);
   const checks: DoctorCheck[] = [];
   const project = registry.find(projectPath);
   checks.push(
@@ -101,7 +117,7 @@ export async function runDoctor(
         : `dead entries: ${dead.map((entry) => entry.name).join(', ')}`,
   });
 
-  checks.push(await mapDriftCheck(projectPath));
+  checks.push(await mapDriftCheck(projectPath, opts));
   checks.push(skillPackCheck(projectPath));
 
   return checks;
@@ -129,45 +145,93 @@ function skillPackCheck(projectPath: string): DoctorCheck {
   };
 }
 
-async function mapDriftCheck(projectPath: string): Promise<DoctorCheck> {
+async function mapDriftCheck(projectPath: string, opts: DiagnosticOptions): Promise<DoctorCheck> {
   const dbPath = join(projectPath, '.deck', BOARD_DB_NAME);
   if (!existsSync(dbPath)) {
     return { name: 'issue map', pass: true, detail: 'skipped — no board db' };
   }
   const { openStore } = await import('../board/store.ts');
   const store = await openStore(projectPath);
-  const mapped = store.db.select().from(issueMap).all();
+  const mapped = store.db.select().from(issueMap).all().sort((a, b) => a.issueNumber - b.issueNumber);
   if (mapped.length === 0) {
     return { name: 'issue map', pass: true, detail: 'no mapped issues' };
   }
+
+  const rows: NonNullable<DoctorCheck['rows']>[number][] = [];
   const problems: string[] = [];
-  try {
-    for (const row of mapped) {
-      try {
-        const issue = await viewIssue(projectPath, row.issueNumber);
-        const card = store.getCard(row.cardId);
-        const done = 'lane' in card && card.lane === 'done';
-        if (issue.state === 'closed' && !done) problems.push(`#${row.issueNumber} closed but card not done`);
-        if (issue.state === 'open' && done) problems.push(`#${row.issueNumber} open but card done`);
-        const newest = newestSpecVersion(store, row.cardId);
-        if (newest !== undefined && newest.checksum !== row.checksum) {
-          problems.push(`#${row.issueNumber} spec version newer than published`);
-        }
-      } catch (error) {
-        if (error instanceof GitOpError) problems.push(`#${row.issueNumber} unreadable: ${error.message}`);
-        else throw error;
+  const deadline = AbortSignal.timeout(opts.remoteDeadlineMs);
+  let stopLaunching: string | null = null;
+
+  const checkRow = async (row: (typeof mapped)[number]) => {
+    const started = performance.now();
+    if (deadline.aborted) {
+      rows.push({ issue: row.issueNumber, status: 'skipped', reason: 'deadline exceeded before start', durationMs: 0 });
+      return;
+    }
+    try {
+      const issue = await viewIssue(projectPath, row.issueNumber, { signal: deadline, timeoutMs: opts.remoteTimeoutMs });
+      const card = store.getCard(row.cardId);
+      const done = 'lane' in card && card.lane === 'done';
+      if (issue.state === 'closed' && !done) problems.push(`#${row.issueNumber} closed but card not done`);
+      if (issue.state === 'open' && done) problems.push(`#${row.issueNumber} open but card done`);
+      const newest = newestSpecVersion(store, row.cardId);
+      if (newest !== undefined && newest.checksum !== row.checksum) {
+        problems.push(`#${row.issueNumber} spec version newer than published`);
       }
+      rows.push({ issue: row.issueNumber, status: 'checked', durationMs: Math.round(performance.now() - started) });
+    } catch (error) {
+      const durationMs = Math.round(performance.now() - started);
+      if (error instanceof GhUnavailableError) {
+        rows.push({ issue: row.issueNumber, status: 'skipped', reason: 'gh unavailable', durationMs });
+        stopLaunching = 'gh unavailable';
+        return;
+      }
+      if (error instanceof GitOpError && RATE_LIMIT_PATTERN.test(error.message) || RATE_LIMIT_PATTERN.test(String((error as GitOpError).details?.['output'] ?? ''))) {
+        rows.push({ issue: row.issueNumber, status: 'skipped', reason: 'rate limited — stopped launching lookups', durationMs });
+        stopLaunching = 'rate limited';
+        return;
+      }
+      if (error instanceof GitOpError) {
+        const timedOut = /deadline exceeded/.test(error.message);
+        rows.push({ issue: row.issueNumber, status: 'error', reason: timedOut ? 'remote call timed out' : error.message, durationMs });
+        problems.push(`#${row.issueNumber} unreadable: ${error.message}`);
+        return;
+      }
+      throw error;
     }
-  } catch (error) {
-    if (error instanceof GhUnavailableError) {
-      return { name: 'issue map', pass: true, detail: `skipped — gh unavailable (${mapped.length} mapped)` };
+  };
+
+  // Bounded scheduler: at most remoteConcurrency lookups in flight, input
+  // order preserved by index; stopLaunching prevents blind retries.
+  let next = 0;
+  const worker = async (): Promise<void> => {
+    while (true) {
+      if (stopLaunching !== null || deadline.aborted) {
+        if (next < mapped.length && stopLaunching === null) stopLaunching = 'deadline exceeded before start';
+        return;
+      }
+      const index = next++;
+      if (index >= mapped.length) return;
+      await checkRow(mapped[index]!);
     }
-    throw error;
+  };
+  await Promise.all(Array.from({ length: Math.min(opts.remoteConcurrency, mapped.length) }, worker));
+  for (let i = rows.length; i < mapped.length; i++) {
+    rows.push({ issue: mapped[i]!.issueNumber, status: 'skipped', reason: stopLaunching ?? 'not started', durationMs: 0 });
+  }
+
+  const checked = rows.filter((row) => row.status === 'checked').length;
+  const errored = rows.filter((row) => row.status === 'error').length;
+  const skipped = rows.length - checked - errored;
+  const counts = `${checked} checked, ${errored} error, ${skipped} skipped`;
+  if (stopLaunching === 'gh unavailable' && checked === 0) {
+    return { name: 'issue map', pass: true, detail: `skipped — gh unavailable (${mapped.length} mapped)`, rows };
   }
   return {
     name: 'issue map',
     pass: problems.length === 0,
-    detail: problems.length === 0 ? `${mapped.length} mapped, no drift` : problems.join('; '),
+    detail: problems.length === 0 ? `${mapped.length} mapped, no drift (${counts})` : problems.join('; '),
+    rows,
   };
 }
 

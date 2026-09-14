@@ -80,6 +80,18 @@ export async function ensureEngineState(sqlite: Database, projectPath = '.'): Pr
   if (!cols.some((col) => col.name === 'epic_id')) {
     sqlite.exec('ALTER TABLE cards ADD COLUMN epic_id TEXT');
   }
+  if (!cols.some((col) => col.name === 'history_at')) {
+    sqlite.exec('ALTER TABLE cards ADD COLUMN history_at TEXT');
+  }
+  if (!cols.some((col) => col.name === 'completed_at')) {
+    sqlite.exec('ALTER TABLE cards ADD COLUMN completed_at TEXT');
+    // Historical done records predate the column; documented fallback is the
+    // last update time. Records begin live — rotation never happens here.
+    sqlite.exec("UPDATE cards SET completed_at = updated_at WHERE lane = 'done' AND completed_at IS NULL");
+  }
+  sqlite.exec('CREATE INDEX IF NOT EXISTS cards_history ON cards (history_at, id)');
+  sqlite.exec('CREATE INDEX IF NOT EXISTS cards_completion ON cards (completed_at, id)');
+  sqlite.exec('CREATE INDEX IF NOT EXISTS cards_epic ON cards (epic_id)');
 
   sqlite.exec(
     'CREATE TABLE IF NOT EXISTS user_verbs (name TEXT PRIMARY KEY NOT NULL, registered_at TEXT NOT NULL)',

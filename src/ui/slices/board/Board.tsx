@@ -11,6 +11,7 @@ import { route, setParam } from '../../router.ts';
 import { Lane, LANE_ORDER, LaneSkeleton } from './Lane.tsx';
 import { FilterBar } from './FilterBar.tsx';
 import { TodoView } from './TodoView.tsx';
+import { HistoryView } from './HistoryView.tsx';
 import { GitPage } from './GitPage.tsx';
 import { Timeline } from './Timeline.tsx';
 import { CardDetail, CardDetailSkeleton, EpicDetail, type DetailActions } from './CardDetail.tsx';
@@ -111,7 +112,23 @@ export function Board({ project, api = boardApi, subscribe = subscribeBoardEvent
     (store.board.value.epics ?? []).some((epic) => epic.id === route.value.card)
       ? route.value.card
       : null;
+  const [historyDetail, setHistoryDetail] = useState<UiCard | null | undefined>(undefined);
   const [epicTree, setEpicTree] = useState<EpicTree | null>(null);
+  useEffect(() => {
+    const id = route.value.card;
+    if (id === null || detailCard !== undefined || detailEpicId !== null || !store.loaded.value || api.fetchCardDetail === undefined) {
+      setHistoryDetail(undefined);
+      return;
+    }
+    let alive = true;
+    setHistoryDetail(null);
+    api.fetchCardDetail(project, id)
+      .then((card) => alive && setHistoryDetail(card))
+      .catch(() => alive && setHistoryDetail(undefined));
+    return () => {
+      alive = false;
+    };
+  }, [route.value.card, detailCard, detailEpicId, store.loaded.value, project, api]);
   useEffect(() => {
     if (detailEpicId === null || api.fetchEpicTree === undefined) {
       setEpicTree(null);
@@ -125,12 +142,13 @@ export function Board({ project, api = boardApi, subscribe = subscribeBoardEvent
       alive = false;
     };
   }, [detailEpicId, project]);
+  const visibleDetailCard = detailCard ?? historyDetail ?? undefined;
   const groomNote = groomingId !== null ? store.cardById(groomingId) : undefined;
   const renameCard = renamingId !== null ? store.cardById(renamingId) : undefined;
   const deleteCard = deletingId !== null ? store.cardById(deletingId) : undefined;
   const regroomCard = regroomId !== null ? store.cardById(regroomId) : undefined;
 
-  const switchView = (next: 'kanban' | 'todo' | 'git' | 'timeline') => {
+  const switchView = (next: 'kanban' | 'todo' | 'git' | 'timeline' | 'history') => {
     const go = () => setParam('view', next === 'kanban' ? null : next);
     if (typeof document !== 'undefined' && typeof document.startViewTransition === 'function') {
       document.startViewTransition(go);
@@ -152,7 +170,7 @@ export function Board({ project, api = boardApi, subscribe = subscribeBoardEvent
 
   const capture = <NoteCapture onAdd={(title) => store.addNote(title)} />;
 
-  const viewSwitch = (mode: 'kanban' | 'todo' | 'git' | 'timeline', label: string): VNode => (
+  const viewSwitch = (mode: 'kanban' | 'todo' | 'git' | 'timeline' | 'history', label: string): VNode => (
     <button
       type="button"
       class="view-switch-btn"
@@ -173,6 +191,7 @@ export function Board({ project, api = boardApi, subscribe = subscribeBoardEvent
           {viewSwitch('kanban', 'board')}
           {viewSwitch('todo', 'todo')}
           {viewSwitch('timeline', 'timeline')}
+          {viewSwitch('history', 'history')}
           {viewSwitch('git', 'git')}
         </nav>
         <button type="button" class="btn btn-outline" onClick={() => setNextOpen(true)} data-testid="deck-next">
@@ -184,6 +203,8 @@ export function Board({ project, api = boardApi, subscribe = subscribeBoardEvent
           'Branch, checkpoint, integrate, publish — guarded git for the SDD loop.'
         ) : view === 'timeline' ? (
           'Epics, cards and merged PRs as one delivery narrative — newest first.'
+        ) : view === 'history' ? (
+          'Completed work retained by the board, newest first.'
         ) : (
           <>Capture → groom → prioritize. The engine owns everything after <code>groomed</code>.</>
         )}
@@ -200,7 +221,7 @@ export function Board({ project, api = boardApi, subscribe = subscribeBoardEvent
         </div>
       ) : null}
 
-      {view !== 'git' && view !== 'timeline' ? (
+      {view !== 'git' && view !== 'timeline' && view !== 'history' ? (
         <FilterBar
           filter={store.filter.value}
           onFilter={(partial) => store.setFilter(partial)}
@@ -211,6 +232,8 @@ export function Board({ project, api = boardApi, subscribe = subscribeBoardEvent
         <GitPage project={project} api={api} />
       ) : view === 'timeline' ? (
         <Timeline project={project} api={api} />
+      ) : view === 'history' ? (
+        <HistoryView project={project} api={api} />
       ) : view === 'kanban' && !store.loaded.value ? (
         <div class="board" role="status" aria-label="loading board">
           {LANE_ORDER.map((lane, index) => (
@@ -265,16 +288,16 @@ export function Board({ project, api = boardApi, subscribe = subscribeBoardEvent
             onClose={() => setParam('card', null)}
           />
         )
-      ) : detailCard === undefined && route.value.card !== null && !store.loaded.value ? (
+      ) : detailCard === undefined && route.value.card !== null && (historyDetail === null || !store.loaded.value) ? (
         <CardDetailSkeleton />
-      ) : detailCard !== undefined ? (
+      ) : visibleDetailCard !== undefined ? (
         <CardDetail
-          card={detailCard}
+          card={visibleDetailCard}
           actions={detailActions}
-          specMarkdown={detailCard.specPath !== undefined ? `spec: ${detailCard.specPath}` : '# no spec yet'}
-          {...(detailCard.epicId !== undefined
+          specMarkdown={visibleDetailCard.specPath !== undefined ? `spec: ${visibleDetailCard.specPath}` : '# no spec yet'}
+          {...(visibleDetailCard.epicId !== undefined
             ? {
-                epic: (store.board.value.epics ?? []).find((row) => row.id === detailCard.epicId),
+                epic: (store.board.value.epics ?? []).find((row) => row.id === visibleDetailCard.epicId),
                 onOpenEpic: (id: string) => setParam('card', id),
               }
             : {})}

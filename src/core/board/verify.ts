@@ -5,6 +5,7 @@ import { newTaskId } from './ids.ts';
 import { endPosition } from './positions.ts';
 import { cards, cleanupTasks, deliveries, tasks } from './schema.ts';
 import { runTx, type DocumentStore, type Tx } from './store.ts';
+import { runRetention } from './history.ts';
 import { isTweak, isVerbItem, type Card, type VerifyResult } from './types.ts';
 import { emitEvent } from '../events/outbox.ts';
 
@@ -35,7 +36,12 @@ export function applyVerifyResult(
         .map((laneRow) => laneRow.position),
     );
     tx.update(cards)
-      .set({ lane: result === 'clean' ? 'done' : 'active', position, updatedAt: nowIso() })
+      .set({
+        lane: result === 'clean' ? 'done' : 'active',
+        position,
+        updatedAt: nowIso(),
+        ...(result === 'clean' ? { completedAt: nowIso() } : {}),
+      })
       .where(eq(cards.id, id))
       .run();
 
@@ -68,6 +74,7 @@ export function applyVerifyResult(
       emitEvent(tx, 'card.done', { id, wikiPath: '' });
     }
   });
+  if (result === 'clean') runRetention(store);
   return store.getCard(id);
 }
 
@@ -76,7 +83,7 @@ export function completeFromDelivery(
   id: string,
   deliveryId: string,
 ): { card: Card; delivered: boolean } {
-  return runTxReturning(store.db, (tx) => {
+  const outcome = runTxReturning(store.db, (tx) => {
     const delivery = tx.select().from(deliveries).where(eq(deliveries.id, deliveryId)).get();
     if (delivery === undefined) {
       throw new DeckError(`delivery '${deliveryId}' not found — finalization needs a recorded delivery`, {
@@ -103,7 +110,7 @@ export function completeFromDelivery(
     const position = endPosition(
       tx.select({ position: cards.position }).from(cards).where(eq(cards.lane, 'done')).all().map((laneRow) => laneRow.position),
     );
-    tx.update(cards).set({ lane: 'done', position, updatedAt: nowIso() }).where(eq(cards.id, id)).run();
+    tx.update(cards).set({ lane: 'done', position, updatedAt: nowIso(), completedAt: nowIso() }).where(eq(cards.id, id)).run();
     const deliveredSha = delivery.deliveredSha ?? delivery.mergeSha ?? delivery.headSha;
     emitEvent(tx, 'card.done', { id, wikiPath: '' });
     emitEvent(tx, 'card.moved', { id, lane: 'done', position });
@@ -135,6 +142,8 @@ export function completeFromDelivery(
       .run();
     return { card: store.getCard(id), delivered: true };
   });
+  runRetention(store);
+  return outcome;
 }
 
 function runTxReturning<R>(db: Parameters<typeof runTx>[0], fn: (tx: Tx) => R): R {

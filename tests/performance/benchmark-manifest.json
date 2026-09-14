@@ -1,0 +1,88 @@
+{
+  "protocol": "deck-e08-small-workload-v1",
+  "frozenAt": "2026-09-14",
+  "frozenBefore": "retention, summary, selection, doctor-concurrency and sse-cap tuning",
+  "machine": {
+    "platform": "darwin arm64",
+    "cpu": "Apple M4",
+    "runtime": "bun 1.4.0"
+  },
+  "budgets": {
+    "livePageCoreP95Ms": 100,
+    "nextSelectionCoreP95Ms": 100,
+    "sqlStatementsPerPage": 10,
+    "sqlStatementsPerSelection": 10,
+    "healthySubscriberP95Ms": 1000,
+    "burstConvergenceP95Ms": 5000,
+    "eventLoopLagP95Ms": 100,
+    "peakRssDeltaMiB": 32,
+    "doctorConcurrentVsSerialRatio": 0.6,
+    "doctorHungPhaseTerminationMs": 31000,
+    "browserRefetchToRenderP95Ms": 500,
+    "coreBundleGzipKiB": 100
+  },
+  "fixtures": {
+    "boundary": {
+      "combinedRecords": [
+        99,
+        100,
+        101
+      ],
+      "taskRows": [
+        499,
+        500,
+        501
+      ]
+    },
+    "history": {
+      "completedStories": 1000
+    },
+    "events": {
+      "subscribers": 2,
+      "ratePerSecond": 50,
+      "durationSeconds": 10,
+      "burst": 500
+    },
+    "doctor": {
+      "rows": [
+        1,
+        25,
+        100
+      ],
+      "fakeLatencyMs": 50
+    }
+  },
+  "baseline": {
+    "note": "Recorded before any tuning; distributions, not budgets.",
+    "cold": {
+      "boardViewMs": 3.53,
+      "nextDigestMs": 0.16
+    },
+    "warm30": {
+      "boardView": {
+        "n": 30,
+        "p50": 2.005374999999958,
+        "p95": 3.961416999999983,
+        "max": 4.56899999999996
+      },
+      "nextDigest": {
+        "n": 30,
+        "p50": 0.04404199999999037,
+        "p95": 0.0604579999999828,
+        "max": 0.06541700000002493
+      },
+      "outboxReadAll": {
+        "n": 30,
+        "p50": 0.10908299999999826,
+        "p95": 0.14166599999998652,
+        "max": 0.584666000000027
+      },
+      "latestRowid": {
+        "n": 30,
+        "p50": 0.02020799999996825,
+        "p95": 0.06625000000002501,
+        "max": 0.14016699999996263
+      }
+    }
+  }
+}
