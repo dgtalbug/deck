@@ -332,7 +332,21 @@ export const workspaces = sqliteTable('workspaces', {
   closedAt: text('closed_at'),
 });
 
+export const sourceBaselines = sqliteTable('source_baselines', {
+  id: text('id').primaryKey(),
+  cardId: text('card_id').notNull(),
+  version: integer('version').notNull(),
+  scopeRevision: integer('scope_revision').notNull(),
+  path: text('path').notNull(),
+  digest: text('digest').notNull(),
+  snapshotPath: text('snapshot_path'),
+  graphGeneration: integer('graph_generation'),
+  graphFingerprint: text('graph_fingerprint'),
+  createdAt: text('created_at').notNull(),
+});
+
 export type WorkspaceRow = typeof workspaces.$inferSelect;
+export type SourceBaselineRow = typeof sourceBaselines.$inferSelect;
 
 export type TaskStateRow = typeof taskState.$inferSelect;
 export type TaskPatchRow = typeof taskPatches.$inferSelect;

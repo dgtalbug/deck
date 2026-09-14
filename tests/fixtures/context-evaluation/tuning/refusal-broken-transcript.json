@@ -1,0 +1,9 @@
+{
+  "scenarioId": "tuning-refusal",
+  "events": [
+    { "kind": "law-ack", "law": "no-state-change-on-refusal" },
+    { "kind": "fact-stated", "fact": "refusal-reason-stated" },
+    { "kind": "source-read-claim", "reference": "src/core/board/lanes.ts:moveLane", "digest": "d-wrong-digest" },
+    { "kind": "done-claim" }
+  ]
+}

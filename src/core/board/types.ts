@@ -162,4 +162,5 @@ export interface NextDigest {
   context: string;
   wipBlockedBy?: string | undefined;
   empty?: boolean | undefined;
+  advisory?: { strategy: 'baseline' | 'graph'; state: string } | undefined;
 }

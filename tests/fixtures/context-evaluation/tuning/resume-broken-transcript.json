@@ -1,0 +1,9 @@
+{
+  "scenarioId": "tuning-resume",
+  "events": [
+    { "kind": "fact-stated", "fact": "checkpoint-was-resumed" },
+    { "kind": "fact-stated", "fact": "remaining-work-listed" },
+    { "kind": "source-read-claim", "reference": "src/core/board/next.ts:assemble", "digest": "d-next-assemble" },
+    { "kind": "done-claim" }
+  ]
+}

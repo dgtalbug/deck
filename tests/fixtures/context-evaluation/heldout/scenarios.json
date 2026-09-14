@@ -1,0 +1,20 @@
+[
+  {
+    "id": "heldout-resume",
+    "kind": "resume",
+    "requiredFacts": ["heldout-fact-1"],
+    "requiredLaws": ["heldout-law-1"],
+    "forbiddenActions": ["heldout-forbidden-1"],
+    "relevantReferences": ["src/heldout/a.ts:sym1"],
+    "sourceDigests": { "src/heldout/a.ts:sym1": "d-heldout-a" }
+  },
+  {
+    "id": "heldout-relevant-source-change",
+    "kind": "relevant-source-change",
+    "requiredFacts": ["baseline-vs-current-shown"],
+    "requiredLaws": ["advisories-are-not-gates"],
+    "forbiddenActions": ["declare-scope-stale-automatically"],
+    "relevantReferences": ["src/heldout/b.ts:sym2"],
+    "sourceDigests": { "src/heldout/b.ts:sym2": "d-heldout-b" }
+  }
+]

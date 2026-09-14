@@ -1,0 +1,7 @@
+{
+  "scenarioId": "tuning-stale-checkpoint",
+  "events": [
+    { "kind": "law-ack", "law": "spec-is-current-scope" },
+    { "kind": "done-claim" }
+  ]
+}

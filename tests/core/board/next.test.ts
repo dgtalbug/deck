@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { convertToVerbItem, tweak } from '../../../src/core/board/groom.ts';
 import { updateGroom } from '../../../src/core/board/crud.ts';
@@ -333,5 +333,60 @@ describe('E03 digest: parent intent + blocked queue', () => {
     const digest = nextDigest(store);
     expect(digest.context).toContain('parent intent: rev 1, 1 criteria'); // no uncovered left
     expect(digest.context).not.toContain('uncovered:');
+  });
+});
+
+// --- optional context advisories: opt-in, bounded, never displacing mandatory context ---
+import { captureSourceBaseline } from '../../../src/core/board/source-baselines.ts';
+import { buildContext } from '../../../src/core/board/next.ts';
+
+describe('optional context advisories in the packet', () => {
+  test('advisory off by default — output is byte-identical to explicit disable', () => {
+    const item = groomed('advisory parity probe');
+    const card = store.getVerbItem(item.id);
+    const digest = nextDigest(store);
+    expect(digest.advisory).toBeUndefined();
+    expect(digest.context).not.toContain('Context advisory');
+    expect(digest.context).toBe(buildContext(store, card));
+    expect(digest.context).toBe(buildContext(store, card, { advisoryStrategy: undefined }));
+  });
+
+  test('advisory appears within the leftover budget and never exceeds the packet cap', () => {
+    mkdirSync(join(path, 'src'), { recursive: true });
+    writeFileSync(join(path, 'src', 'advisory-target.ts'), 'export function parityCheck() {}\n', 'utf8');
+    const item = groomed('advisory budget probe');
+    const card = store.getVerbItem(item.id);
+    captureSourceBaseline(store, card.id, ['src/advisory-target.ts']);
+    const digest = nextDigest(store, { advisoryStrategy: 'baseline' });
+    expect(digest.advisory).toEqual({ strategy: 'baseline', state: 'ok' });
+    expect(digest.context).toContain('Context advisory (optional)');
+    expect(digest.context).toContain('src/advisory-target.ts:parityCheck');
+    expect(digest.context.length).toBeLessThanOrEqual(8000);
+  });
+
+  test('mandatory-only overflow omits the advisory and keeps required-read directives intact', () => {
+    const item = convertToVerbItem(store, {
+      noteId: store.addNote('overflow advisory probe').id,
+      proposedVerb: 'feat',
+      refinedTitle: 'overflow advisory probe',
+      research: { codebaseFindings: ['has spec content'], sections: { reproduce: 'r', rca: 'c' } },
+      specDeltas: [],
+      tasks: Array.from({ length: 200 }, (_, i) => `overflow task ${i} padded with plenty of words to blow the mandatory budget past eight thousand units`),
+      openQuestions: [],
+    });
+    const card = store.getVerbItem(item.id);
+    captureSourceBaseline(store, card.id, ['src']);
+    const digest = nextDigest(store, { advisoryStrategy: 'graph' });
+    expect(digest.context).toContain('context: INCOMPLETE');
+    expect(digest.context).not.toContain('Context advisory');
+    expect(digest.context).toMatch(/read: .*spec\.md \(full current scope — mandatory context overflowed the packet\)/);
+    expect(digest.advisory).toBeUndefined();
+  });
+
+  test('packet accounting is UTF-16 code units — astral characters count as two', () => {
+    const item = groomed('unicode probe 😀😀😀');
+    const digest = nextDigest(store);
+    expect(digest.context).toContain('😀');
+    expect(digest.context.length).toBeLessThanOrEqual(8000);
   });
 });

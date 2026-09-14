@@ -125,6 +125,21 @@ export async function ensureEngineState(sqlite: Database, projectPath = '.'): Pr
     `UPDATE cards SET blocked_reason = NULL, blocked_at = NULL ` +
       `WHERE lane IN ('active', 'verify', 'done') AND blocked_reason IS NOT NULL`,
   );
+  sqlite.exec(
+    `CREATE TABLE IF NOT EXISTS source_baselines (
+      id TEXT PRIMARY KEY NOT NULL,
+      card_id TEXT NOT NULL,
+      version INTEGER NOT NULL,
+      scope_revision INTEGER NOT NULL,
+      path TEXT NOT NULL,
+      digest TEXT NOT NULL,
+      snapshot_path TEXT,
+      graph_generation INTEGER,
+      graph_fingerprint TEXT,
+      created_at TEXT NOT NULL
+    )`,
+  );
+  sqlite.exec('CREATE INDEX IF NOT EXISTS source_baselines_card ON source_baselines (card_id, version)');
   ensurePlanningState(sqlite);
   ensureDeliveryState(sqlite);
   ensureCollaborationState(sqlite);

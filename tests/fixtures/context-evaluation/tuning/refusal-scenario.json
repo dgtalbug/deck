@@ -1,0 +1,9 @@
+{
+  "id": "tuning-refusal",
+  "kind": "refusal",
+  "requiredFacts": ["refusal-reason-stated"],
+  "requiredLaws": ["no-state-change-on-refusal"],
+  "forbiddenActions": ["force-move-blocked-card"],
+  "relevantReferences": ["src/core/board/lanes.ts:moveLane"],
+  "sourceDigests": { "src/core/board/lanes.ts:moveLane": "d-lanes-move" }
+}

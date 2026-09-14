@@ -22,6 +22,7 @@ import { noteBody } from '../server/routes/notes.ts';
 import { serveMain } from '../server/serve.ts';
 import { flagString, flagStrings, parseArgs, UsageError, type ParsedArgs } from './args.ts';
 import { startCommand } from './start.ts';
+import { baselineCommand } from './baseline.ts';
 import { handoffCommand, taskCommand } from './collab.ts';
 import { workspaceCommand } from './workspace.ts';
 import { graphCommand } from './graph.ts';
@@ -100,6 +101,7 @@ export const parity = {
   'deck task': 'applyTaskPatch',
   'deck handoff': 'offerHandoff',
   'deck workspace': 'createWorkspace',
+  'deck baseline': 'captureSourceBaseline',
 };
 
 export interface CliIo {
@@ -123,6 +125,13 @@ commands:
   reorder <id> [--after <id2>]      move a card within its lane
   block <id> [reason] / unblock <id>
   next [--ready]                     resume-first next digest; --ready peeks the queue, read-only
+                                      [--context-advisories baseline|graph] EXPERIMENTAL opt-in retrieval
+                                      advisory (default off; failed its promotion pilot — not a shipped feature)
+  baseline capture <card-id> <path>…  EXPERIMENTAL: snapshot selected sources (exact working-tree bytes, local only)
+  baseline read <card-id>            EXPERIMENTAL: baseline records with exact digests and snapshot provenance
+  baseline compare <card-id>         EXPERIMENTAL: working-tree comparison against the newest baseline
+  baseline advise <card-id> [--query "<text>"] [--strategy baseline|graph]
+                                      EXPERIMENTAL: bounded retrieval preview (not promoted; advisory only)
   checkpoint <card-id>               print the card's session checkpoint
   checkpoint <card-id> add "<text>" [--kind <k>] [--id <id>] [--expect-rev <n>] [--basis <sha>]
   tweak <id>                        promote a note to a tweak build
@@ -224,6 +233,7 @@ const commands: Record<string, Command> = {
     return cardSummary(store.setBlocked(id));
   },
   next: nextCommand,
+  baseline: baselineCommand,
   checkpoint: checkpointCliCommand,
   tweak: async (args, ctx) => {
     const id = requiredId(args, 'tweak <id>');
