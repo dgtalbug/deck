@@ -126,6 +126,63 @@ export async function ensureEngineState(sqlite: Database, projectPath = '.'): Pr
   );
   ensurePlanningState(sqlite);
   ensureDeliveryState(sqlite);
+  ensureCollaborationState(sqlite);
+}
+
+function ensureCollaborationState(sqlite: Database): void {
+  sqlite.exec(
+    `CREATE TABLE IF NOT EXISTS task_state (
+      task_id TEXT PRIMARY KEY NOT NULL,
+      card_id TEXT NOT NULL,
+      revision INTEGER NOT NULL DEFAULT 1,
+      owner TEXT,
+      assigned_at TEXT,
+      updated_at TEXT NOT NULL
+    )`,
+  );
+  sqlite.exec(
+    `CREATE TABLE IF NOT EXISTS task_patches (
+      command_id TEXT PRIMARY KEY NOT NULL,
+      card_id TEXT NOT NULL,
+      task_id TEXT NOT NULL,
+      owner TEXT NOT NULL,
+      expected_revision INTEGER NOT NULL,
+      payload_digest TEXT NOT NULL,
+      result TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    )`,
+  );
+  sqlite.exec(
+    `CREATE TABLE IF NOT EXISTS handoffs (
+      id TEXT PRIMARY KEY NOT NULL,
+      card_id TEXT NOT NULL,
+      task_id TEXT NOT NULL,
+      sender TEXT NOT NULL,
+      recipient TEXT NOT NULL,
+      scope_revision INTEGER NOT NULL,
+      checkpoint_revision INTEGER NOT NULL,
+      remaining_work TEXT,
+      evidence_ids TEXT,
+      state TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      closed_at TEXT
+    )`,
+  );
+  sqlite.exec('CREATE INDEX IF NOT EXISTS handoffs_card_state ON handoffs (card_id, state)');
+  sqlite.exec('CREATE INDEX IF NOT EXISTS task_state_card ON task_state (card_id)');
+
+  const now = new Date().toISOString();
+  sqlite
+    .query(
+      `INSERT OR IGNORE INTO task_state (task_id, card_id, revision, owner, assigned_at, updated_at)
+       SELECT t.id, t.card_id, 1, NULL, NULL, ? FROM tasks t
+       WHERE NOT EXISTS (SELECT 1 FROM task_state s WHERE s.task_id = t.id)`,
+    )
+    .run(now);
+  sqlite
+    .query(`DELETE FROM task_state WHERE task_id NOT IN (SELECT id FROM tasks)`)
+    .run();
 }
 
 function ensurePlanningState(sqlite: Database): void {

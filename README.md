@@ -68,6 +68,33 @@ deck note ─→ groom ─→ deck feat ──→ implement ──→ verify ─
 - **The engine is deterministic** — deck computes checklists and gaps instantly; agents bring the intelligence via `deck next` (≤8k-char bounded context packets with source/revision status and required-read directives on overflow).
 - **No lock-in** — import/export adapters planned for openspec, spec-kit, backlog.md, and plain Markdown/JSON.
 
+## Cooperative task edits and handoffs
+
+Whole-list task replacement is engine-internal; cooperative writers edit one task at a time through revision-checked patches and explicit ownership handoffs. An **owner handle** is a local coordination name (e.g. `agent-a`) recorded on the task — it is not authentication.
+
+```
+deck task show <card> <task>                                 # current revision + owner
+deck task assign <card> <task> --owner <handle> [--by <who>] # record the owner
+deck task patch <card> <task> --rev <n> --owner <handle> \
+               --command <id> --done true|false              # atomic owner/revision-checked edit
+deck handoff offer <card> --task <id> --from <a> --to <b> [--remaining "…"]
+deck handoff accept <card> <handoff-id> --as <b>
+deck handoff cancel <card> <handoff-id> --as <a>
+deck handoff list <card>
+```
+
+The same doors exist over HTTP (`PATCH /:project/cards/:id/tasks/:taskId`, `POST .../assign`, `POST/GET .../handoffs`, `.../accept`, `.../cancel`) and MCP (`task_patch`, `handoff_offer`, `handoff_accept`, `handoff_status`).
+
+Error contract, in order of check:
+
+- **stale revision** — the task changed since you read it; the refusal carries the current revision (re-read, resubmit).
+- **owner mismatch** — the task belongs to another (or no) owner; assignment or acceptance transfers it.
+- **duplicate command** — the same `commandId` with the same payload replays the original result; with a different payload it conflicts.
+- **handoff basis changed** — scope revision or checkpoint moved after the offer; the sender must re-offer.
+- **unsettled execution** — a running/recovering engine operation on the card blocks acceptance until reconciled (`deck ops reconcile`); a database record cannot stop a live process, so uncertain effects never auto-transfer.
+
+Timeout alone never transfers ownership; only explicit acceptance does. Checkbox patches never change scope identity or complete a card — title/scope edits go through grooming.
+
 ## Architecture
 
 | Concern | Choice |

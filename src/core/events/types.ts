@@ -12,7 +12,12 @@ export type BoardEventType =
   | 'epic.intent.updated'
   | 'epic.criterion.linked'
   | 'epic.criterion.deferred'
-  | 'epic.parent.acknowledged';
+  | 'epic.parent.acknowledged'
+  | 'task.assigned'
+  | 'task.patched'
+  | 'handoff.offered'
+  | 'handoff.accepted'
+  | 'handoff.cancelled';
 
 export interface CardLanePayload {
   id: string;

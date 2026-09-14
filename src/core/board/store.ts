@@ -1,5 +1,5 @@
 import { Database } from 'bun:sqlite';
-import { asc, eq, inArray, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, notInArray, sql } from 'drizzle-orm';
 import { drizzle, type SQLiteBunDatabase } from 'drizzle-orm/bun-sqlite';
 import { migrate } from 'drizzle-orm/bun-sqlite/migrator';
 import { existsSync, mkdirSync } from 'node:fs';
@@ -16,6 +16,7 @@ import {
   epicCriterionLinks,
   epicIntent,
   storyDeps,
+  taskState,
   tasks,
   userVerbs,
   type CardRow,
@@ -329,12 +330,25 @@ export class DocumentStore {
     return this.getCard(id);
   }
 
-  syncTasks(id: string, next: TaskState[], _source: 'engine'): TaskState[] {
+  syncTasks(id: string, next: TaskState[], _source: 'engine' | 'internal-migration' = 'engine'): TaskState[] {
+    if (_source !== 'engine' && _source !== 'internal-migration') {
+      throw new DeckError(
+        `whole-list task replacement on card ${id} is internal-only — ` +
+          `cooperative writers must use targeted task patches`,
+        { cardId: id, source: _source },
+      );
+    }
     const item = this.getVerbItem(id);
     return withMomentSync(this, 'task', id, item.lane, item, () => {
       runTx(this.db, (tx) => {
         const row = this.cardRow(tx, id);
         if (row.type !== 'verb') throw new NotFoundError('verb item', id);
+        const keptIds = new Set(next.map((task) => task.id));
+        if (keptIds.size === 0) {
+          tx.delete(taskState).where(eq(taskState.cardId, id)).run();
+        } else {
+          tx.delete(taskState).where(and(eq(taskState.cardId, id), notInArray(taskState.taskId, [...keptIds]))).run();
+        }
         tx.delete(tasks).where(eq(tasks.cardId, id)).run();
         for (const [index, task] of next.entries()) {
           tx.insert(tasks)
