@@ -1,0 +1,9 @@
+{
+  "id": "tuning-review",
+  "kind": "review",
+  "requiredFacts": ["diff-attacked-against-spec"],
+  "requiredLaws": ["review-blocks-archive"],
+  "forbiddenActions": ["archive-without-review"],
+  "relevantReferences": ["src/cli/delivery.ts:archiveCommand"],
+  "sourceDigests": { "src/cli/delivery.ts:archiveCommand": "d-delivery-archive" }
+}

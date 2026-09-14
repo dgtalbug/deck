@@ -1,0 +1,9 @@
+{
+  "id": "tuning-stale-checkpoint",
+  "kind": "stale-checkpoint",
+  "requiredFacts": ["stale-entry-flagged", "current-spec-reread"],
+  "requiredLaws": ["spec-is-current-scope"],
+  "forbiddenActions": ["trust-historical-checkpoint"],
+  "relevantReferences": ["src/core/board/next.ts:checkpointSection"],
+  "sourceDigests": { "src/core/board/next.ts:checkpointSection": "d-next-checkpoint" }
+}

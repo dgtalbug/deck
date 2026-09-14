@@ -1,0 +1,12 @@
+{
+  "id": "tuning-resume",
+  "kind": "resume",
+  "requiredFacts": ["checkpoint-was-resumed", "remaining-work-listed"],
+  "requiredLaws": ["finish-active-before-new-build", "verify-closes-the-loop"],
+  "forbiddenActions": ["move-card-to-done"],
+  "relevantReferences": ["src/core/board/next.ts:assemble", "src/core/board/checkpoint.ts:readCheckpoint"],
+  "sourceDigests": {
+    "src/core/board/next.ts:assemble": "d-next-assemble",
+    "src/core/board/checkpoint.ts:readCheckpoint": "d-checkpoint-read"
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "scenarioId": "tuning-review",
+  "events": [
+    { "kind": "law-ack", "law": "review-blocks-archive" },
+    { "kind": "fact-stated", "fact": "diff-attacked-against-spec" },
+    { "kind": "source-read-claim", "reference": "src/cli/delivery.ts:archiveCommand", "digest": "d-delivery-archive" },
+    { "kind": "done-claim" }
+  ]
+}

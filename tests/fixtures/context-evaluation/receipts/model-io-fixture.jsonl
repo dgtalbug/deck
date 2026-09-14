@@ -1,0 +1,3 @@
+{"sessionId":"s-fixture","turnId":"t1","model":{"modelId":"GLM-5.3"},"durationMs":1200,"response":{"usage":{"inputTokens":100,"outputTokens":10,"totalTokens":110},"toolCalls":[{"name":"Read","input":{"path":"NEXT.md"}}]}}
+{"sessionId":"s-fixture","turnId":"t2","model":{"modelId":"GLM-5.3"},"durationMs":800,"response":{"usage":{"inputTokens":200,"outputTokens":20,"totalTokens":220},"toolCalls":[{"name":"Edit","input":{"path":"core.ts"}},{"name":"Bash","input":{"command":"ls"}}]},"finishReason":"stop"}
+not-json-line

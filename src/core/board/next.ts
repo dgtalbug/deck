@@ -13,6 +13,7 @@ import { memoryStatus, recall } from './memory.ts';
 import { epicPlanning } from './planning.ts';
 import { checkpointBasis, checkpointProvenance, readCheckpoint, type CheckpointEntry } from './checkpoint.ts';
 import { currentScopeRevision } from './scope.ts';
+import { buildAdvisory, type AdvisoryStrategy } from './context-advisories.ts';
 
 const MAX_CONTEXT_CHARS = 8000;
 const RULES_DIGEST_CHARS = 1500;
@@ -182,7 +183,7 @@ function footer(directives: string[]): string {
   return `\n\n${directives.map((line) => `read: ${line}`).join('\n')}`;
 }
 
-function envelope(store: DocumentStore, card: VerbItem | Tweak, mode: 'queued' | 'active' | 'tweak'): string {
+function envelope(store: DocumentStore, card: VerbItem | Tweak, mode: 'queued' | 'active' | 'tweak'): { text: string; advisory?: { strategy: AdvisoryStrategy; state: string } | undefined } {
   const identity = mandatorySections(store, card, mode);
   const requiredReads: string[] = [];
   if (isVerbItem(card)) {
@@ -196,11 +197,17 @@ function envelope(store: DocumentStore, card: VerbItem | Tweak, mode: 'queued' |
     'Do not treat this packet as the full scope or as proof the project laws are present.',
     ...requiredReads.map((line) => `read: ${line}`),
   ].join('\n');
-  if (text.length <= MAX_CONTEXT_CHARS) return text;
-  return `${text.slice(0, MAX_CONTEXT_CHARS - 20)}…[envelope truncated]`;
+  const packed = text.length <= MAX_CONTEXT_CHARS ? text : `${text.slice(0, MAX_CONTEXT_CHARS - 20)}…[envelope truncated]`;
+  return { text: packed };
 }
 
-function assemble(store: DocumentStore, card: VerbItem | Tweak, mode: 'queued' | 'active' | 'tweak'): string {
+export interface ContextOptions {
+  // Explicit opt-in: when set, an optional retrieval advisory competes for the
+  // packet's leftover budget only — it never displaces mandatory context.
+  advisoryStrategy?: AdvisoryStrategy | undefined;
+}
+
+function assemble(store: DocumentStore, card: VerbItem | Tweak, mode: 'queued' | 'active' | 'tweak', options: ContextOptions = {}): { text: string; advisory?: { strategy: AdvisoryStrategy; state: string } | undefined } {
   const identity = mandatorySections(store, card, mode);
   const head = identity.header.join('\n');
   const mandatory = joinSections(identity.laws);
@@ -208,7 +215,6 @@ function assemble(store: DocumentStore, card: VerbItem | Tweak, mode: 'queued' |
   if (base.length > MAX_CONTEXT_CHARS - FOOTER_RESERVE - ENVELOPE_RESERVE) {
     return envelope(store, card, mode);
   }
-
   const directives: string[] = [];
   const optional: Section[] = [];
   if (isVerbItem(card)) {
@@ -232,6 +238,15 @@ function assemble(store: DocumentStore, card: VerbItem | Tweak, mode: 'queued' |
   const hits = recall(store, words, 8);
   if (hits.length > 0) optional.push({ title: 'Recall (memory)', body: hits.join('\n').slice(0, RECALL_DIGEST_CHARS) });
 
+  let advisory: { strategy: AdvisoryStrategy; state: string } | undefined;
+  if (options.advisoryStrategy !== undefined) {
+    const outcome = buildAdvisory(store, card.id, words, options.advisoryStrategy);
+    if (outcome !== null) {
+      advisory = { strategy: outcome.strategy, state: outcome.state };
+      optional.push({ title: 'Context advisory (optional)', body: outcome.body });
+    }
+  }
+
   let text = base;
   let remaining = MAX_CONTEXT_CHARS - FOOTER_RESERVE - text.length;
   for (const section of optional) {
@@ -248,11 +263,11 @@ function assemble(store: DocumentStore, card: VerbItem | Tweak, mode: 'queued' |
     }
     if (section.readPath !== undefined) directives.push(`${section.readPath} (${section.title.toLowerCase()} did not fit the packet)`);
   }
-  return `${text.slice(0, MAX_CONTEXT_CHARS - footer(directives).length)}${footer(directives)}`;
+  return { text: `${text.slice(0, MAX_CONTEXT_CHARS - footer(directives).length)}${footer(directives)}`, advisory };
 }
 
-export function buildContext(store: DocumentStore, card: VerbItem | Tweak): string {
-  return assemble(store, card, isVerbItem(card) ? 'queued' : 'tweak');
+export function buildContext(store: DocumentStore, card: VerbItem | Tweak, options: ContextOptions = {}): string {
+  return assemble(store, card, isVerbItem(card) ? 'queued' : 'tweak', options).text;
 }
 function queuedDigest(store: DocumentStore, top: VerbItem): NextDigest {
   return { cardId: top.id, title: top.title, verb: top.verb, context: buildContext(store, top) };
@@ -272,22 +287,33 @@ function noWorkDigest(store: DocumentStore): NextDigest {
   };
 }
 
-export function nextDigest(store: DocumentStore): NextDigest {
+export function nextDigest(store: DocumentStore, options: ContextOptions = {}): NextDigest {
   const blockedOn = mostAdvancedActive(store);
   if (blockedOn !== undefined) {
     const active = store.activeCount();
     const wipBlocked = active >= store.wipLimit;
     const card = blockedOn;
+    const assembled = assemble(store, card, 'active', options);
     const digest: NextDigest = {
       cardId: card.id,
       title: card.title,
       ...(isVerbItem(card) ? { verb: card.verb } : {}),
-      context: `${wipBlocked ? `finish first (WIP ${active}/${store.wipLimit}) — ` : ''}${assemble(store, card, 'active')}`,
+      context: `${wipBlocked ? `finish first (WIP ${active}/${store.wipLimit}) — ` : ''}${assembled.text}`,
+      ...(assembled.advisory !== undefined ? { advisory: assembled.advisory } : {}),
     };
     return wipBlocked ? { ...digest, wipBlockedBy: digest.cardId } : digest;
   }
   const ready = firstReady(store);
-  if (ready.card !== undefined) return queuedDigest(store, ready.card);
+  if (ready.card !== undefined) {
+    const assembled = assemble(store, ready.card, 'queued', options);
+    return {
+      cardId: ready.card.id,
+      title: ready.card.title,
+      verb: ready.card.verb,
+      context: assembled.text,
+      ...(assembled.advisory !== undefined ? { advisory: assembled.advisory } : {}),
+    };
+  }
   const firstSkipped = ready.skipped[0];
   if (firstSkipped !== undefined) {
     return {

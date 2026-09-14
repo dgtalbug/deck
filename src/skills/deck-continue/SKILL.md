@@ -2,7 +2,7 @@
 name: deck-continue
 description: Resume a mid-flight deck card or repair a wedged build — deck next as the whole resume context, verify overrides, queued-publish and drift repair. Use when returning to interrupted work or when the engine reports something stuck.
 allowed-tools: Bash(deck:*), Bash(git:*)
-owns: verify, ops, checkpoint, task, handoff
+owns: verify, ops, checkpoint, task, handoff, baseline
 ---
 
 # deck-continue — resume and repair
@@ -63,6 +63,8 @@ Kinds: decision · gotcha · remaining · blocker. Concurrent writers: pass `--e
 ## Laws (this phase)
 
 - The digest is the resume context — if it reports `context: INCOMPLETE`, make the named direct reads before touching code.
+- Context advisories and `deck baseline` are EXPERIMENTAL evaluation tooling, not shipped features (`deck next --context-advisories baseline|graph`): the graph candidate failed its promotion pilot. They are optional, opt-in retrieval hints that compete only for the packet's leftover budget, never displace mandatory context, and a source-change advisory is a fact, not a gate — never treat one as scope staleness.
+- Baselines and advisories are local-only (`deck baseline capture/read/compare/advise`); graph neighbors keep their tier (heuristic/unresolved edges are never resolved evidence). Evaluation replays under `scripts/evaluation/` are stored-transcript rescores, not new host execution, and never count as live pilot evidence.
 - Never unwrap a wedge with lane moves or db edits; the table above are the only doors.
 - A converge loop that runs more than twice means the spec is wrong — surface it, re-groom.
 
