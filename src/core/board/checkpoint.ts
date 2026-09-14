@@ -1,19 +1,3 @@
-// Checkpoints (E02 DECK-ARCH-010): bounded, identified, revision-aware
-// decision entries living inside the per-card session file, below a
-// deck-managed fenced region:
-//
-//   ## Checkpoint
-//   <!-- deck:checkpoint rev=<n> -->
-//   - [id=<8hex>] kind=decision basis=<16hex|unknown> <text>
-//   <!-- deck:checkpoint:end -->
-//
-// Everything outside the fences (the scaffold header, Learnings, human
-// free text) is preserved byte-for-byte. `rev` counts every successful
-// write and is the compare-and-swap token: a write carrying expectRevision
-// refuses on mismatch without touching the file. Writers serialize through
-// an exclusive lock directory (mkdir is atomic; rename alone is not CAS).
-// New basis binds E03 scope revision and exact spec bytes. Legacy digest-only
-// entries remain readable, but cannot prove E03 task-scope provenance.
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { SESSIONS_DIR, sessionPath } from './memory.ts';
@@ -21,7 +5,7 @@ import { SESSIONS_DIR, sessionPath } from './memory.ts';
 export type CheckpointKind = 'decision' | 'gotcha' | 'remaining' | 'blocker';
 
 export const CHECKPOINT_KINDS: readonly CheckpointKind[] = ['decision', 'gotcha', 'remaining', 'blocker'];
-export const MAX_CHECKPOINT_TEXT = 2000; // code units per entry
+export const MAX_CHECKPOINT_TEXT = 2000; 
 export const MAX_CHECKPOINT_ENTRIES = 50;
 const LOCK_TIMEOUT_MS = 5000;
 const LOCK_POLL_MS = 25;
@@ -32,15 +16,15 @@ export class CheckpointBoundsError extends Error {}
 export interface CheckpointEntry {
   id: string;
   kind: CheckpointKind;
-  basis: string; // scope:<revision>:<sha16>, legacy sha16, or 'unknown'
+  basis: string; 
   text: string;
 }
 
 export interface CheckpointState {
   entries: CheckpointEntry[];
-  revision: number; // 0 for a file with no managed checkpoint region yet
-  managed: boolean; // false for legacy files (no fence yet) or a broken one
-  regionStart: number; // char offset where the managed region (heading included) begins
+  revision: number; 
+  managed: boolean; 
+  regionStart: number; 
 }
 
 export function sourceDigest(text: string): string {
@@ -62,10 +46,8 @@ function parseCheckpoint(markdown: string): CheckpointState {
   if (startIdx < 0) return { entries: [], revision: 0, managed: false, regionStart: markdown.length };
   const startLine = lines[startIdx]!.trim();
   if (lines.findIndex((line) => line.trim() === FENCE_END) <= startIdx) {
-    return { entries: [], revision: 0, managed: false, regionStart: markdown.length }; // broken fence — refuse to guess
+    return { entries: [], revision: 0, managed: false, regionStart: markdown.length }; 
   }
-  // The managed region includes the `## Checkpoint` heading when it sits
-  // directly above the fence (the only shape deck writes).
   let firstLine = startIdx;
   if (startIdx > 0 && lines[startIdx - 1]!.trim() === '## Checkpoint') firstLine = startIdx - 1;
   const regionStart = lines.slice(0, firstLine).join('\n').length + (firstLine === 0 ? 0 : 1);
@@ -87,8 +69,6 @@ export function readCheckpoint(projectPath: string, cardId: string): CheckpointS
   return parseCheckpoint(readFileSync(path, 'utf8'));
 }
 
-// A legacy digest cannot establish which E03 task-scope revision was read.
-// Preserve it as context, but never present it as proven current scope.
 export function checkpointProvenance(entries: CheckpointEntry[], currentBasis: string): 'current' | 'historical' | 'unknown' {
   let unknown = false;
   for (const entry of entries) {
@@ -108,9 +88,9 @@ export function checkpointProvenance(entries: CheckpointEntry[], currentBasis: s
 interface CheckpointWrite {
   text: string;
   kind: CheckpointKind;
-  basis?: string | undefined; // defaults to 'unknown' — explicit pre-E03
-  id?: string | undefined; // retry token: same id replaces its entry
-  expectRevision?: number | undefined; // compare-and-swap token
+  basis?: string | undefined; 
+  id?: string | undefined; 
+  expectRevision?: number | undefined; 
 }
 
 function renderRegion(revision: number, entries: CheckpointEntry[]): string[] {
@@ -130,12 +110,9 @@ function upsert(entries: CheckpointEntry[], entry: CheckpointEntry): CheckpointE
   return next;
 }
 
-// Exclusive cross-process lock via atomic directory creation. Deck writers
-// serialize here so the read-check-rename window cannot interleave; the lock
-// is always released in finally, including on conflict errors.
 function withLock<T>(dir: string, fn: () => T): T {
   const lockDir = join(dir, '.checkpoint.lock');
-  mkdirSync(dir, { recursive: true }); // the lock dir needs its parent to exist
+  mkdirSync(dir, { recursive: true }); 
   const deadline = Date.now() + LOCK_TIMEOUT_MS;
   while (true) {
     try {
@@ -206,7 +183,6 @@ export function writeCheckpoint(
     const tmp = `${path}.tmp`;
     writeFileSync(tmp, updated);
     renameSync(tmp, path);
-    // regionStart describes the freshly written file for follow-up reads.
     return { entries, revision, managed: true, regionStart: updated.indexOf('## Checkpoint') };
   });
 }

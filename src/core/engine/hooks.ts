@@ -1,15 +1,6 @@
-// Hooks runner (hooks-runner, P2 deck-born; moments via add-engine-event-hooks):
-// the extension point that makes verbs user-extensible. Two sources run at the
-// seven engine moments — DECLARED hooks from deck.rules.yaml (`hooks:` key,
-// reserved inert until this change) may block on `pre` and record failures on
-// the card on `post`; CONVENTION hooks (.deck/hooks/<event>/<name>) keep their
-// pinned law: post-only at their three legacy events, never gating. Declared
-// hooks run before convention hooks within a phase.
 import { existsSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
-// The pinned event set — append-only: new events may be added, the existing
-// names and their firing points never move.
 export const HookEvent = {
   VerbStart: 'onVerbStart',
   VerifyResult: 'onVerifyResult',
@@ -23,9 +14,6 @@ export const HOOK_EVENT_ORDER: HookEvent[] = [
   HookEvent.Archive,
 ];
 
-
-// The pinned envelope — append-only: new fields may be added, existing
-// fields are never renamed or repurposed.
 export interface HookPayload {
   event: HookEvent;
   cardId: string;
@@ -34,12 +22,12 @@ export interface HookPayload {
   branch: string | null;
   issueNumber: number | null;
   result: 'clean' | 'gaps' | null;
-  timestamp: string; // ISO-8601
+  timestamp: string; 
 }
 
 export interface HookWarning {
-  hook: string; // <event>/<name>
-  code: number; // exit code; -1 = spawn failure, -2 = timeout
+  hook: string; 
+  code: number; 
   stderr: string;
 }
 
@@ -49,7 +37,6 @@ export function hooksDir(projectPath: string, event: HookEvent): string {
   return join(projectPath, '.deck', 'hooks', event);
 }
 
-// Executable files only, lexical name order — the pinned run order.
 export function hookNames(projectPath: string, event: HookEvent): { run: string[]; skipped: string[] } {
   const dir = hooksDir(projectPath, event);
   if (!existsSync(dir)) return { run: [], skipped: [] };
@@ -68,9 +55,6 @@ export function hookNames(projectPath: string, event: HookEvent): { run: string[
   return { run, skipped };
 }
 
-// Runs every hook for the event with the pinned envelope on stdin. Never
-// throws, never gates: failures come back as warnings for the caller's
-// error stream while the engine outcome stands.
 export async function runHooks(
   projectPath: string,
   event: HookEvent,
@@ -99,8 +83,6 @@ export async function runHooks(
       timedOut = true;
       proc.kill('SIGKILL');
     }, HOOK_TIMEOUT_MS);
-    // stderr is read as a stream we can release: a killed hook may leave an
-    // orphan holding the pipe open, and the runner must never hang on it.
     const reader = proc.stderr.getReader();
     const chunks: Uint8Array[] = [];
     const readAll = (async () => {
@@ -116,7 +98,6 @@ export async function runHooks(
     try {
       await reader.cancel();
     } catch {
-      // already closed
     }
     if (code !== 0) {
       const stderr = new TextDecoder().decode(concat(chunks));
@@ -127,11 +108,10 @@ export async function runHooks(
 }
 
 export interface HookListing {
-  hooks: string[]; // <event>/<name> in pinned run order
-  skipped: string[]; // non-executable files, marked skipped
+  hooks: string[]; 
+  skipped: string[]; 
 }
 
-// `deck hooks` data: read-only listing in the deterministic run order.
 export function listHooks(projectPath: string): HookListing {
   const hooks: string[] = [];
   const skipped: string[] = [];

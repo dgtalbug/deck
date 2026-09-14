@@ -12,9 +12,6 @@ export const parity = {
   'POST /:project/backfill-specs': 'backfillSpecs',
 };
 
-// Spec-store surface (v0.4.0, additive): one-way publish (202 + queued when
-// gh is offline), spec history, reconcile, and the one-time backfill. No
-// events — publication is not board mutation.
 export function specsRoutes(registry: ProjectRegistry): RouteTable {
   const store = (project: string) => projectStore(registry, project);
   return {
@@ -31,8 +28,6 @@ export function specsRoutes(registry: ProjectRegistry): RouteTable {
         attempt(async () => {
           const versions = specs(await store(req.params.project!), req.params.id!);
           if (versions.length === 0) {
-            // An id that is not a card 404s via getVerbItem; a card with no
-            // versions yet is an empty history, not a missing resource.
             const project = registry.find(req.params.project!);
             if (project === undefined) throw new NotFoundError('project', req.params.project!);
           }

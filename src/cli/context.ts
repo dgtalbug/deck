@@ -2,8 +2,6 @@ import type { ProjectInfo } from '../core/projects/types.ts';
 import type { ProjectRegistry } from '../core/projects/registry.ts';
 import { flagString, type ParsedArgs } from './args.ts';
 
-// Project resolution order locked by the spec: --project flag >
-// DECK_PROJECT env > registry entry whose path equals the cwd.
 export class ProjectResolutionError extends Error {
   constructor(cwd: string) {
     super(

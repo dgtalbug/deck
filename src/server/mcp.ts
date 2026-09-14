@@ -1,7 +1,3 @@
-// MCP door (mcp-door slice, P2 deck-born): `deck mcp` speaks Model
-// Context Protocol on stdio — newline-delimited JSON-RPC 2.0, hand-rolled
-// (zero new dependencies, law 3). Tool↔core parity: every tool is one
-// direct core call on the same DocumentStore the CLI/HTTP doors use.
 import { boardView } from '../core/board/views.ts';
 import { nextDigest } from '../core/board/next.ts';
 import { applyExplicitResult } from '../core/board/verify.ts';
@@ -28,7 +24,6 @@ interface ToolDescriptor {
   };
 }
 
-// The pinned v1 tool set — additive-only contract.
 const PROJECT_ARG = { type: 'string', description: 'project name (deck projects lists them)' };
 export const TOOLS: readonly ToolDescriptor[] = [
   {
@@ -68,13 +63,11 @@ export const TOOLS: readonly ToolDescriptor[] = [
 ] as const;
 
 export interface McpIO {
-  read(): Promise<string | null>; // one line, or null at EOF
-  write(line: string): void; // one ndjson frame to stdout
-  log(message: string): void; // stderr
+  read(): Promise<string | null>; 
+  write(line: string): void; 
+  log(message: string): void; 
 }
 
-// Tool dispatch — one core call per tool. Typed core errors become
-// isError:true results; the stream never dies on a tool error.
 export async function callTool(registry: ProjectRegistry, name: string, params: Record<string, unknown>): Promise<unknown> {
   const projectName = params['project'];
   if (typeof projectName !== 'string' || projectName.length === 0) throw new InvalidParamsError('project');
@@ -97,8 +90,6 @@ export async function callTool(registry: ProjectRegistry, name: string, params: 
       const cardId = params['cardId'];
       if (typeof cardId !== 'string') throw new InvalidParamsError('cardId');
       const outcome = await runVerification(store, cardId);
-      // E05 truthfulness: a clean computed result HOLDS in verify — pending
-      // preparation/finalization, never reported as completed work.
       return {
         result: outcome.result,
         gaps: outcome.gaps,
@@ -130,7 +121,6 @@ function errorResponse(id: number | string | null, code: number, message: string
   return JSON.stringify({ jsonrpc: '2.0', id, error: { code, message } });
 }
 
-// The loop: one line in, one response out (notifications get none).
 export async function handleFrame(registry: ProjectRegistry, line: string, io: McpIO): Promise<void> {
   let frame: JsonRpcRequest;
   try {
@@ -159,7 +149,7 @@ export async function handleFrame(registry: ProjectRegistry, line: string, io: M
         return;
       }
       case 'notifications/initialized':
-        return; // accepted, ignored, never answered
+        return; 
       case 'ping':
         io.write(JSON.stringify({ jsonrpc: '2.0', id: frame.id, result: {} }));
         return;
@@ -180,7 +170,6 @@ export async function handleFrame(registry: ProjectRegistry, line: string, io: M
             io.write(errorResponse(id, -32602, error.message));
             return;
           }
-          // Typed core errors become isError results — the stream survives.
           io.write(
             JSON.stringify({
               jsonrpc: '2.0',
@@ -209,7 +198,6 @@ export async function runMcpLoop(registry: ProjectRegistry, io: McpIO): Promise<
   }
 }
 
-// stdio wiring — `deck mcp`.
 export function stdioIo(): McpIO {
   const decoder = new TextDecoder();
   let pending = '';

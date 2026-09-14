@@ -1,19 +1,9 @@
-// Execution-input fingerprinting (E05 DECK-ARCH-012, design decision 3):
-// inputs are BYTES. HEAD alone (plus porcelain status) cannot detect a
-// same-path content edit, so the fingerprint hashes every tracked worktree
-// file's bytes, modes, deletions and symlink targets, plus explicitly
-// declared nonignored check inputs. Environment values and ignored credential
-// files are never read: declared globs are filtered through secret excludes
-// and the exclusions are recorded in the coverage report. Unavailable
-// declared inputs limit the evidence explicitly instead of passing silently.
 import { createHash } from 'node:crypto';
 import { lstatSync, readFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { runGit } from '../git/digest.ts';
 import { DeckError } from '../board/errors.ts';
 
-// Declared input globs never reach these — secrets stay unhashed, untracked,
-// and visibly excluded in the coverage report.
 export const SECRET_EXCLUDES = [
   '.env',
   '.env.*',
@@ -74,9 +64,6 @@ function hashFileBytes(projectPath: string, absolutePath: string): string {
   return hash.digest('hex');
 }
 
-// Fingerprint the tracked worktree: sorted (path, mode, content digest,
-// symlink target, deletion) lines. This is byte identity, not HEAD identity —
-// editing a dirty file under the same path list changes the fingerprint.
 function trackedTreeLines(projectPath: string): { lines: string[]; count: number } {
   const ls = Bun.spawnSync(['git', 'ls-files', '-z'], { cwd: projectPath, stdout: 'pipe', stderr: 'pipe' });
   if (ls.exitCode !== 0) {
@@ -110,9 +97,6 @@ function trackedTreeLines(projectPath: string): { lines: string[]; count: number
   return { lines, count: paths.length };
 }
 
-// Declared nonignored check inputs (globs relative to the project root):
-// hashed into the fingerprint unless they match a secret exclude (recorded,
-// never read) or cannot be read (recorded as limiting unavailability).
 function declaredInputLines(projectPath: string, globs: string[]): {
   lines: string[];
   excluded: string[];
@@ -172,9 +156,6 @@ export async function resolveBaseSha(projectPath: string, base: string): Promise
   return resolved.stdout.trim();
 }
 
-// Capture the full execution-input identity. `base` names the ref the change
-// is measured against (default branch at capture time); when omitted the
-// head itself is recorded as base — honest "no base declared" provenance.
 export async function captureExecutionInputs(
   projectPath: string,
   options: { base?: string | undefined; declaredInputs?: string[] | undefined } = {},
@@ -202,8 +183,6 @@ export async function captureExecutionInputs(
   };
 }
 
-// Artifact provenance for a produced file: content hash and size, or an
-// explicit unavailable outcome (missing artifacts never count as evidence).
 export function fingerprintArtifact(projectPath: string, artifactPath: string): ArtifactProvenance {
   const relativePath = relative(projectPath, artifactPath);
   try {

@@ -1,5 +1,3 @@
-// Event names and payloads per .meta/board-epic.md "Events" table, plus the
-// v0.2.0 additive CRUD events (card.updated / card.deleted).
 export type BoardEventType =
   | 'card.created'
   | 'card.groomed'
@@ -10,7 +8,6 @@ export type BoardEventType =
   | 'card.done'
   | 'card.updated'
   | 'card.deleted'
-  // E03 planning events (scope identity, epic intent, dependency edges)
   | 'card.deps.updated'
   | 'epic.intent.updated'
   | 'epic.criterion.linked'
@@ -26,7 +23,7 @@ export interface CardLanePayload {
 export interface CardTasksPayload {
   id: string;
   tasks: { title: string; done: boolean }[];
-  progress: string; // "done/total"
+  progress: string; 
 }
 
 export interface CardBlockedPayload {
@@ -39,7 +36,6 @@ export interface CardDonePayload {
   wikiPath: string;
 }
 
-// E03 planning events carry free-form detail payloads (id + context fields).
 export interface PlanningEventPayload {
   id: string;
   [key: string]: unknown;

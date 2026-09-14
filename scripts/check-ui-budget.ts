@@ -2,13 +2,6 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { gzipSync } from 'node:zlib';
 import { join } from 'node:path';
 
-// Core-view budget gate (board/ui spec: ≤ 100 kB gzipped before lazy chunks).
-// bun build --splitting names the entry app.js and split modules after their
-// source (e.g. marked.esm-<hash>.js); a chunk is "core" when it is reachable
-// from app.js via static imports — the marked+dompurify spec renderer is the
-// only dynamic import, so everything not statically imported is a lazy chunk
-// outside the budget.
-
 const OUT_DIR = join(process.cwd(), 'dist', 'ui');
 const LIMIT_BYTES = 100 * 1024;
 
@@ -17,8 +10,6 @@ function gzipSize(path: string): number {
 }
 
 function staticImportsOf(source: string): string[] {
-  // Matches the relative-import forms bun's minified output emits:
-  // import"./x.js" / import"./x.js"then… / import{…}from"./x.js"
   return [...source.matchAll(/from"\.\/([^"]+\.js)"|import"\.\/([^"]+\.js)"/g)]
     .map((match) => match[1] ?? match[2])
     .filter((name): name is string => name !== undefined);
@@ -38,7 +29,6 @@ function main(): void {
 
   const sources = new Map(jsFiles.map((name) => [name, readFileSync(join(OUT_DIR, name), 'utf8')]));
   const core = new Set<string>([entry]);
-  // Walk static imports transitively from the entry.
   const queue = [entry];
   while (queue.length > 0) {
     const current = queue.pop()!;

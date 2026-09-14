@@ -6,10 +6,6 @@ import { DEFAULT_PORT } from '../../server/config.ts';
 import { ProjectRegistry } from './registry.ts';
 import type { ProjectInfo } from './types.ts';
 
-// `deck init` scaffolding (openspec-inspired): idempotent registration,
-// config-once, marker-delimited managed AGENTS.md block, append-if-missing
-// gitignore lines. Never rewrites user content (design D5).
-
 export const AGENTS_START = '<!-- deck:start -->';
 export const AGENTS_END = '<!-- deck:end -->';
 
@@ -19,8 +15,6 @@ export const GITIGNORE_LINES = [
   '.deck/board.sqlite-shm',
 ];
 
-// Board URL for a project: config port > DECK_PORT env > default — the same
-// order as the server's config resolution (serve.ts flag wins only there).
 export async function boardUrlFor(projectPath: string): Promise<string> {
   const config = await readDeckConfig(projectPath);
   const envPort = Number.parseInt(process.env['DECK_PORT'] ?? '', 10);
@@ -28,7 +22,6 @@ export async function boardUrlFor(projectPath: string): Promise<string> {
   return `http://127.0.0.1:${port}`;
 }
 
-// One template constant so doctor can diff "current" cheaply (design D6).
 export function agentsBlock(projectName: string, boardUrl: string): string {
   return [
     AGENTS_START,
@@ -49,8 +42,6 @@ export function agentsBlock(projectName: string, boardUrl: string): string {
   ].join('\n');
 }
 
-// Replace only the marked block; append the block when no markers exist.
-// Content outside the markers is preserved byte-for-byte.
 export function upsertAgentsBlock(content: string, block: string): string {
   const start = content.indexOf(AGENTS_START);
   const end = content.indexOf(AGENTS_END);
@@ -76,8 +67,6 @@ function upsertGitignore(projectPath: string): void {
 export interface InitResult {
   project: ProjectInfo;
   boardUrl: string;
-  // The database file the store actually opened — printed by the CLI and
-  // checked by doctor; one resolved value, no second path computation.
   dbPath: string;
 }
 
@@ -94,8 +83,6 @@ export async function initProject(
   const agentsPath = join(projectPath, 'AGENTS.md');
   const agentsContent = existsSync(agentsPath) ? readFileSync(agentsPath, 'utf8') : '';
   await Bun.write(agentsPath, upsertAgentsBlock(agentsContent, agentsBlock(project.name, boardUrl)));
-  // Open the board once: creates the DB and runs migrations so doctor and
-  // the server see a ready board.
   const store = await openStore(projectPath);
   return { project, boardUrl, dbPath: store.dbPath };
 }

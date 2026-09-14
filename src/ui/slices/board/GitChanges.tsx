@@ -3,9 +3,6 @@ import type { VNode } from 'preact';
 import { Archive, GitMerge, Inbox, Undo2 } from 'lucide-preact';
 import { ActionBtn, CLEAN_HINT, type GitActionCtx } from './gitShared.tsx';
 
-// Changes card (commit-all-as-WIP, undo last commit, stash push/pop) and the
-// merge card (from-select → confirm naming `merge <from> → <current>`).
-
 export function GitChanges({ ctx }: { ctx: GitActionCtx }): VNode {
   const { api, digest, busy, run, askConfirm, project } = ctx;
   const dirty = (digest?.dirtyCount ?? 0) > 0;

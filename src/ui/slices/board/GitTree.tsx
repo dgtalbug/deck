@@ -2,12 +2,6 @@ import type { VNode } from 'preact';
 import { GitCommitHorizontal, Tag } from 'lucide-preact';
 import type { GitActionCtx } from './gitShared.tsx';
 
-// History tab: the digest payload rendered end to end — the recent five
-// commits (mono sha + subject), the repository tags as chips, and git's own
-// `--graph` output verbatim in a contained mono block (exact graph, zero
-// parsing risk). The old gh-unavailable fallback card is retired: its facts
-// live in the shared status header and here in History.
-
 export function GitHistory({ digest }: { digest: GitActionCtx['digest'] }): VNode {
   const recent = digest?.recent ?? [];
   const tags = digest?.tags ?? [];

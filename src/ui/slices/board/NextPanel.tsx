@@ -4,10 +4,6 @@ import { Gauge, Send } from 'lucide-preact';
 import { Dialog, DialogHead } from '../../components/Dialog.tsx';
 import type { BoardStore } from './store.ts';
 
-// deck next panel: calls GET /<project>/next and renders the NextDigest —
-// or its wipBlockedBy outcome (the most-advanced active card's remaining
-// tasks) without leaving the board.
-
 export function NextPanel(props: { store: BoardStore; open: boolean; onClose(): void }): VNode {
   const { store } = props;
 

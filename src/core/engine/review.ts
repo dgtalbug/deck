@@ -1,8 +1,3 @@
-// The lean review gate (verify-review-archive, P1c) — extracted from
-// verify.ts (make-build-execution-trustworthy): a single-pass review that
-// binds the intended snapshot (engine/verify), holds a checkout reservation
-// (engine/ownership), and blocks archive while any finding stands. Pure
-// data out; danger-toned rendering is the CLI's job.
 import { DeckError } from '../board/errors.ts';
 import { newestSpecVersion, getIssueMap } from '../board/specstore.ts';
 import { getSpecType } from '../board/types-registry.ts';
@@ -20,14 +15,9 @@ import { getPolicy } from '../board/rules.ts';
 export interface Finding {
   risk: string;
   violates: string;
-  // Fail-closed snapshot findings (engine/verify): review binds the intended
-  // snapshot before it computes and revalidates it after — any mismatch is a
-  // finding the archive cannot pass, never a silent empty-diff pass.
   kind?: 'snapshot-unavailable' | 'snapshot-stale';
 }
 
-// The diff is data or it is nothing: a failing diff command is an explicit
-// unavailable outcome, never "zero changed files".
 async function diffFiles(
   projectPath: string,
   base: string,
@@ -51,10 +41,6 @@ async function captureCheckoutState(projectPath: string): Promise<CheckoutState>
   return { headSha: head.stdout.trim(), status: status.stdout };
 }
 
-// Snapshot resolution BEFORE any check runs: base ref available, the checkout
-// sits on the card's expected branch, HEAD readable, diff producible. Any
-// miss is a typed finding naming the root cause — review never runs checks on
-// the wrong HEAD and never reports a failed diff as an empty change.
 async function resolveReviewSnapshot(
   projectPath: string,
   base: string,
@@ -108,13 +94,6 @@ async function resolveReviewSnapshot(
   return { ok: true, files: files.files, snapshot };
 }
 
-// Single pass, deterministic for a given diff: checklist completeness,
-// requirement↔paired-test coverage in the diff, and the three laws' cheap
-// proxies (no unjustified deps, ceremony scale). Danger-toned rendering is
-// the CLI's job; this is pure data. engine/ownership: the review holds a
-// checkout reservation for its duration; engine/verify: the gate binds the
-// snapshot before computing and revalidates it after — a checkout changed
-// mid-review invalidates the result.
 export async function reviewGate(store: DocumentStore, id: string): Promise<Finding[]> {
   const card = store.getVerbItem(id);
   if (card.lane !== 'active' && card.lane !== 'verify') {
@@ -125,8 +104,6 @@ export async function reviewGate(store: DocumentStore, id: string): Promise<Find
   }
   const operation = reserveOperation(store, id, 'review');
   try {
-    // review moment pre: a blocking hook (e.g. `deck rules check`) refuses the
-    // review before findings are computed; post fires on the result below.
     await runMomentPre(store, 'review', momentPayload(store, 'review', card, null));
     const findings: Finding[] = [];
     for (const task of card.tasks.filter((task) => !task.done)) {
@@ -165,8 +142,6 @@ export async function reviewGate(store: DocumentStore, id: string): Promise<Find
             violates: 'law 3 (efficient — no unjustified new dependencies)',
           });
         }
-        // Spec-type hard rule (registry enum — never free-text evaluation):
-        // 'test-pairing' means the diff must carry a test file.
         const type = getSpecType(store, card.verb);
         if (type.hardRule === 'test-pairing') {
           const hasTest = files.some(
@@ -187,11 +162,6 @@ export async function reviewGate(store: DocumentStore, id: string): Promise<Find
         }
       }
     }
-    // deck.rules.yaml machine gates (engine/rules): FAIL(error) principles are
-    // review findings; a recorded override is the user's answer — the check is
-    // skipped for that rule, and the override itself is surfaced by the CLI.
-    // E05: a policy-required check is NOT skippable by override — evidence
-    // cannot be bypassed by a recorded decision.
     const rulesLoad = loadRules(store.projectPath);
     const policy = getPolicy(store, id);
     if (rulesLoad !== null) {
@@ -207,12 +177,6 @@ export async function reviewGate(store: DocumentStore, id: string): Promise<Find
         });
       }
     }
-    // E05 evidence capture (engine/evidence): policy-required checks execute
-    // through the configured runner with pre/post fingerprint validation and
-    // their machine records land here — review can bind dirty-worktree
-    // evidence honestly; preparation later requires a clean committed tree
-    // and recollection at that head. A capture that fails or mutates inputs
-    // leaves a failed/unavailable record, which the gap computation surfaces.
     if (policy !== undefined && policy.requiredChecks.length > 0) {
       const before = await evaluateEligibility(store, id);
       for (const checkId of policy.requiredChecks) {
@@ -233,8 +197,6 @@ export async function reviewGate(store: DocumentStore, id: string): Promise<Find
           });
         }
       }
-      // The evaluation AFTER capture names every criterion the fresh records
-      // still do not satisfy (missing links, stale identity).
       const after = await evaluateEligibility(store, id);
       for (const criterion of after.criteria) {
         if (criterion.status !== 'satisfied') {
@@ -248,9 +210,6 @@ export async function reviewGate(store: DocumentStore, id: string): Promise<Find
       }
       if (!after.enrolled) findings.push({ risk: 'delivery/evidence policy not enrolled', violates: 'evidence policy' });
     }
-    // Revalidation AFTER hooks and checks — only when the snapshot bound in
-    // the first place: head or content moved during the review → the result
-    // is invalidated (fail closed). One finding per cause.
     if (boundSnapshot !== null) {
       const after = await captureCheckoutState(store.projectPath);
       if (after.headSha !== boundSnapshot.headSha || after.status !== boundSnapshot.status) {
@@ -261,7 +220,6 @@ export async function reviewGate(store: DocumentStore, id: string): Promise<Find
         });
       }
     }
-    // review moment post: fires with the computed findings on the card.
     await runMomentPost(store, 'review', momentPayload(store, 'review', card, null));
     completeOperation(store, operation.id);
     return findings;
@@ -269,7 +227,6 @@ export async function reviewGate(store: DocumentStore, id: string): Promise<Find
     try {
       compensateOperation(store, operation.id);
     } catch {
-      // Terminal elsewhere — the original error carries the story.
     }
     throw error;
   }

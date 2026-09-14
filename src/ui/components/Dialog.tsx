@@ -2,11 +2,6 @@ import { useRef } from 'preact/hooks';
 import type { ComponentChildren, VNode } from 'preact';
 import { X } from 'lucide-preact';
 
-// Spade dialog primitive: scrim + .card.dialog markup from the mockup.
-// Keyboard contract: Esc closes, Tab is trapped inside, focus starts on the
-// dialog (synchronously, via the ref — effect timing is unreliable in tests)
-// and returns to the invoking element on close.
-
 export interface DialogProps {
   open: boolean;
   label: string;
@@ -39,7 +34,6 @@ export function Dialog({ open, label, onClose, children }: DialogProps): VNode |
     const first = focusables[0]!;
     const last = focusables[focusables.length - 1]!;
     const active = document.activeElement;
-    // Own the whole Tab cycle — do not rely on default focus movement.
     const index = focusables.indexOf(active as HTMLElement);
     const next = event.shiftKey
       ? focusables[(index - 1 + focusables.length) % focusables.length]
@@ -65,19 +59,12 @@ export function Dialog({ open, label, onClose, children }: DialogProps): VNode |
           const el = element as HTMLDivElement | null;
           if (el !== null) {
             dialogRef.current = el;
-            // Inline refs re-fire null→element on EVERY re-render (Preact);
-            // capture-and-focus must happen on the first attach only, or a
-            // keystroke's re-render steals focus from the field mid-typing.
             if (restoreFocus.current === null) {
               restoreFocus.current = document.activeElement as HTMLElement | null;
-              // ref fires before the node is inserted — focus on the next tick
               queueMicrotask(() => el.focus());
             }
             return;
           }
-          // null = real unmount OR the re-render ref dance. Restoring now
-          // would yank focus to the invoking element mid-typing; restore on
-          // the next tick, and only if no element re-attached (genuine close).
           dialogRef.current = null;
           queueMicrotask(() => {
             if (dialogRef.current !== null) return;

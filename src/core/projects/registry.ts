@@ -4,8 +4,6 @@ import { homedir } from 'node:os';
 import { basename, join } from 'node:path';
 import type { ProjectInfo } from './types.ts';
 
-// The only place DECK_HOME is read (project-rules rule 4: env access stays in
-// the owning module; tests and dev point it at a scratch dir).
 export function deckHome(): string {
   const override = process.env['DECK_HOME'];
   return override !== undefined && override.length > 0 ? override : join(homedir(), '.deck');
@@ -29,7 +27,6 @@ export class ProjectRegistry {
     this.db = new Database(registryPath());
     this.db.exec('PRAGMA journal_mode = WAL');
     this.db.exec('PRAGMA busy_timeout = 5000');
-    // One table, user-level, predates migration machinery: raw idempotent DDL.
     this.db.exec(
       'CREATE TABLE IF NOT EXISTS projects ' +
         '(name TEXT PRIMARY KEY, path TEXT NOT NULL UNIQUE, created_at TEXT NOT NULL)',

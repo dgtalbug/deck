@@ -1,13 +1,3 @@
-// Delivery observation and finalization (E05 DECK-ARCH-014, design
-// decisions 5–6): team finalization reads FRESH provider state — PR head,
-// base, merge identity, required checks and approvals bound to the expected
-// head — and fails closed on anything invalid. Squash/rebase attribution uses
-// the provider's merge commit, never head==merge equality. Solo finalization
-// verifies guarded local integration and claims local delivery only.
-// Completion is written by the board's once-only core (completeFromDelivery):
-// retries return the recorded outcome. Network observations are timestamped
-// facts, not distributed snapshots — scope/policy/evidence are rechecked
-// under the reservation immediately before the completion transaction.
 import { and, desc, eq } from 'drizzle-orm';
 import { DeckError } from '../board/errors.ts';
 import { cleanupTasks, deliveries, type DeliveryRow } from '../board/schema.ts';
@@ -24,7 +14,6 @@ import { evaluateEligibility } from './evidence.ts';
 import { compensateOperation, completeOperation, reserveOperation } from './ownership.ts';
 import { defaultBranch } from './archive.ts';
 import { runMomentPost } from './moments.ts';
-
 
 export class DeliveryRefusedError extends DeckError {
   constructor(cardId: string, reason: string, details: Record<string, unknown> = {}) {
@@ -45,9 +34,6 @@ export function newestDelivery(store: DocumentStore, cardId: string): DeliveryRo
     .get();
 }
 
-// Record a new delivery attempt (preparation already validated everything
-// it can locally). Attempt numbers are monotonic per card, so completion is
-// uniquely keyed by card/delivery attempt.
 export function recordDeliveryAttempt(
   store: DocumentStore,
   input: {
@@ -99,8 +85,6 @@ function markRefused(store: DocumentStore, deliveryId: string, reason: string): 
   });
 }
 
-// --- team observation and policy evaluation (pure over one observation) -----
-
 export interface TeamPolicyCheck {
   ok: boolean;
   reason: string | null;
@@ -108,8 +92,6 @@ export interface TeamPolicyCheck {
 
 const PENDING_CHECK_STATES = new Set(['pending', 'in_progress', 'queued', 'expected', null]);
 
-// Policy over ONE fetched observation: expected head/base, required checks
-// and approvals bound to that head, and an observed merge for finalization.
 export function evaluateTeamObservation(
   cardId: string,
   delivery: DeliveryRow,
@@ -143,14 +125,11 @@ export function evaluateTeamObservation(
   if (obs.state === 'open') {
     return { ok: false, reason: 'the PR is valid but not merged yet — completion requires an observed merge' };
   }
-  // merged
   if (obs.mergeCommit === null) {
     return { ok: false, reason: 'the merge is observed but the provider did not attribute a merge commit — fail closed' };
   }
   return { ok: true, reason: null };
 }
-
-// --- finalization ------------------------------------------------------------
 
 export type FinalizeResult = 'delivered' | 'awaiting-merge' | 'refused';
 
@@ -164,8 +143,6 @@ export interface FinalizeOutcome {
 
 export async function finalizeDelivery(store: DocumentStore, id: string): Promise<FinalizeOutcome> {
   const card = store.getVerbItem(id);
-  // A done card's retry returns the RECORDED outcome (design decision 6) —
-  // the completion event fired once at commit time and must never repeat.
   const recorded = newestDelivery(store, id);
   if (card.lane === 'done') {
     if (recorded === undefined || recorded.state !== 'delivered') {
@@ -190,7 +167,6 @@ export async function finalizeDelivery(store: DocumentStore, id: string): Promis
     throw new DeliveryRefusedError(id, 'no prepared delivery — run deck archive (preparation) first');
   }
   if (delivery.state === 'delivered') {
-    // Retry of a done delivery returns the recorded outcome, idempotently.
     return { card: store.getVerbItem(id), result: 'delivered', reason: null, delivery, hookWarnings: [] };
   }
   if (delivery.prNumber === null) {
@@ -199,8 +175,6 @@ export async function finalizeDelivery(store: DocumentStore, id: string): Promis
 
   const operation = reserveOperation(store, id, 'archive');
   try {
-    // Recheck scope/policy/evidence UNDER the reservation: anything changed
-    // since preparation refuses before any completion write.
     if (currentScopeRevision(store.db, id) !== delivery.scopeRevision) {
       markRefused(store, delivery.id, 'scope revision changed since preparation — re-collect evidence and re-prepare');
       throw new DeliveryRefusedError(id, 'scope changed since preparation — re-prepare', { deliveryId: delivery.id });
@@ -215,7 +189,6 @@ export async function finalizeDelivery(store: DocumentStore, id: string): Promis
       throw new DeliveryRefusedError(id, 'acceptance evidence is not current', { deliveryId: delivery.id, reasons: evidence.reasons });
     }
 
-    // Fresh provider observation (fail closed on unavailable).
     let obs: PullRequestObservation;
     try {
       await fetchRemote(store.projectPath);
@@ -231,12 +204,7 @@ export async function finalizeDelivery(store: DocumentStore, id: string): Promis
 
     const check = evaluateTeamObservation(id, delivery, policy, obs);
     if (!check.ok) {
-      // A valid-but-unmerged PR is WAITING, not refused: pending delivery is
-      // persisted state while human review happens (spec scenario: prepared
-      // but unmerged). Everything else is a named unsatisfied condition.
       if (check.reason !== null && /not merged yet/.test(check.reason)) {
-        // No local effect happened — release the reservation so waiting for
-        // human review never holds the checkout (design decision 5).
         compensateOperation(store, operation.id);
         return {
           card: store.getVerbItem(id),
@@ -256,8 +224,6 @@ export async function finalizeDelivery(store: DocumentStore, id: string): Promis
       };
     }
 
-    // Valid observed merge (obs.state === 'merged'): completion, delivery
-    // identity and cleanup intents commit in ONE transaction (board core).
     const mergeSha = obs.mergeCommit!.oid;
     runTx(store.db, (tx) => {
       tx.update(deliveries)
@@ -281,13 +247,10 @@ export async function finalizeDelivery(store: DocumentStore, id: string): Promis
     try {
       compensateOperation(store, operation.id);
     } catch {
-      // Terminal elsewhere — the original error carries the story.
     }
     throw error;
   }
 }
-
-// --- solo/local finalization --------------------------------------------------
 
 async function finalizeSolo(
   store: DocumentStore,
@@ -319,7 +282,6 @@ async function finalizeSolo(
     }
     const branch = branchFor(card, card.verb);
     const base = delivery.baseBranch ?? (await defaultBranch(store.projectPath));
-    // Guarded local integration: clean tree, owned checkout, no provider.
     const integration = await integrateLocally(store.projectPath, branch, base, {
       message: `merge: ${branch} — ${card.title}`,
     });
@@ -345,14 +307,11 @@ async function finalizeSolo(
     try {
       compensateOperation(store, operation.id);
     } catch {
-      // Terminal elsewhere.
     }
     throw error;
   }
 }
 
-// Shared archive-moment payload for the finalization post phase (same fields
-// the pinned envelope and declared hooks read).
 function archivePayload(card: VerbItem): Parameters<typeof runMomentPost>[2] {
   return {
     moment: 'archive',
@@ -366,8 +325,6 @@ function archivePayload(card: VerbItem): Parameters<typeof runMomentPost>[2] {
     timestamp: new Date().toISOString(),
   };
 }
-
-// --- status -------------------------------------------------------------------
 
 export interface DeliveryStatus {
   cardId: string;

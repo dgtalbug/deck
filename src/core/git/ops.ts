@@ -1,8 +1,3 @@
-// Guarded git write operations (v0.3.0, design D2/D3/D7): every mutation
-// runs through runGit (arg arrays, timeouts, captured output), guards live
-// here and are mirrored in GitPage. Never a force/rewrite flag; a failed
-// merge auto-aborts so the repo is never left mid-merge. Each op returns
-// git's captured output; refusals throw the typed errors from errors.ts.
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -69,8 +64,6 @@ function assertRepo(result: { code: number; stdout: string; stderr: string }, op
   }
 }
 
-// gh feature detection per request (design D4): absent binary or failed auth
-// both throw GhUnavailableError — no partial degradation inside an operation.
 async function requireGh(projectPath: string): Promise<void> {
   const result = await runGh(projectPath, ['auth', 'status']);
   if (result === null) throw new GhUnavailableError();
@@ -78,8 +71,6 @@ async function requireGh(projectPath: string): Promise<void> {
     throw new GhUnavailableError(`${result.stdout}${result.stderr}`.trim());
   }
 }
-
-// --- branches ---
 
 export async function createBranch(
   projectPath: string,
@@ -115,11 +106,8 @@ export async function deleteBranch(projectPath: string, name: string): Promise<G
   if (!(await branchExists(projectPath, name))) {
     throw new GitOpError('branch', `branch '${name}' not found`, '');
   }
-  // -d only — git itself refuses unmerged branches; deck never -D's.
   return { output: await output(projectPath, ['branch', '-d', name]) };
 }
-
-// --- working tree ---
 
 export async function commitAll(projectPath: string, message?: string): Promise<GitOpResult> {
   const add = await runGit(projectPath, ['add', '-A']);
@@ -150,15 +138,10 @@ export async function stashPop(projectPath: string): Promise<GitOpResult> {
   }
   const pop = await runGit(projectPath, ['stash', 'pop']);
   if (pop.code !== 0) {
-    // Documented exception (design D3): git keeps the stash entry; the tree
-    // may hold conflict markers and deck never reset --hard's — surface the
-    // output verbatim instead.
     throw new GitOpError('stash pop', 'conflict while applying the stash', `${pop.stdout}${pop.stderr}`.trim());
   }
   return { output: `${pop.stdout}${pop.stderr}`.trim() };
 }
-
-// --- merge ---
 
 export async function mergeBranch(
   projectPath: string,
@@ -181,13 +164,11 @@ export async function mergeBranch(
     from,
   ]);
   if (merge.code !== 0) {
-    await runGit(projectPath, ['merge', '--abort']); // never leave a repo mid-merge
+    await runGit(projectPath, ['merge', '--abort']); 
     throw new GitOpError('merge', 'conflict — merge aborted, tree restored', `${merge.stdout}${merge.stderr}`.trim());
   }
   return { output: `${merge.stdout}${merge.stderr}`.trim() };
 }
-
-// --- remote ---
 
 export async function fetchRemote(projectPath: string): Promise<GitOpResult> {
   return { output: await output(projectPath, ['fetch', '--prune'], NETWORK_TIMEOUT_MS) };
@@ -201,8 +182,6 @@ export async function pullRemote(projectPath: string): Promise<GitOpResult> {
 export async function pushRemote(projectPath: string): Promise<GitOpResult> {
   return { output: await output(projectPath, ['push', '-u', 'origin', 'HEAD'], NETWORK_TIMEOUT_MS) };
 }
-
-// --- pull requests via gh ---
 
 export interface PullRequest {
   number: number;
@@ -229,13 +208,11 @@ export async function listPullRequests(projectPath: string): Promise<PullRequest
   }
 }
 
-// Merged PRs feed the project timeline — mergedAt is the event timestamp.
 export interface MergedPullRequest {
   number: number;
   title: string;
   mergedAt: string;
   url: string;
-  // merge commit — gh returns {oid}; the timeline dedups git commits against it
   mergeCommit?: { oid: string } | undefined;
 }
 
@@ -256,8 +233,6 @@ export async function listMergedPullRequests(projectPath: string, limit = 30): P
   }
 }
 
-// Recent commits feed the project timeline — local git log, no network.
-// The field separator (\x1f) cannot appear in a formatted log line.
 export interface RecentCommit {
   sha: string;
   shortSha: string;
@@ -290,8 +265,6 @@ export async function createPullRequest(
   input: { title: string; base?: string | undefined; draft?: boolean | undefined; body?: string | undefined },
 ): Promise<{ url: string }> {
   await requireGh(projectPath);
-  // Spec-generated bodies can be long markdown — pass via a temp file so the
-  // content never sits in an argv slot (--body-file, mirroring issue ops).
   let bodyFile: string | undefined;
   if (input.body !== undefined && input.body !== '') {
     const dir = mkdtempSync(join(tmpdir(), 'deck-pr-'));
@@ -321,8 +294,6 @@ export async function createPullRequest(
   }
 }
 
-// Provider-facing PR observation/integration surface (E05) lives in provider.ts;
-// re-exported here so existing ops.ts imports stay stable.
 export {
   integrateLocally,
   editPullRequestBody,

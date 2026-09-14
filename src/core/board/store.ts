@@ -29,8 +29,6 @@ import { emitEvent } from '../events/outbox.ts';
 import { withMomentSync } from '../engine/moments.ts';
 import { ensureEngineState, assertWriterAllowed } from './open-state.ts';
 
-// The board database filename inside a project's .deck/ — one constant shared
-// by the store, doctor, and the CLI's printed facts so they cannot drift.
 export const BOARD_DB_NAME = 'board.sqlite';
 
 function nowIso(): string {
@@ -40,17 +38,12 @@ function nowIso(): string {
 export type Tx = Parameters<Parameters<SQLiteBunDatabase['transaction']>[0]>[0];
 type SyncTxCallback = Parameters<SQLiteBunDatabase['transaction']>[0];
 
-// BEGIN IMMEDIATE takes the write lock up front (a deferred BEGIN upgrades
-// against a stale WAL snapshot and SQLITE_BUSYs past busy_timeout); the cast
-// fits our void shape into drizzle's callback type.
 export function runTx(db: SQLiteBunDatabase, fn: (tx: Tx) => void): void {
   db.transaction(fn as unknown as SyncTxCallback, { behavior: 'immediate' });
 }
 
 export class DocumentStore {
   readonly projectPath: string;
-  // The database file this store actually opened — the one source for
-  // doctor's check and init's printed facts.
   readonly dbPath: string;
   readonly wipLimit: number;
   readonly db: SQLiteBunDatabase;
@@ -68,7 +61,6 @@ export class DocumentStore {
     this.wipLimit = wipLimit;
   }
 
-  // Raw handle for engine-owned state drizzle cannot own (FTS5, raw DDL).
   raw(): Database {
     return this.sqlite;
   }
@@ -78,15 +70,10 @@ export class DocumentStore {
     mkdirSync(dir, { recursive: true });
     const dbPath = join(dir, BOARD_DB_NAME);
     const sqlite = new Database(dbPath);
-    // busy_timeout MUST precede journal_mode: converting to WAL needs a brief
-    // exclusive lock, which throws SQLITE_BUSY without the wait.
     sqlite.exec('PRAGMA busy_timeout = 5000');
     sqlite.exec('PRAGMA journal_mode = WAL');
-    // Writer fence BEFORE migrations: a newer deck's db refuses an older binary.
     assertWriterAllowed(sqlite);
     const db = drizzle({ client: sqlite });
-    // Fresh-board DDL races between processes: retry (the journal makes the
-    // loser a no-op). Compiled binaries carry the journal embedded.
     const drizzleDir = join(import.meta.dir, '../../../drizzle');
     for (let attempt = 0; ; attempt++) {
       try {
@@ -106,14 +93,10 @@ export class DocumentStore {
     return new DocumentStore(projectPath, dbPath, db, config.board?.wipLimit ?? 3, sqlite);
   }
 
-  // --- user verb registry (deck workflow) -----------------------------------
-
   listUserVerbs(): string[] {
     return this.db.select().from(userVerbs).all().map((row) => row.name).sort();
   }
 
-  // Throws on invalid names, built-ins, and duplicates — the typed refusal
-  // the workflow command surfaces. Idempotent for an already-registered name.
   registerUserVerb(name: string): string {
     if (!/^[a-z][a-z0-9-]*$/.test(name)) {
       throw new DeckError(
@@ -134,8 +117,6 @@ export class DocumentStore {
     if ((Object.values(Verb) as string[]).includes(name)) return true;
     return this.db.select().from(userVerbs).all().some((row) => row.name === name);
   }
-
-  // --- reads ---------------------------------------------------------------
 
   private cardRow(exec: SQLiteBunDatabase, id: string): CardRow {
     const row = exec.select().from(cards).where(eq(cards.id, id)).get();
@@ -184,8 +165,6 @@ export class DocumentStore {
     return toVerbItem(row, this.taskRows(this.db, id));
   }
 
-  // --- epic planning ----------------------------------------------------------
-
   addEpic(title: string): Epic {
     const id = newCardId('epic', (id) => this.idTaken(id));
     const ts = nowIso();
@@ -211,7 +190,6 @@ export class DocumentStore {
     return this.db.select().from(cards).where(eq(cards.epicId, epicId)).orderBy(asc(cards.createdAt)).all().map((row) => this.toCard(row, this.taskRows(this.db, row.id)));
   }
 
-  // Attach/detach refusals: unknown card/epic, non-epic parent, nesting, self.
   setEpic(cardId: string, epicId: string | null): Card {
     runTx(this.db, (tx) => {
       const row = this.cardRow(tx, cardId);
@@ -259,14 +237,10 @@ export class DocumentStore {
     return this.listCards('active').length;
   }
 
-  // --- mutations -------------------------------------------------------------
-
   addNote(title: string): Note {
     const id = newCardId(title, (id) => this.idTaken(id));
     const ts = nowIso();
     const note: Note = { id, title, createdAt: ts };
-    // note moment (add-engine-event-hooks): pre can refuse the capture;
-    // post fires after the insert. Notes live only in todo.
     return withMomentSync(this, 'note', id, 'todo', note, () => {
       runTx(this.db, (tx) => {
         const position = endPosition(this.lanePositions(tx, 'todo'));
@@ -306,8 +280,6 @@ export class DocumentStore {
         const anchor = laneRows[anchorIndex]!;
         const next = laneRows[anchorIndex + 1];
         if (next !== undefined && gapTooSmall(anchor.position, next.position)) {
-          // Precision collapsed: renumber the whole lane (order unchanged),
-          // then slot the moved card right after its anchor.
           const without = laneRows.filter((laneRow) => laneRow.id !== id);
           const insertAt = without.findIndex((laneRow) => laneRow.id === afterId) + 1;
           without.splice(insertAt, 0, row);
@@ -337,8 +309,6 @@ export class DocumentStore {
   setBlocked(id: string, reason?: string): Card {
     runTx(this.db, (tx) => {
       const row = this.cardRow(tx, id);
-      // Hold law: hold means pick-later — todo/groomed only. Unblock stays
-      // open so legacy flags (swept at open) can always be cleared by hand.
       if (reason !== undefined && row.lane !== 'todo' && row.lane !== 'groomed') {
         throw new HoldViolation(id, row.lane as Lane);
       }
@@ -359,11 +329,7 @@ export class DocumentStore {
     return this.getCard(id);
   }
 
-  // The `_source: 'engine'` literal IS the engine-only guard: only engine
-  // callers can produce it (tasks mirror the spec checklist, never authored).
   syncTasks(id: string, next: TaskState[], _source: 'engine'): TaskState[] {
-    // task moment: pre sees the card before the rewrite, post after. The
-    // verb-item 404 contract fires here — before any state change.
     const item = this.getVerbItem(id);
     return withMomentSync(this, 'task', id, item.lane, item, () => {
       runTx(this.db, (tx) => {

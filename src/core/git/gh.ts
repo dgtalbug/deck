@@ -1,9 +1,3 @@
-// gh subprocess runner (v0.3.1): `gh` is usually a Homebrew install, and the
-// deck server often runs outside a login shell (GUI launcher, service) whose
-// minimal PATH lacks /opt/homebrew/bin — the digest would then report gh
-// unavailable even though it is installed. Resolution order: DECK_GH_BIN
-// override → PATH → well-known install locations. Re-resolved per request
-// (design D4 — no boot caching of availability; only the binary location).
 import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
@@ -29,10 +23,9 @@ function ghBinary(): string {
   for (const candidate of [...WELL_KNOWN, join(homedir(), '.local/bin/gh')]) {
     if (existsSync(candidate)) return candidate;
   }
-  return 'gh'; // rely on PATH anyway — spawn failure becomes "unavailable"
+  return 'gh'; 
 }
 
-// Returns null when no gh binary can be spawned at all.
 export async function runGh(
   projectPath: string,
   args: string[],
@@ -45,7 +38,7 @@ export async function runGh(
       stdout: 'pipe',
       stderr: 'pipe',
       stdin: 'ignore',
-      env: { ...process.env }, // explicit copy — see runCommand in digest.ts
+      env: { ...process.env }, 
     });
   } catch {
     return null;

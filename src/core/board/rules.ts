@@ -1,10 +1,3 @@
-// deck.rules.yaml (wire-rules-yaml-gates): the engine-read source of project
-// principles, at the project root (git-tracked — the same law as
-// deck.config.yaml, parsed the same way). A rule's shape declares its
-// enforcement: a `check` cmd is a machine gate, a plain principle is an
-// agent-judged MUST, conventions are advisory, references are digest
-// context. The `hooks` key is RESERVED for add-engine-event-hooks — parsed
-// and counted here, never executed.
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { eq } from 'drizzle-orm';
@@ -39,7 +32,6 @@ export const rulesFileSchema = z.object({
   principles: z.array(principleSchema).default([]),
   conventions: z.array(z.string()).default([]),
   references: referencesSchema.optional(),
-  // Reserved (slice 2): unknown-but-allowed so the file format never breaks.
   hooks: z.array(z.unknown()).optional(),
 });
 
@@ -48,18 +40,14 @@ export type RulesFile = z.infer<typeof rulesFileSchema>;
 
 export interface RulesLoad {
   rules: RulesFile;
-  fragments: string[]; // merged .deck/rules.d file names, sorted
-  warnings: string[]; // fragment parse failures — reported, never fatal
+  fragments: string[]; 
+  warnings: string[]; 
 }
 
 export function parseRules(text: string): RulesFile {
   return rulesFileSchema.parse(Bun.YAML.parse(text));
 }
 
-// The whole rules picture: deck.rules.yaml merged with .deck/rules.d/*.yaml
-// fragments (project file wins principle-id collisions). Null when the root
-// file is absent — the zero-regression contract: callers fall back to
-// legacy behavior untouched.
 export function loadRules(projectPath: string): RulesLoad | null {
   const rootFile = join(projectPath, RULES_FILE_NAME);
   if (!existsSync(rootFile)) return null;
@@ -107,9 +95,6 @@ function dedupe(items: string[]): string[] {
   return [...new Set(items)];
 }
 
-// The compact injection block (digest, groom contract, review prompt):
-// principles by id with MUST framing, conventions advisory. Conflicts are
-// surfaced, never silently diluted — the line says so.
 export function rulesDigest(rules: RulesFile, maxChars = 1500): string {
   const lines = [
     `principles (MUST — surface conflicts, never dilute; a user override is recorded via deck override <id> --reason):`,
@@ -124,20 +109,15 @@ export function rulesDigest(rules: RulesFile, maxChars = 1500): string {
   return lines.join('\n').slice(0, maxChars);
 }
 
-// --- machine checks -----------------------------------------------------------
-
 const CHECK_TIMEOUT_MS = 10_000;
 
 export interface CheckResult {
   id: string;
   ok: boolean;
   severity: 'error' | 'warn';
-  detail: string; // stderr tail on failure, '' on pass
+  detail: string; 
 }
 
-// A rules check IS a shell command line authored by the user in
-// deck.rules.yaml — unlike deck's own git/gh arg-array calls, sh -c is the
-// contract here, scoped to the project dir with the pinned timeout.
 export async function runCheckCmd(projectPath: string, cmd: string): Promise<{ code: number; stderr: string }> {
   const proc = Bun.spawn(['sh', '-c', cmd], {
     cwd: projectPath,
@@ -167,12 +147,9 @@ export async function runChecks(projectPath: string, rules: RulesFile): Promise<
   return results;
 }
 
-// Only FAIL(error) fails `deck rules check` and review — warn severity warns.
 export function failedErrorChecks(results: CheckResult[]): CheckResult[] {
   return results.filter((result) => !result.ok && result.severity === 'error');
 }
-
-// --- overrides (recorded user decisions) ---------------------------------------
 
 export interface RuleOverride {
   cardId: string;
@@ -181,8 +158,6 @@ export interface RuleOverride {
   createdAt: string;
 }
 
-// Raw-DDL table (the user_verbs pattern) — created on demand, never in the
-// drizzle migrations: this is engine-owned registry state next to the cards.
 function ensureRuleOverrides(db: Database): void {
   db.exec(
     'CREATE TABLE IF NOT EXISTS rule_overrides (' +
@@ -221,15 +196,6 @@ export function listOverrides(store: DocumentStore, cardId?: string): RuleOverri
   }));
 }
 
-// --- delivery/evidence policy (E05 DECK-ARCH-012/014) ---------------------------
-//
-// Versioned per-card policy over the raw `delivery_policies` table. Team is
-// the default for new scope; solo/local exists only as this explicit persisted
-// choice. Named required checks must exist as machine-checked principles in
-// deck.rules.yaml (merged view); manual designation is limited to ACTIVE
-// criteria with stable scope identity — unclassified legacy criteria must be
-// classified first, and there is no implicit manual escape hatch.
-
 export const deliveryPolicyInputSchema = z.object({
   mode: z.enum(['team', 'solo']),
   requiredChecks: z.array(z.string().min(1)).default([]),
@@ -237,8 +203,6 @@ export const deliveryPolicyInputSchema = z.object({
   manualCriteria: z.array(z.string().min(1)).default([]),
 });
 
-// Input shape (defaults still optional — z.input); the parsed output type is
-// what validation and storage see.
 export type DeliveryPolicyInput = z.input<typeof deliveryPolicyInputSchema>;
 
 export class PolicyValidationError extends DeckError {}
@@ -258,8 +222,6 @@ export function getPolicy(store: DocumentStore, cardId: string): DeliveryPolicy 
   };
 }
 
-// Validate before any write: named checks exist as `check` principles, manual
-// criteria are active classified criteria, no duplicate designations.
 export function validatePolicy(
   store: DocumentStore,
   cardId: string,
@@ -292,17 +254,13 @@ export function validatePolicy(
   }
 }
 
-// Enroll or update the policy. Team is the default when input.mode is 'team'
-// and no policy exists; switching to solo is the explicit opt-in. Every
-// accepted change bumps the policy version — evidence bound to an older
-// version stops satisfying gates until recollected.
 export function enrollPolicy(
   store: DocumentStore,
   cardId: string,
   rawInput: DeliveryPolicyInput,
 ): DeliveryPolicy {
   const input = deliveryPolicyInputSchema.parse(rawInput);
-  store.getVerbItem(cardId); // 404 contract for non-verbs
+  store.getVerbItem(cardId); 
   validatePolicy(store, cardId, input);
   const existing = getPolicy(store, cardId);
   const now = new Date().toISOString();

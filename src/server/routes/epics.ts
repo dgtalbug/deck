@@ -13,8 +13,6 @@ import {
   setEpicIntent,
 } from '../../core/board/planning.ts';
 
-// Epic planning routes: create epics, attach/detach stories, list with
-// rollup. Epics are planning cards — never engine lanes.
 export const parity = {
   'POST /:project/epics': 'addEpic',
   'GET /:project/epics': 'listEpics',
@@ -31,7 +29,6 @@ export const parity = {
 
 export const epicBody = z.object({ title: z.string().min(1) });
 export const attachBody = z.object({ epicId: z.string().min(1).nullable() });
-// E03 planning authoring (board/store): revision-checked mutations.
 export const intentBody = z.object({
   intent: z.string().min(1),
   criteria: z.array(z.object({ id: z.string().optional(), title: z.string().min(1) })).default([]),
@@ -64,7 +61,7 @@ export function epicsRoutes(registry: ProjectRegistry): RouteTable {
       GET: (req) =>
         attempt(async () => {
           const store = await projectStore(registry, req.params.project!);
-          const epic = store.getEpic(req.params.id!); // typed 404 for non-epics
+          const epic = store.getEpic(req.params.id!); 
           const stories = store.epicStories(req.params.id!).map((story) => ({
             id: story.id,
             title: story.title,
@@ -77,7 +74,6 @@ export function epicsRoutes(registry: ProjectRegistry): RouteTable {
           }));
           return Response.json({ epic, stories });
         }),
-      // Revision-checked intent authoring: intent + criteria in one mutation.
       PUT: (req) =>
         attempt(async () => {
           const body = intentBody.parse(await req.json());
@@ -96,7 +92,7 @@ export function epicsRoutes(registry: ProjectRegistry): RouteTable {
       GET: (req) =>
         attempt(async () => {
           const store = await projectStore(registry, req.params.project!);
-          store.getEpic(req.params.id!); // typed 404 for non-epics
+          store.getEpic(req.params.id!); 
           return Response.json(epicPlanning(store, req.params.id!));
         }),
     },
@@ -153,5 +149,4 @@ export function epicsRoutes(registry: ProjectRegistry): RouteTable {
     },
   };
 }
-
 

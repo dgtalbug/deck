@@ -1,12 +1,5 @@
 import type { BoardEvent } from './api.ts';
 
-// SSE subscription (D-UI-03): native EventSource in the browser; Bun has no
-// EventSource (verified against 1.4.0), so non-browser runtimes use a small
-// fetch-stream reader. Both paths share the contract: onOpen fires on every
-// (re)connection so the board refetches and closes the no-resume gap — the
-// server ignores Last-Event-ID (src/server/sse.ts). No offline mutation
-// queue exists by design (spec: the UI does not queue mutations offline).
-
 export interface SseHandlers {
   onEvents(events: BoardEvent[]): void;
   onOpen(): void;
@@ -67,7 +60,6 @@ function subscribeWithEventSource(url: string, handlers: SseHandlers): SseSubscr
   return { stop: () => source.close() };
 }
 
-// Fetch-stream fallback: manual reconnect with backoff (EventSource parity).
 function subscribeWithFetchStream(url: string, handlers: SseHandlers): SseSubscription {
   const controller = new AbortController();
   let stopped = false;
@@ -81,7 +73,6 @@ function subscribeWithFetchStream(url: string, handlers: SseHandlers): SseSubscr
         handlers.onOpen();
         attempt = 0;
         await readStream(response.body, (events) => handlers.onEvents(events));
-        // stream ended without error → treat as a drop and reconnect
         throw new Error('stream ended');
       } catch (error) {
         if (stopped || (error instanceof Error && error.name === 'AbortError')) return;
@@ -106,10 +97,10 @@ function subscribeWithFetchStream(url: string, handlers: SseHandlers): SseSubscr
       const events: BoardEvent[] = [];
       for (const frame of frames) {
         const data = frame.split('\n').find((line) => line.startsWith('data: '));
-        if (data === undefined) continue; // keepalive comments
+        if (data === undefined) continue; 
         events.push(JSON.parse(data.slice(6)) as BoardEvent);
       }
-      if (events.length > 0) emit(events); // one call per read → one batch
+      if (events.length > 0) emit(events); 
     }
   };
 

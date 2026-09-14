@@ -1,5 +1,3 @@
-// Typed exceptions per .meta/project-rules.md rule 5 — every message answers
-// what, which id, why, what next. Never throw bare Error.
 import type { Lane } from './types.ts';
 
 export class DeckError extends Error {
@@ -27,8 +25,6 @@ export class LaneViolation extends DeckError {
   }
 }
 
-// Same-lane write refusal (v0.2.0 CRUD): edit/delete target a card that
-// lives in an engine-owned lane. Distinct from LaneViolation (transitions).
 export class EngineOwnedError extends DeckError {
   constructor(cardId: string, lane: Lane, action: string) {
     super(
@@ -39,8 +35,6 @@ export class EngineOwnedError extends DeckError {
   }
 }
 
-// Hold law: hold means pick-later (todo → groom later, groomed → build
-// later). Active and verify do not pause — finish or verify-gaps them.
 export class HoldViolation extends DeckError {
   constructor(cardId: string, lane: Lane) {
     super(
@@ -69,8 +63,6 @@ export class NotFoundError extends DeckError {
   }
 }
 
-// E03 engine/verbs: a direct start whose declared prerequisites are not all
-// lane-done. Names the blockers; nothing was reserved or mutated.
 export class DependencyBlockedError extends DeckError {
   constructor(cardId: string, blockers: Array<{ id: string; lane: string; title: string }>) {
     const names = blockers.map((blocker) => `${blocker.id} (${blocker.lane})`).join(', ');
@@ -82,8 +74,6 @@ export class DependencyBlockedError extends DeckError {
   }
 }
 
-// E03 planning authoring: a mutation carrying an expected revision that no
-// longer matches current state. Nothing was written; re-read and retry.
 export class StaleWriterError extends DeckError {
   constructor(subject: string, expected: number, current: number) {
     super(

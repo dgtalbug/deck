@@ -1,14 +1,3 @@
-// Scope identity + revisions (E03 DECK-ARCH-011): stable criterion/task
-// identity and an immutable scope-revision ledger distinct from the render
-// checksum. The digest covers canonical accepted scope — verb, title, task
-// identity/title/order, criterion identity/state/title — and deliberately
-// EXCLUDES checkbox progress and render formatting, so checking a box can
-// move the publication checksum without touching scope identity.
-// Legacy classification: cards groomed before identity have no scope_items
-// rows and cards.scope_revision NULL — criterion identity stays explicitly
-// `unclassified` until a reviewed edit supplies it; never invented. A
-// "reviewed" edit is an identity-bearing one: the payload carries taskOps or
-// criterionOps (initial groom is reviewed by definition).
 import { createHash } from 'node:crypto';
 import { and, eq } from 'drizzle-orm';
 import { DeckError } from './errors.ts';
@@ -51,9 +40,6 @@ export function scopeCriteria(db: SQLiteBunDatabase, cardId: string): Array<{ id
     .all();
 }
 
-// Record a new immutable scope revision iff the canonical digest changed;
-// identical scope writes never version. Returns the (possibly unchanged)
-// current revision and whether a row was written.
 export function recordScopeRevision(
   db: SQLiteBunDatabase,
   cardId: string,
@@ -74,9 +60,6 @@ export function recordScopeRevision(
   return { revision, changed: true };
 }
 
-// Apply explicit criterion ops, then resolve identity for every active
-// criterion title. Matching by title keeps an existing id; new titles mint
-// ids ONLY on a reviewed edit — a legacy no-op leaves identity unclassified.
 export function applyCriterionOps(
   db: SQLiteBunDatabase,
   cardId: string,
@@ -108,7 +91,7 @@ export function applyCriterionOps(
   const result: Array<{ id: string; state: string; title: string }> = [];
   const seen = new Set<string>();
   for (const title of activeTitles) {
-    if (seen.has(title)) continue; // duplicate requirement names share one identity
+    if (seen.has(title)) continue; 
     seen.add(title);
     const existingItem = byTitle.get(title);
     if (existingItem !== undefined) {
@@ -116,7 +99,6 @@ export function applyCriterionOps(
       continue;
     }
     if (!reviewed) {
-      // Legacy unclassified: keep the digest stable without inventing identity.
       result.push({ id: UNCLASSIFIED, state: 'active', title });
       continue;
     }
@@ -130,11 +112,6 @@ export function applyCriterionOps(
   return result;
 }
 
-// Identity-preserving task application for re-groom (DECK-ARCH-011):
-// - with taskOps: every kept/renamed/removed task is addressed by id, adds
-//   mint ids — no guessing.
-// - without taskOps (legacy title-only payload): an unchanged title multiset
-//   preserves ids and order; any difference refuses as ambiguous.
 export function applyTaskOps(existing: TaskState[], titles: string[], taskOps: TaskOp[] | undefined): Array<{ id: string; title: string }> {
   if (taskOps === undefined) {
     const oldTitles = existing.map((task) => task.title);
@@ -171,7 +148,6 @@ export function applyTaskOps(existing: TaskState[], titles: string[], taskOps: T
     }
     result.push({ id: task.id, title: op.op === 'rename' ? op.title : task.title });
   }
-  // Every existing task must be kept/renamed or explicitly removed.
   const kept = new Set(result.map((task) => task.id));
   for (const task of existing) {
     if (!kept.has(task.id) && !removed.has(task.id)) {

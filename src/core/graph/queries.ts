@@ -1,18 +1,10 @@
-// queries.ts: k-hop impact and the callers walk over the indexed edge table —
-// recursive CTEs, cycle-guarded via the path string, node-capped with an
-// explicit truncation flag. Only resolved edges are traversed, and every node
-// carries its ring depth; unresolved edges are never presented as resolved.
-//
-// E04 (engine/graph): edge collection is scoped to the selected neighborhood
-// (chunked, index-backed `IN` queries — never a whole-table scan), and each
-// query's facts plus metadata come from one consistent read snapshot.
 import type { Database } from 'bun:sqlite';
 
 export interface ImpactNode {
   id: string;
   kind: 'file' | 'symbol';
   name: string;
-  detail: string; // fqn for symbols, relative_path for files
+  detail: string; 
   depth: number;
   fanIn: number | null;
   importance: number | null;
@@ -25,18 +17,12 @@ export interface ImpactResult {
   edges: Array<{ source: string; target: string; kind: string; resolution: string; confidence: number }>;
   truncated: boolean;
   cap: number;
-  // E04 (additive): every id in the selected neighborhood — includes folder
-  // nodes the walk passes through that carry no symbol/file facts. Edge
-  // collection is scoped to exactly this set.
   selectedIds: string[];
 }
 
 const DEFAULT_CAP = 500;
-// SQLite's default host-parameter ceiling is 999; 500 keeps one index seek
-// per id comfortably inside a single statement.
 export const EDGE_BATCH_SIZE = 500;
 
-// Seed resolution: symbol name or fqn → candidate ids, most-connected first.
 export function findSymbol(db: Database, seed: string): Array<{ id: string; name: string; fqn: string; file_id: string }> {
   return db.query('SELECT id, name, fqn, file_id FROM g_symbol WHERE name = ? OR fqn = ? ORDER BY fan_in DESC, fqn LIMIT 10').all(seed, seed) as Array<{ id: string; name: string; fqn: string; file_id: string }>;
 }
@@ -76,8 +62,6 @@ export function impact(
     SELECT DISTINCT node_id, MIN(depth) AS depth
     FROM frontier WHERE node_id != ?
     GROUP BY node_id ORDER BY depth, node_id LIMIT ?`;
-  // One read snapshot for the walk, the node facts, and the edges: a publish
-  // committing mid-query cannot show a half-old/half-new graph (E04 5.2).
   const tx = db.transaction((run: () => ImpactResult) => run());
   return tx(() => {
     const rows = db.prepare(sql).all(seedId, seedId, maxDepth, seedId, cap + 1) as Array<{ node_id: string; depth: number }>;
@@ -103,15 +87,10 @@ export function impact(
   });
 }
 
-// why = the callers-only walk (upstream impact): who reaches this symbol.
 export function why(db: Database, seedId: string, cap = DEFAULT_CAP): ImpactResult {
   return impact(db, seedId, { direction: 'in', kinds: ['CALLS', 'REFERENCES'], cap });
 }
 
-// Edges between the selected nodes only: chunked, index-backed IN queries
-// (idx_edge_source) instead of materializing every resolved edge in the
-// graph. Deterministic order — source, target, kind — independent of table
-// insertion order; tiers and confidence ride along untouched.
 function edgesAmong(db: Database, ids: string[], batchSize = EDGE_BATCH_SIZE): ImpactResult['edges'] {
   const set = new Set(ids);
   const chunks: string[][] = [];
@@ -134,9 +113,6 @@ function edgesAmong(db: Database, ids: string[], batchSize = EDGE_BATCH_SIZE): I
     .map((row) => ({ source: row.source_id, target: row.target_id, kind: row.kind, resolution: row.resolution, confidence: row.confidence }));
 }
 
-// Test/audit instrumentation: the EXPLAIN QUERY PLAN of the scoped edge read —
-// proves rows are fetched via idx_edge_source for the selected ids rather than
-// a whole-graph scan (a constant query count alone would not show that).
 export function explainEdgeNeighborhood(db: Database, ids: string[]): Array<Record<string, unknown>> {
   const chunk = ids.slice(0, EDGE_BATCH_SIZE);
   const placeholders = chunk.map(() => '?').join(', ');

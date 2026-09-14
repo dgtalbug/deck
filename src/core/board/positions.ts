@@ -1,7 +1,3 @@
-// Float positions with midpoint insert. ~50 same-spot inserts halve the gap
-// each time until precision collapses; when the neighbor gap drops below
-// MIN_GAP the whole lane renumbers at POSITION_STEP intervals (epic
-// Feasibility 3).
 export const POSITION_STEP = 1024;
 export const MIN_GAP = 1e-6;
 

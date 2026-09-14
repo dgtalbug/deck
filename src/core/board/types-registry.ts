@@ -1,8 +1,3 @@
-// Spec-type registry (spec-type-registry): user-definable spec types that
-// drive spec sections, groom form fields, git conventions, and per-type
-// implementation laws. The registry is db rows read at call time — the
-// engine holds no hardcoded type behavior; built-ins are seeds, and an
-// edited row changes behavior on the next call with no restart.
 import { eq } from 'drizzle-orm';
 import type { Database } from 'bun:sqlite';
 import { DeckError } from './errors.ts';
@@ -13,19 +8,14 @@ import type { Research } from './types.ts';
 export interface SpecSection {
   id: string;
   label: string;
-  /** required for every groom of this type */
   alwaysRequired?: boolean | undefined;
-  /** required only when the blast radius lists at least this many entries */
   requiredAboveRadius?: number | undefined;
 }
 
 export interface GitConvention {
-  /** commit subject prefix; defaults to the type id (the verb) */
   commitPrefix?: string | undefined;
 }
 
-// hardRule is an enum the review gate understands — never free-text
-// evaluation. 'test-pairing': the diff must touch a test file.
 export type HardRule = 'test-pairing';
 
 export interface SpecType {
@@ -33,9 +23,7 @@ export interface SpecType {
   displayName: string;
   icon: string;
   sections: SpecSection[];
-  /** groom form fields beyond the fixed core (verb/title/deltas/tasks) */
   groomFields: string[];
-  /** free-text implementation law; surfaced to the reviewer, never executed */
   taskLaw: string;
   gitConvention: GitConvention;
   hardRule: HardRule | null;
@@ -53,10 +41,6 @@ interface SpecTypeRow {
   updated_at: string;
 }
 
-// Seeds must reproduce pre-registry behavior byte-for-byte wherever they add
-// nothing: no sections → materializeSpec/renderCardSpec output is unchanged,
-// and commitPrefix defaults to the verb so gitBlock is unchanged. fix/feat
-// gain sections BY DESIGN (their type laws are the point of the registry).
 function seedTypes(): SpecType[] {
   const plain = (id: string, displayName: string, icon: string): SpecType => ({
     id,
@@ -143,8 +127,6 @@ function parseRow(row: SpecTypeRow): SpecType {
   };
 }
 
-// Unknown/user verbs get the neutral default: no sections, no laws —
-// registry absence never blocks a registered verb's normal flow.
 export function getSpecType(store: DocumentStore, id: string): SpecType {
   const row = store.raw().query('SELECT * FROM spec_types WHERE id = ?').get(id) as SpecTypeRow | null;
   if (row === null) {
@@ -217,8 +199,6 @@ export function upsertSpecType(store: DocumentStore, type: SpecType): SpecType {
   return getSpecType(store, type.id);
 }
 
-// Deleting a type verbs still reference strands cards — refuse with the
-// dependents named (the same law as epic delete: children survive).
 export function removeSpecType(store: DocumentStore, id: string): void {
   const dependents = store.db.select({ id: cards.id }).from(cards).where(eq(cards.verb, id)).all();
   if (dependents.length > 0) {
@@ -233,8 +213,6 @@ export function removeSpecType(store: DocumentStore, id: string): void {
   }
 }
 
-// Section content lives on Research.sections (id → text). The one shared
-// gate used by BOTH doors (groom and verb start) so they cannot drift.
 export function sectionGate(type: SpecType, research: Research): string[] {
   const radius = (research.blastRadius ?? []).filter((line) => line.trim() !== '').length;
   const missing: string[] = [];

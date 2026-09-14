@@ -1,10 +1,6 @@
 import { useEffect, useState } from 'preact/hooks';
 import type { VNode } from 'preact';
 
-// Lazy sanitized markdown: marked + DOMPurify load as a separate chunk on
-// first render (D-UI-06). Everything passes through DOMPurify's default
-// profile — script/onerror/javascript: payloads never survive.
-
 type Render = (markdown: string) => Promise<string>;
 
 let renderer: Render | null = null;
@@ -14,8 +10,6 @@ async function loadRenderer(): Promise<Render> {
     import('marked'),
     import('dompurify'),
   ]);
-  // In the browser the default export is a ready instance; in DOM-less
-  // runtimes (Bun tests) it is a factory that binds to the global window.
   const purifier = typeof dompurify.default.sanitize === 'function'
     ? dompurify.default
     : dompurify.default(window);
@@ -45,6 +39,5 @@ export function SpecView({ markdown }: { markdown: string }): VNode {
   }, [markdown]);
 
   if (html === null) return <p class="hint">loading spec…</p>;
-  // Content is DOMPurify-sanitized before it ever reaches this sink.
   return <div class="spec-md" dangerouslySetInnerHTML={{ __html: html }}></div>;
 }

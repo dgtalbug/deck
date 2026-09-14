@@ -13,9 +13,6 @@ export const parity = {
 
 export const startBody = z.object({ verb: z.enum(Verb) });
 
-// Engine-event routes (v0.5.0, additive): verb start + archive over HTTP.
-// Guards map per the typed errors — verb/state refusals 400, WIP 409,
-// merge conflict 409, unknown ids 404 (via the shared error path).
 export function engineRoutes(registry: ProjectRegistry): RouteTable {
   const store = (project: string) => projectStore(registry, project);
   return {
@@ -38,7 +35,6 @@ export function engineRoutes(registry: ProjectRegistry): RouteTable {
           await req.json().catch(() => undefined);
           try {
             const outcome = await archiveVerb(await store(req.params.project!), req.params.id!);
-            // E05: preparation outcome — delivery is pending, not done.
             return Response.json({
               card: outcome.card,
               prUrl: outcome.prUrl,

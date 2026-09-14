@@ -1,7 +1,3 @@
-// Plain-text renderers — commands print and exit (design non-goal: no TTY
-// interactivity). Output follows the CLI identity grid: 72 columns, left
-// rule only, ragged right. Every colored element reads identically as plain
-// text — states spell themselves out (`blocked:`, counts, chips).
 
 import type { BoardView, CardView, TodoView } from '../core/board/views.ts';
 import type { Card } from '../core/board/types.ts';
@@ -17,7 +13,6 @@ const LANES: { lane: keyof BoardView['lanes']; label: string; token?: Token }[] 
   { lane: 'done', label: 'done', token: 'success' },
 ];
 
-// Lane head: name + rule to col 70, count at 72 (identity §3 lane header).
 function laneHead(label: string, count: number, token: Token | undefined, p: Palette): string {
   const name = token === undefined ? p.bold(label) : p.bold(p.color(token, label));
   const bar = rule(70 - label.length - 1 - String(count).length - 1);
@@ -92,7 +87,6 @@ export function renderProjects(projects: ProjectSummary[], p: Palette = makePale
   return [head, ...rows].join('\n');
 }
 
-// One-line result feedback for mutating commands.
 export function cardSummary(card: Card, p: Palette = makePalette('off')): string {
   const lane = 'lane' in card ? ` → ${card.lane}` : '';
   return `${p.color('primary', card.id)}${p.dim(lane)}`;

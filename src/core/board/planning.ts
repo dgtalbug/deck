@@ -1,7 +1,3 @@
-// E03 planning state (DECK-ARCH-011/015/016): dependency edges, epic intent
-// and criterion coverage, child acknowledgements — revision-checked store
-// mutations and reads. Extracted from store.ts to keep both under the
-// 400-line law; same runTx transactional boundaries as the class methods.
 import { eq } from 'drizzle-orm';
 import type { SQLiteBunDatabase } from 'drizzle-orm/bun-sqlite';
 import {
@@ -21,8 +17,6 @@ function nowIso(): string {
   return new Date().toISOString();
 }
 
-// Unmet dependencies of a story: prerequisites exist but are not lane
-// `done` (the engine's satisfaction policy — a clean verify is not done).
 export function unmetDependencies(
   store: DocumentStore,
   cardId: string,
@@ -39,9 +33,6 @@ export function unmetDependencies(
   return blockers;
 }
 
-// Revision-checked dependency replacement: atomic self/cycle/missing
-// validation in one transaction; a referenced-prerequisite delete refuses
-// elsewhere; here the whole edge set is replaced or nothing changes.
 export function setDependencies(store: DocumentStore, cardId: string, dependsOn: string[], expectedRevision?: number | undefined): Card {
   if (expectedRevision !== undefined) {
     const current = store.db.select({ v: cards.scopeRevision }).from(cards).where(eq(cards.id, cardId)).get();
@@ -65,7 +56,6 @@ export function setDependencies(store: DocumentStore, cardId: string, dependsOn:
         );
       }
     }
-    // Cycle check over the FULL graph including the proposed edges.
     const edges = new Map<string, Set<string>>();
     for (const edge of tx.select().from(storyDeps).all()) {
       if (!edges.has(edge.cardId)) edges.set(edge.cardId, new Set());
@@ -100,9 +90,6 @@ export function listDependencies(store: DocumentStore, cardId: string): string[]
   return store.db.select().from(storyDeps).where(eq(storyDeps.cardId, cardId)).all().map((row) => row.dependsOn);
 }
 
-// Revision-checked epic intent authoring: replaces intent + criteria atomically.
-// Same-titled criteria keep their ids; new ones mint ids; criteria absent
-// from the new set are marked removed (history retained). Stale writers refuse.
 export function setEpicIntent(
   store: DocumentStore,
   epicId: string,
@@ -192,8 +179,6 @@ export function deferCriterion(store: DocumentStore, epicId: string, criterionId
   });
 }
 
-// A child acknowledges the parent revision it planned against; a parent
-// that changed since the caller read it refuses via expectedRevision.
 export function acknowledgeParent(store: DocumentStore, cardId: string, expectedRevision?: number | undefined): void {
   runTx(store.db, (tx) => {
     const child = tx.select().from(cards).where(eq(cards.id, cardId)).get();
@@ -257,9 +242,6 @@ export function epicPlanning(store: DocumentStore, epicId: string): {
   };
 }
 
-// CLI rendering helper: the epic's criteria table with coverage/deferral
-// flags. Kept beside the planning reads so the format cannot drift from the
-// data it renders.
 export function epicCriteriaLines(
   planning: ReturnType<typeof epicPlanning>,
   dim: (text: string) => string,

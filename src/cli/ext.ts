@@ -1,6 +1,3 @@
-// Extension-point commands (hooks-runner): `deck hooks` lists installed
-// hooks; `deck workflow <new-verb>` registers a user verb on the shared
-// engine. Both are one core call plus rendering.
 import { UsageError } from './args.ts';
 import { resolveProject } from './context.ts';
 import { getStore } from '../core/projects/stores.ts';
@@ -31,8 +28,6 @@ export async function hooksCommand(_args: ParsedArgs, ctx: RunContext): Promise<
   const listing = listHooks(store.projectPath);
   const declared = declaredHooks(store.projectPath);
   const lines: string[] = [];
-  // Declared hooks (deck.rules.yaml `hooks:`) first, in file order — they run
-  // before convention hooks within their phase.
   for (const [index, hook] of declared.entries()) {
     const phases = [hook.pre !== undefined ? 'pre' : null, hook.post !== undefined ? 'post' : null]
       .filter((phase) => phase !== null)
@@ -65,7 +60,6 @@ export async function workflowCommand(args: ParsedArgs, ctx: RunContext): Promis
   ].join('\n');
 }
 
-// `deck sync` — flush the publish queue, then report issue drift.
 export async function syncCommand(args: ParsedArgs, ctx: RunContext): Promise<number> {
   const project = resolveProject(ctx.registry, args, ctx.cwd);
   const store = await getStore(project.path);
@@ -93,7 +87,6 @@ export async function syncCommand(args: ParsedArgs, ctx: RunContext): Promise<nu
   return report.drift.length > 0 ? 1 : 0;
 }
 
-// `deck backfill-specs` — the one-time openspec import, reported.
 export async function backfillCommand(args: ParsedArgs, ctx: RunContext): Promise<string> {
   const project = resolveProject(ctx.registry, args, ctx.cwd);
   const store = await getStore(project.path);
@@ -105,8 +98,6 @@ export async function backfillCommand(args: ParsedArgs, ctx: RunContext): Promis
   return lines.join('\n');
 }
 
-// `deck recall <query>` — pinned recall(query)→string[] at the terminal;
-// stale/error prints its diagnostic after the results.
 export async function recallCommand(args: ParsedArgs, ctx: RunContext): Promise<string> {
   const query = args.positionals.join(' ');
   if (query.trim().length === 0) throw new UsageError('usage: deck recall <query>');
@@ -118,8 +109,6 @@ export async function recallCommand(args: ParsedArgs, ctx: RunContext): Promise<
   return lines.join('\n');
 }
 
-// `deck setup` — deterministic host onboarding: idempotent register +
-// scaffold, host detection, and the adapter table with per-host needs.
 export async function setupCommand(args: ParsedArgs, ctx: RunContext): Promise<string> {
   const result = await initProject(ctx.registry, ctx.cwd, undefined);
   const store = await getStore(result.project.path);
@@ -149,7 +138,6 @@ export async function setupCommand(args: ParsedArgs, ctx: RunContext): Promise<s
   return lines.join('\n');
 }
 
-// `deck skill new <name>` — the pinned scaffold template.
 export async function skillCommand(args: ParsedArgs, ctx: RunContext): Promise<string> {
   const [sub, name] = args.positionals;
   if (sub !== 'new' || name === undefined || name.length === 0) {
@@ -170,13 +158,12 @@ export async function skillCommand(args: ParsedArgs, ctx: RunContext): Promise<s
   }
 }
 
-// `deck groom <id>` — prints the GroomProposal contract for a note.
 export async function groomCommand(args: ParsedArgs, ctx: RunContext): Promise<string> {
   const id = args.positionals[0];
   if (id === undefined || id.length === 0) throw new UsageError('usage: deck groom <id>');
   const project = resolveProject(ctx.registry, args, ctx.cwd);
   const store = await getStore(project.path);
-  store.getNote(id); // 404 contract when the id is not a note
+  store.getNote(id); 
   const contract = {
     noteId: id,
     proposedVerb: 'feat',
@@ -200,8 +187,6 @@ export async function groomCommand(args: ParsedArgs, ctx: RunContext): Promise<s
     'Story/research say WHAT we build; tasks are the only technical section.',
     'Minimal spec (title + tasks) stays valid — story, findings, deltas optional.',
   ];
-  // Project law rides the contract (engine/rules): the groomed spec must honor
-  // deck.rules.yaml principles, and say where overrides are recorded.
   const rulesLoad = loadRules(project.path);
   if (rulesLoad !== null) {
     lines.push('', '## Project rules (MUST — spec and tasks honor these)', rulesDigest(rulesLoad.rules));
@@ -209,17 +194,12 @@ export async function groomCommand(args: ParsedArgs, ctx: RunContext): Promise<s
   return lines.join('\n');
 }
 
-// `deck epic "<title>"` creates an epic; `deck epic <id>` prints its tree.
 export async function epicCommand(args: ParsedArgs, ctx: RunContext): Promise<string> {
   const first = args.positionals[0];
   if (first === undefined || first.length === 0) throw new UsageError('usage: deck epic "<title>" | deck epic <id>');
   const project = resolveProject(ctx.registry, args, ctx.cwd);
   const store = await getStore(project.path);
   const p = ctx.pal;
-  // Id-or-title: an existing epic id wins (bare slugs now, no suffix regex).
-  // A single token shaped like a LEGACY id (slug + 4-char tail) that resolves
-  // to nothing is still a lookup miss — refuse, don't create an epic named
-  // after a dead id.
   const isId = (() => {
     try {
       store.getEpic(first);
@@ -241,7 +221,6 @@ export async function epicCommand(args: ParsedArgs, ctx: RunContext): Promise<st
   ].join('\n');
 }
 
-// `deck epics` — every epic with its rollup.
 export async function epicsCommand(args: ParsedArgs, ctx: RunContext): Promise<string> {
   const project = resolveProject(ctx.registry, args, ctx.cwd);
   const store = await getStore(project.path);
@@ -253,20 +232,17 @@ export async function epicsCommand(args: ParsedArgs, ctx: RunContext): Promise<s
     .join('\n');
 }
 
-// `deck story <epicId> "<title>"` — a note born attached to its epic.
 export async function storyCommand(args: ParsedArgs, ctx: RunContext): Promise<string> {
   const [epicId, ...title] = args.positionals;
   if (epicId === undefined || title.length === 0) throw new UsageError('usage: deck story <epicId> "<title>"');
   const project = resolveProject(ctx.registry, args, ctx.cwd);
   const store = await getStore(project.path);
-  const epic = store.getEpic(epicId); // typed 404 when not an epic
+  const epic = store.getEpic(epicId); 
   const note = store.addNote(title.join(' '));
   store.setEpic(note.id, epic.id);
   return [note.id, `story attached to epic ${epic.id}`].join('\n');
 }
 
-// A registered user verb dispatches through the shared start command exactly
-// as the built-ins do; unknown names return undefined (the usage error).
 export async function userVerbCommand(args: ParsedArgs, ctx: RunContext): Promise<Command | undefined> {
   if (!/^[a-z][a-z0-9-]*$/.test(args.command ?? '')) return undefined;
   try {
@@ -276,18 +252,16 @@ export async function userVerbCommand(args: ParsedArgs, ctx: RunContext): Promis
     const verb = args.command!;
     return (verbArgs, verbCtx) => startCommand(verbArgs, verbCtx, verb);
   } catch {
-    return undefined; // unresolvable project → the usage error is the answer
+    return undefined; 
   }
 }
 
-// `deck issue <id>` — the card's mapped GitHub issue (moved from main.ts to
-// keep the dispatch file within the line law; one core call plus rendering).
 export async function issueCommand(args: ParsedArgs, ctx: RunContext): Promise<string> {
   const id = args.positionals[0];
   if (id === undefined || id.length === 0) throw new UsageError('usage: deck issue <id>');
   const project = resolveProject(ctx.registry, args, ctx.cwd);
   const store = await getStore(project.path);
-  store.getCard(id); // typed 404 for unknown ids — before the no-map refusal
+  store.getCard(id); 
   const map = getIssueMap(store, id);
   if (map === undefined) {
     throw new DeckError(`card ${id} has no mapped issue — publish it first`, { cardId: id });
@@ -297,9 +271,6 @@ export async function issueCommand(args: ParsedArgs, ctx: RunContext): Promise<s
   return `${p.dim('#' + view.number)} ${view.state === 'open' ? p.color('primary', view.url) : view.url}`;
 }
 
-// `deck review <id>` — the review gate, plus the advisory spec-type law
-// surfaced for the reviewer (custom laws never hard-refuse; registry hard
-// rules block inside reviewGate itself).
 export async function reviewCommand(args: ParsedArgs, ctx: RunContext): Promise<string | number> {
   const id = args.positionals[0];
   if (id === undefined || id.length === 0) throw new UsageError('usage: deck review <id>');
@@ -308,13 +279,9 @@ export async function reviewCommand(args: ParsedArgs, ctx: RunContext): Promise<
   const card = store.getVerbItem(id);
   const type = getSpecType(store, card.verb);
   if (type.taskLaw !== '') ctx.io.out(`type law (${card.verb}): ${type.taskLaw}`);
-  // Recorded rule overrides surface with the review (engine/rules): they are
-  // user decisions carried by the card, not violations.
   for (const record of listOverrides(store, id)) {
     ctx.io.out(`override ${record.ruleId}: ${record.reason}`);
   }
-  // Persistent post-hook failures (engine/hooks): a failed announce is a
-  // fact about the card the reviewer should see, never a reverting force.
   for (const failure of listHookFailures(store, id)) {
     ctx.io.out(
       `hook-fail ${failure.hook} (exit ${failure.code})` +
@@ -329,8 +296,6 @@ export async function reviewCommand(args: ParsedArgs, ctx: RunContext): Promise<
   return 'review clean — archive is unblocked';
 }
 
-// `deck types` — the spec-type registry at the terminal: list, create/edit
-// from a JSON file (the groom file-payload convention), remove.
 export async function typesCommand(args: ParsedArgs, ctx: RunContext): Promise<string> {
   const [sub, arg] = args.positionals;
   const project = resolveProject(ctx.registry, args, ctx.cwd);

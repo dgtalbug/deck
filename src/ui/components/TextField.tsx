@@ -1,8 +1,5 @@
 import type { VNode } from 'preact';
 
-// Labeled text field with inline validation state (note capture, groom form).
-// Label association + aria-invalid wiring per the a11y pass (task 9.1).
-
 export interface TextFieldProps {
   id: string;
   label: string;

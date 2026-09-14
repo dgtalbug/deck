@@ -1,9 +1,3 @@
-// The revert door (hold law): done cards have no hold — the way back is a
-// NEW reviewed change, never a direct main mutation. `deck revert
-// <done-card-id>` materializes a groomed revert-verb card whose story,
-// tasks, and spec deltas re-derive from the archived merge commit. The
-// merge is found by SUBJECT match (`merge: <branch> — <title>`), never by
-// branchFor — legacy cards used id-shaped branch names.
 import { DeckError } from '../board/errors.ts';
 import { convertToVerbItem } from '../board/groom.ts';
 import { newestSpecVersion } from '../board/specstore.ts';
@@ -54,9 +48,6 @@ export async function openRevertDoor(
   const merge = await findMergeCommit(projectPath, done.title);
   const short = merge.sha.slice(0, 10);
 
-  // Spec honesty: the revert REMOVES every requirement the archived change
-  // added — same names, so the review gate's slug pairing holds against the
-  // files the revert diff touches (the original change's own files).
   const version = newestSpecVersion(store, doneId);
   const requirements = version !== undefined ? parseRequirementNames(version.markdown) : [];
   const specDeltas = requirements.map((requirement) => ({

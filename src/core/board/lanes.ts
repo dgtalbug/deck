@@ -53,14 +53,9 @@ export function activeCount(store: DocumentStore): number {
 
 export interface ReadySelection {
   card: VerbItem | undefined;
-  // Deterministic queue order preserved: every skipped story appears here in
-  // queue order with the unmet prerequisite named (id + current lane).
   skipped: Array<{ card: VerbItem; blockers: Array<{ id: string; lane: string; title: string }> }>;
 }
 
-// Dependency-aware ready selection (E03 DECK-ARCH-016): walks the groomed
-// queue in order, returns the first story whose prerequisites are all lane
-// `done`, and explains every story skipped before it. Read-only.
 export function firstReady(store: DocumentStore): ReadySelection {
   const queue = store
     .listCards('groomed')
@@ -90,7 +85,6 @@ export function moveLane(
 ): Card {
   const card = store.getCard(id);
   if (!('lane' in card)) {
-    // Notes only leave todo through grooming or tweak — never a lane move.
     throw new LaneViolation(id, 'todo', to, source);
   }
   assertTransition(id, card.lane, to, source);
@@ -111,7 +105,5 @@ export function moveLane(
       .run();
     emitEvent(tx, 'card.moved', { id, lane: to, position });
   });
-  // Any lane-dwelling card (verb item or tweak) — a narrowed getVerbItem
-  // here would throw AFTER the transaction committed.
   return store.getCard(id);
 }

@@ -6,11 +6,6 @@ import { TextField } from '../../components/TextField.tsx';
 import { VERBS, type GroomInput, type SpecTypeView, type Verb } from './api.ts';
 import { VerbIcon } from './verbIcon.tsx';
 
-// Manual groom form collecting EXACTLY the GroomProposal fields
-// (proposedVerb/refinedTitle/research/specDeltas/tasks/openQuestions).
-// Open questions gate the accept; reject is inert — no request, the note
-// stays untouched in todo (the groom agent skill is a separate deliverable).
-
 const EMPTY: GroomInput = {
   proposedVerb: 'feat',
   refinedTitle: '',
@@ -27,7 +22,6 @@ function parseLines(text: string): string[] {
     .filter((line) => line !== '');
 }
 
-// specDeltas textarea format: `ADDED|MODIFIED|REMOVED: requirement :: text`
 function parseDeltas(text: string): GroomInput['specDeltas'] {
   return parseLines(text).flatMap((line) => {
     const match = /^(ADDED|MODIFIED|REMOVED):\s*([^:]+)::\s*(.+)$/.exec(line);
@@ -43,9 +37,7 @@ function stringifyDeltas(deltas: GroomInput['specDeltas']): string {
 export function GroomForm(props: {
   noteTitle: string;
   initial?: GroomInput;
-  /** 'groom' converts a note (POST); 'edit' re-edits a groomed item (PATCH) */
   mode?: 'groom' | 'edit';
-  /** registry rows — the form's section fields follow the selected type */
   types?: SpecTypeView[];
   fetchTypes?: (project: string) => Promise<SpecTypeView[]>;
   project?: string;
@@ -54,8 +46,6 @@ export function GroomForm(props: {
 }): VNode {
   const [input, setInput] = useState<GroomInput>(props.initial ?? EMPTY);
   const [types, setTypes] = useState<SpecTypeView[]>(props.types ?? []);
-  // Registry rows arrive async when only the fetcher is wired — the form
-  // stays usable without them (no sections = the pre-registry look).
   useEffect(() => {
     if (props.types !== undefined || props.fetchTypes === undefined || props.project === undefined) return;
     let alive = true;
@@ -117,8 +107,6 @@ export function GroomForm(props: {
       },
       specDeltas: parseDeltas(deltas),
       tasks: parseLines(tasks),
-      // the wire contract carries only UNANSWERED questions — the server
-      // rejects any non-empty list, so answered ones drop out here
       openQuestions: [],
     });
   };

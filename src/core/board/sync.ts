@@ -1,8 +1,3 @@
-// syncProject reconcile (split from publish.ts, 400-line law): the
-// offline-queue flush + drift report. Writes are limited to queue flush, map
-// refresh and label refresh — drift needing judgment is reported with its
-// fix, never auto-applied. E05: a broken queue entry keeps its provider
-// operation inspectable instead of being drained.
 import { eq } from 'drizzle-orm';
 import { cards, issueMap } from './schema.ts';
 import type { DocumentStore } from './store.ts';
@@ -12,8 +7,6 @@ import { GhUnavailableError, GitOpError } from '../git/errors.ts';
 import { listCardOperations } from './provider-operations.ts';
 import { checksumOf, dequeuePublish, getIssueMap, listQueue, newestSpecVersion, setIssueMap } from './specstore.ts';
 import { publishSpec } from './publish.ts';
-
-// --- reconcile ---------------------------------------------------------------
 
 export type DriftKind = 'state' | 'checksum' | 'label' | 'missing';
 
@@ -38,10 +31,6 @@ function cardDone(store: DocumentStore, cardId: string): boolean {
   return 'lane' in card && card.lane === 'done';
 }
 
-// Pinned contract: syncProject(project)→ReconcileReport. Flush first (in
-// enqueue order), then diff map vs reality; report drift with prescribed
-// fixes before (and instead of) writing anything beyond the three allowed
-// writes: queue flush, map refresh, label refresh.
 export async function syncProject(store: DocumentStore): Promise<ReconcileReport> {
   const report: ReconcileReport = {
     gh: 'reachable',
@@ -51,7 +40,6 @@ export async function syncProject(store: DocumentStore): Promise<ReconcileReport
     drift: [],
   };
 
-  // Queue flush — in order; an offline gh stops the flush, not the command.
   for (const entry of listQueue(store)) {
     try {
       const outcome = await publishSpec(store, entry.cardId);
@@ -59,10 +47,6 @@ export async function syncProject(store: DocumentStore): Promise<ReconcileReport
       report.flushed.push({ cardId: entry.cardId, issueNumber: outcome.issueNumber, queued: outcome.queued });
     } catch (error) {
       if (error instanceof GhUnavailableError) break;
-      // A broken entry stays queued and its provider operation stays
-      // inspectable (DECK-ARCH-013: no retry discards unresolved intent
-      // merely to drain the queue) — the drift section surfaces the card
-      // with the operation id for judgment.
       const op = listCardOperations(store, entry.cardId)
         .filter((row) => row.kind === 'issue-create')
         .at(-1);
@@ -79,12 +63,9 @@ export async function syncProject(store: DocumentStore): Promise<ReconcileReport
   }
   report.flushedPending = listQueue(store).length;
 
-  // Drift diff — map rows vs live issues, cards, and versions.
   const mappedCards = store.db.select().from(issueMap).all().map((row) => ({ ...row }));
   const labelRefreshes: Array<{ issueNumber: number; lane: 'todo' | 'groomed' | 'active' | 'verify' | 'done' }> = [];
   for (const row of mappedCards) {
-    // Rows orphaned before the deleteCard cascade (or by hand-edited dbs)
-    // must surface as drift, never abort the whole report.
     let card: ReturnType<typeof store.getCard>;
     try {
       card = store.getCard(row.cardId);
@@ -140,9 +121,6 @@ export async function syncProject(store: DocumentStore): Promise<ReconcileReport
       const laneLabels = issue.labels.filter((label) =>
         ['todo', 'groomed', 'active', 'verify', 'done'].includes(label),
       );
-      // Batch label writes for AFTER the read loop — interleaving gh
-      // writes with reads serializes N round-trips and re-reads issues
-      // that a label edit would have refreshed anyway.
       if (!hasLaneLabel || laneLabels.length > 1) {
         labelRefreshes.push({ issueNumber: row.issueNumber, lane });
       }

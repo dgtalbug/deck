@@ -1,7 +1,3 @@
-// E03 planning authoring doors (DECK-ARCH-015/016, review follow-up 6.1):
-// `deck deps` for story dependency edges and the epic intent/criterion
-// mutations. All writes go through the shared revision-checked store
-// methods; stale expected revisions refuse without writing anything.
 import { flagString, flagStrings, UsageError, type ParsedArgs } from './args.ts';
 import { resolveProject } from './context.ts';
 import { getStore } from '../core/projects/stores.ts';
@@ -51,7 +47,6 @@ export async function depsCommand(args: ParsedArgs, ctx: RunContext): Promise<st
     );
     return `deps of ${cardId}: ${next.length === 0 ? '(none)' : next.join(', ')}`;
   }
-  // Full replacement: deck deps <card> set <a> <b> ...
   if (sub === 'set') {
     const deps = args.positionals.slice(2);
     const expected = flagString(args.flags, 'expect-rev');
@@ -61,10 +56,6 @@ export async function depsCommand(args: ParsedArgs, ctx: RunContext): Promise<st
   throw new UsageError('usage: deck deps <card-id> [list|add|remove|set …]');
 }
 
-// `deck epic <id> intent "<text>" [--criterion "t" …] [--expect-rev N]`
-// `deck epic <id> link <criterion-id> <child-id>`
-// `deck epic <id> defer <criterion-id> --reason "<why>"`
-// `deck epic <id> ack <child-id> [--expect-rev N]`
 export async function epicPlanCommand(args: ParsedArgs, ctx: RunContext): Promise<string> {
   const epicId = args.positionals[0];
   const sub = args.positionals[1];
@@ -108,9 +99,6 @@ export async function epicPlanCommand(args: ParsedArgs, ctx: RunContext): Promis
   throw new UsageError('usage: deck epic-plan <epic-id> intent|link|defer|ack …');
 }
 
-// The epic-read branch of `deck epic <id>`: story tree + criteria coverage +
-// review-needed flags. Lives beside the planning reads so the rendering
-// cannot drift from the data (and ext.ts stays under the line law).
 export function renderEpicRead(
   store: DocumentStore,
   epicId: string,

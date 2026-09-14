@@ -1,7 +1,3 @@
-// Delivery doors (E05 DECK-ARCH-014): policy enrollment, finalization,
-// delivery status and cleanup retries — each one core call plus rendering,
-// route↔core↔CLI parity. Pending outcomes are explicit: `deck deliver` on an
-// unmerged PR reports awaiting-merge, never done.
 import { UsageError } from './args.ts';
 import { flagString, flagStrings, type ParsedArgs } from './args.ts';
 import type { RunContext } from './main.ts';
@@ -140,9 +136,6 @@ export async function cleanupCommand(args: ParsedArgs, ctx: RunContext): Promise
   );
 }
 
-// `deck archive <id>` — preparation (E05): review + evidence gates, push the
-// owned branch, PR create/reuse over the intent ledger, delivery recorded
-// PENDING; the card stays in verify until `deck deliver` observes completion.
 export async function archiveCommand(args: ParsedArgs, ctx: RunContext): Promise<string> {
   const id = requiredId(args, 'archive <id>');
   const project = resolveProject(ctx.registry, args, ctx.cwd);

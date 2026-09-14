@@ -5,11 +5,6 @@ import { cardKind, type CardActions } from './Card.tsx';
 import { VerbIcon } from './verbIcon.tsx';
 import { Menu } from '../../components/Menu.tsx';
 
-// Flat todo view over the same store document: single-line rows spanning the
-// full width — position, title, verb chip, progress, blocked badge, actions
-// right-aligned. No kanban card blocks: the one-column layout spends its
-// real estate on content. Groups: up next / inbox / engine read-only.
-
 function Row(props: { card: UiCard; position: number | null; engine: boolean; actions: CardActions }): VNode {
   const { card, actions } = props;
   const kind = cardKind(card);

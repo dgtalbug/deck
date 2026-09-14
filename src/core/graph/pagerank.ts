@@ -1,7 +1,3 @@
-// pagerank.ts: dextree's pinned power iteration — α=0.85, tolerance 1e-6,
-// max 100 iterations, on the simple-ized directed graph (parallel edges
-// collapsed, self-loops dropped because parallel-edge ranking is ambiguous).
-// In-memory and dependency-free: deck-scale node counts are tiny.
 export function pageRank(nodes: string[], edges: Array<[string, string]>): Map<string, number> {
   const order = nodes.length;
   if (order === 0) return new Map();
@@ -9,7 +5,7 @@ export function pageRank(nodes: string[], edges: Array<[string, string]>): Map<s
   const adjacency = new Map<string, Set<string>>();
   for (const node of nodes) adjacency.set(node, new Set());
   for (const [from, to] of edges) {
-    if (from === to) continue; // self-loops dropped
+    if (from === to) continue; 
     adjacency.get(from)?.add(to);
   }
 

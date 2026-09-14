@@ -5,9 +5,6 @@ import { Dialog, DialogHead } from '../../components/Dialog.tsx';
 import { TextField } from '../../components/TextField.tsx';
 import type { UiCard } from './api.ts';
 
-// Rename a note/tweak/verb item (PATCH /cards/:id). Min-1 validation inline;
-// nothing is sent while empty. Esc/blur-free: Enter accepts, Cancel closes.
-
 export function RenameDialog(props: {
   card: UiCard;
   onAccept(title: string): void;
@@ -47,8 +44,6 @@ export function RenameDialog(props: {
               if (touched) setTouched(false);
             }}
             onKeyDown={(event) => {
-              // keyboard contract (spec: board/ui): Enter accepts through the
-              // same accept() as Save — one accept behavior, not two.
               if (event.key === 'Enter') {
                 event.preventDefault();
                 accept();

@@ -1,12 +1,6 @@
 import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-// Generates src/server/ui-assets.ts: url-path → file content for the shell
-// and every built asset, so `bun build --compile` embeds the whole UI into
-// the binary (no dist/ needed next to it). One JSON literal — stringify
-// handles all escaping. The file is generated (gitignored); ui-assets.d.ts
-// types it so typechecking works before the first build.
-
 const root = process.cwd();
 const uiDir = join(root, 'dist', 'ui');
 const shell = join(root, 'public', 'index.html');
@@ -21,7 +15,6 @@ if (!existsSync(shell)) {
 }
 
 const assets: Record<string, string> = { '/': readFileSync(shell, 'utf8') };
-// Brand icons ride at the root so compiled binaries serve them without public/
 for (const name of readdirSync(join(root, 'public'))) {
   if (name.endsWith('.svg')) assets[`/${name}`] = readFileSync(join(root, 'public', name), 'utf8');
 }

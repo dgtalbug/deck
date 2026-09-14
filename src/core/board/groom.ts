@@ -18,12 +18,6 @@ function nowIso(): string {
   return new Date().toISOString();
 }
 
-// Story-first spec law: spec.md carries the full design document — Story
-// (what & why, mermaid fences pass through for GitHub to render), Research
-// (findings + RCA), Requirements (the deltas — format pinned for the review
-// gate parser), Blast radius (only when it touches existing code). The h1
-// header is added at render time (renderCardSpec), not here. tasks.md stays
-// the checklist — the only technical/code-level artifact.
 export function materializeSpec(
   projectPath: string,
   specPath: string,
@@ -61,9 +55,6 @@ export function materializeSpec(
   if (blast.length > 0) {
     sections.push(`## Blast radius\n\n${blast.map((line) => `- ${line}`).join('\n')}\n`);
   }
-  // Spec-type registry sections: one `## <label>` block per section id the
-  // groom filled, in registry order, after the fixed core sections. Labels
-  // are the caller's map (registry id → label) — this function stays pure.
   for (const [id, label] of sectionLabels) {
     const content = proposal.research.sections?.[id]?.trim();
     if (content === undefined || content === '') continue;
@@ -73,28 +64,20 @@ export function materializeSpec(
 }
 
 export function convertToVerbItem(store: DocumentStore, proposal: GroomProposal): VerbItem {
-  // A card is born only on a verb the engine serves: built-in or registered
-  // through `deck workflow` (hooks-runner extension point).
   if (!store.isRegisteredVerb(proposal.proposedVerb)) {
     throw new DeckError(
       `verb '${proposal.proposedVerb}' is not registered — built-ins or 'deck workflow <verb>' names only`,
       { noteId: proposal.noteId, verb: proposal.proposedVerb },
     );
   }
-  store.getNote(proposal.noteId); // existence first so the typed 404 wins over the gate
-  const type = getSpecType(store, proposal.proposedVerb); // the digest renders this type's sections
-  // E03 DECK-ARCH-008: ONE proportional readiness policy for every accepted
-  // edit — initial groom, re-groom and the persisted start recheck all call
-  // this validator; refusals happen before any state or artifact write.
+  store.getNote(proposal.noteId); 
+  const type = getSpecType(store, proposal.proposedVerb); 
   assertGroomReady(store, proposal, `groom proposal for ${proposal.noteId}`);
-  // groom moment: pre sees the still-a-note card; a blocking hook refuses the
-  // promotion before any state changes. Post fires after the full conversion
-  // (tasks, spec, publish queue) has landed.
   const noteCard = store.getNote(proposal.noteId);
   runMomentPreSync(store, 'groom', {
     moment: 'groom',
     cardId: proposal.noteId,
-    lane: 'todo', // notes live only in todo — the pre-transition lane
+    lane: 'todo', 
     card: noteCard,
     timestamp: new Date().toISOString(),
   });
@@ -116,10 +99,6 @@ export function convertToVerbItem(store: DocumentStore, proposal: GroomProposal)
         verb: proposal.proposedVerb,
         lane: 'groomed',
         position,
-        // Spec materialization lives under .deck (db is truth, the user's
-        // repo stays md-free), shaped Jira-style: >3 tasks is story-shaped,
-        // anything less is a task card. Existing cards keep their recorded
-        // specPath — render and re-groom follow the card, never the layout.
         specPath: `.deck/specs/${proposal.tasks.length > 3 ? 'stories' : 'tasks'}/${proposal.proposedVerb}-${row.id}/`,
         research: JSON.stringify(proposal.research),
         updatedAt: nowIso(),
@@ -132,8 +111,6 @@ export function convertToVerbItem(store: DocumentStore, proposal: GroomProposal)
         .values({ cardId: proposal.noteId, idx: index, id: newTaskId(), title, done: false })
         .run();
     }
-    // Scope identity at birth (DECK-ARCH-011): criteria from the accepted
-    // deltas get stable ids; the first immutable scope revision is recorded.
     const taskRows = tx.select().from(tasks).where(eq(tasks.cardId, proposal.noteId)).all();
     const activeTitles = [...new Set(proposal.specDeltas.map((delta) => delta.requirement.trim()).filter(Boolean))];
     const criteria = applyCriterionOps(tx, proposal.noteId, 0, [], activeTitles, undefined, true);
@@ -148,8 +125,6 @@ export function convertToVerbItem(store: DocumentStore, proposal: GroomProposal)
   const item = store.getVerbItem(proposal.noteId);
   materializeSpec(store.projectPath, item.specPath, proposal, new Map(), sectionLabels(type));
   const version = recordSpecVersion(store, proposal.noteId, renderCardSpec(store, item));
-  // Issues at groom: the spec publishes as a DRAFT issue from birth —
-  // queue-first (deck sync flushes lazily), never blocking the groom.
   enqueuePublish(store, proposal.noteId, version.checksum);
   runMomentPostSync(store, 'groom', {
     moment: 'groom',
@@ -162,10 +137,6 @@ export function convertToVerbItem(store: DocumentStore, proposal: GroomProposal)
   return item;
 }
 
-// The one proportional readiness policy (DECK-ARCH-008): unresolved open
-// questions, required registry sections, and story-shaped proposals without
-// sufficient spec content refuse here — with an actionable message and
-// before ANY state/artifact effect. `subject` names the door in the error.
 export function assertGroomReady(
   store: DocumentStore,
   proposal: Pick<GroomProposal, 'proposedVerb' | 'refinedTitle' | 'research' | 'specDeltas' | 'tasks' | 'openQuestions'>,
@@ -180,9 +151,6 @@ export function assertGroomReady(
       { verb: proposal.proposedVerb, missing },
     );
   }
-  // Shape law (jira-style direction): >3 tasks is story-shaped — the spec
-  // must say what and why, or the work belongs in an epic of smaller cards.
-  // A task-sized proposal (≤3 tasks) stays minimal — no story narrative.
   const hasSpecContent =
     (proposal.research.story ?? '').trim() !== '' ||
     proposal.specDeltas.length > 0 ||
@@ -202,7 +170,6 @@ export function assertGroomReady(
   }
 }
 
-// Registry id → label map for materializeSpec's section rendering.
 export function sectionLabels(type: { sections: Array<{ id: string; label: string }> }): Map<string, string> {
   return new Map(type.sections.map((section) => [section.id, section.label]));
 }
@@ -237,16 +204,11 @@ export function demoteToNote(store: DocumentStore, cardId: string): Note {
       .where(eq(cards.id, cardId))
       .run();
     tx.delete(tasks).where(eq(tasks.cardId, cardId)).run();
-    // Cascade the card's derived rows like deleteCard — a note back in todo
-    // has no spec/issue identity, and a surviving issue_map/publish_queue/
-    // specs row would make deck sync's drift loop crash on the dead verb id.
     const draftIssue = tx.select().from(issueMap).where(eq(issueMap.cardId, cardId)).get();
     tx.delete(issueMap).where(eq(issueMap.cardId, cardId)).run();
     tx.delete(publishQueue).where(eq(publishQueue.cardId, cardId)).run();
     tx.delete(specs).where(eq(specs.cardId, cardId)).run();
     emitEvent(tx, 'card.moved', { id: cardId, lane: 'todo', position });
-    // A draft issue published at groom dies with the groom: best-effort
-    // close (sync reports the leftover as drift if it fails).
     if (draftIssue !== undefined && draftIssue.state !== 'closed') {
       void import('../git/issues.ts').then(({ closeIssue }) =>
         closeIssue(store.projectPath, draftIssue.issueNumber).catch(() => undefined),

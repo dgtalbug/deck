@@ -5,16 +5,6 @@ import { VerbIcon } from './verbIcon.tsx';
 import { Menu } from '../../components/Menu.tsx';
 import { cardRegistered, keyboardAfterId, markCardRegistered, registerCardDrag, registerCardDrop, type DragCallbacks } from './dnd.ts';
 
-// Kanban card per Spade §13: type chip (note muted / verb chip / tweak pink),
-// blocked dim + reachable reason, progress badge + meter, restricted drag,
-// and the keyboard path (action menu + Alt+↑/↓) so drag is never the only
-// way to move a card. v0.2.0: manual lanes carry edit/delete in the menu;
-// engine lanes carry a one-action block/unblock (hold) control.
-
-// pdd registration is once-per-element: keyed diffs reuse DOM nodes, and
-// re-registering on every render would stack drop listeners (dnd.ts owns
-// the marks so disposeDnd can swap them between test windows).
-
 export interface CardActions {
   onOpen(id: string): void;
   onGroom(id: string): void;
@@ -70,9 +60,6 @@ export function Card({ card, actions, dnd, flash }: { card: UiCard; actions: Car
     }
   };
 
-  // The store only lane-moves verb items — notes leave todo via grooming
-  // and tweaks via their fast lane, so the menu never offers a move the
-  // server is guaranteed to reject (drags still POST; the store decides).
   const manualLane = dnd !== undefined && (dnd.lane === 'todo' || dnd.lane === 'groomed');
   const engineLane = ENGINE_LANES.has(card.lane ?? 'todo');
   const menuItems = manualLane

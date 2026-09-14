@@ -1,7 +1,3 @@
-// Git operation errors (v0.3.0): one typed failure per refusal class. All
-// carry git's captured output in details so the UI can show exactly what git
-// said. DeckError gives them the shared message/details shape; http.ts maps
-// GhUnavailableError to 503 (capability absent, not a bad request).
 import { DeckError } from '../board/errors.ts';
 
 export class GitOpError extends DeckError {

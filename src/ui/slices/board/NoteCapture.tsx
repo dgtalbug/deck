@@ -2,11 +2,6 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import type { VNode } from 'preact';
 import { CornerDownLeft, StickyNote } from 'lucide-preact';
 
-// ONE note-capture affordance (D-UI-…): a ghost .kcard at the top of the
-// todo lane / todo-view inbox group — the same card visual language the
-// captured note will use. Click or `N` focuses it; Enter POSTs /notes;
-// Esc and blur cancel; empty titles are rejected inline (nothing sent).
-
 export function NoteCapture({ onAdd }: { onAdd: (title: string) => Promise<boolean> | boolean }): VNode {
   const [title, setTitle] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -70,7 +65,7 @@ export function NoteCapture({ onAdd }: { onAdd: (title: string) => Promise<boole
           if (event.key === 'Escape') cancel();
         }}
         onBlur={() => {
-          if (!busy) cancel(); // blur cancels the draft — capture is one gesture
+          if (!busy) cancel(); 
         }}
       />
       <span class="note-capture-hint" title="Enter to capture · Esc to cancel">

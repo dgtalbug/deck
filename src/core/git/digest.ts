@@ -1,9 +1,3 @@
-// Per-project git facts (v0.2.0 digest, extended in v0.3.0): read-only git
-// plumbing run in the project's registered path, each bounded by a timeout;
-// any failure collapses the whole digest to { repo: false } so the UI can
-// hide the section instead of erroring. No .git file parsing
-// (worktrees/packed-refs fragility). The write side lives in ops.ts and
-// shares runGit (design D1).
 
 import { runGh } from './gh.ts';
 
@@ -42,9 +36,6 @@ export interface RunResult {
   stderr: string;
 }
 
-// The one subprocess runner (design D1): argument arrays — never a shell, so
-// injection is structurally impossible — stdin ignored, stdout+stderr
-// captured, killed on timeout (exit code above 128, like a signal death).
 export async function runCommand(
   bin: string,
   projectPath: string,
@@ -56,8 +47,6 @@ export async function runCommand(
     stdout: 'pipe',
     stderr: 'pipe',
     stdin: 'ignore',
-    // explicit env copy: Bun snapshots process.env at startup otherwise,
-    // which would ignore test-time PATH manipulation (gh stubs)
     env: { ...process.env },
   });
   const timer = setTimeout(() => proc.kill(), timeoutMs);
@@ -83,8 +72,6 @@ async function git(projectPath: string, args: string[], timeoutMs = TIMEOUT_MS):
   }
 }
 
-// gh availability (design D4): probed per digest, never cached at boot; a
-// missing binary or non-zero exit both collapse to { available: false }.
 async function ghStatus(projectPath: string): Promise<GhStatus> {
   const result = await runGh(projectPath, ['auth', 'status'], GH_TIMEOUT_MS);
   if (result === null || result.code !== 0) return { available: false };

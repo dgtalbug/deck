@@ -1,13 +1,3 @@
-// Acceptance evidence (E05 DECK-ARCH-012): immutable machine/manual records
-// over E03 scope identities, plus the pure eligibility evaluation that gates
-// completion. Filename matches and checked tasks are never proof — a
-// criterion is satisfied only by a record linked to it whose scope revision,
-// policy version and byte-level input fingerprint all match current state.
-// Manual evidence satisfies only criteria the policy explicitly designates
-// manual; it can never override a required automated check. Evaluation is
-// pure (reads records + git/fs state); capture executes configured check
-// runners with pre/post fingerprint validation — a check that mutates its own
-// inputs invalidates its result.
 import { createHash } from 'node:crypto';
 import { and, eq } from 'drizzle-orm';
 import { DeckError } from '../board/errors.ts';
@@ -152,22 +142,13 @@ function requireCriterionLink(
 }
 
 export interface CaptureCheckInput {
-  // Named check id (must carry a `check` cmd in deck.rules.yaml).
   checkId: string;
-  // Criteria the run's evidence links to. Default: every active criterion the
-  // policy does NOT designate manual (an unlisted link is an explicit choice).
   criteria?: string[] | undefined;
-  // Optional artifact the check produces, fingerprinted after the run.
   artifactPath?: string | undefined;
-  // Declared nonignored inputs fingerprinted alongside the tracked tree.
   declaredInputs?: string[] | undefined;
   base?: string | undefined;
 }
 
-// Execute one configured check under pre/post fingerprint validation and
-// record its machine evidence. Result mapping: exit 0 + identical pre/post
-// inputs → passed; exit ≠ 0 → failed; mutated inputs → unavailable (the run
-// cannot vouch for the inputs it executed against).
 export async function captureCheckEvidence(
   store: DocumentStore,
   cardId: string,
@@ -217,8 +198,6 @@ export async function captureCheckEvidence(
       ...base,
     }),
   );
-  // An unlinked run record keeps the execution history attributable even
-  // when the check is not tied to a criterion.
   if (criteria.length === 0) {
     records.push(
       insertRecord(store, {
@@ -245,11 +224,6 @@ export interface RecordManualInput {
   base?: string | undefined;
 }
 
-// Attributed manual review for an EXPLICITLY manual criterion. The reviewer
-// identity is a local assertion, not authenticated third-party approval; the
-// record claims manual review only, never machine verification. A manual
-// record for a machine-required criterion refuses — the automated requirement
-// stays unsatisfied no matter who signs off.
 export async function recordManualEvidence(
   store: DocumentStore,
   cardId: string,
@@ -284,8 +258,6 @@ export async function recordManualEvidence(
   });
 }
 
-// --- pure eligibility evaluation ---------------------------------------------
-
 export type CriterionEvidenceStatus = 'satisfied' | 'missing' | 'stale' | 'failed' | 'unavailable';
 
 export interface CriterionEvidence {
@@ -306,10 +278,6 @@ export interface EvidenceEvaluation {
   reasons: string[];
 }
 
-// Pure: reads records and current identity, writes nothing. A criterion is
-// satisfied only by a record whose kind, links, scope revision, policy
-// version and input fingerprint ALL match current state; completed history
-// stays attributable (older records remain readable) but stops satisfying.
 export async function evaluateEligibility(store: DocumentStore, cardId: string): Promise<EvidenceEvaluation> {
   const policy = getPolicy(store, cardId);
   if (policy === undefined) {
@@ -340,9 +308,6 @@ export async function evaluateEligibility(store: DocumentStore, cardId: string):
     let status: CriterionEvidenceStatus;
     let recordId: string | null = null;
     if (manual) {
-      // A failed required check linked to the criterion stays blocking even
-      // when the criterion also carries a manual designation — manual review
-      // never overrides a required automated failure.
       const blocking = current.find(
         (record) =>
           record.kind === 'machine' &&
@@ -378,8 +343,6 @@ export async function evaluateEligibility(store: DocumentStore, cardId: string):
     }
     criteria.push({ criterionId: criterion.id, title: criterion.title, requirement: manual ? 'manual' : 'machine', status, recordId });
   }
-  // Vacuously eligible when the accepted scope carries no criteria — task
-  // completion and the review gate still apply their own laws.
   const eligible = criteria.every((criterion) => criterion.status === 'satisfied');
   return { enrolled: true, policy, scopeRevision, fingerprint: inputs.fingerprint, criteria, eligible, reasons };
 }

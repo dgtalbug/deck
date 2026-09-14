@@ -2,13 +2,8 @@ import type { DocumentStore } from './store.ts';
 import { unmetDependencies } from './planning.ts';
 import { isVerbItem, type Card, type Lane } from './types.ts';
 
-// Read-model views over the store. Routes (and later the CLI/UI) render
-// these; the shape is the API contract returned by GET /:project/board.
 export type CardView = Record<string, unknown>;
 
-// E03 planning status (board/store): unmet prerequisite ids and the
-// review-needed flag for in-flight work whose upstream reopened. Computed
-// live from stored edges + lanes — no counters to drift.
 export interface PlanningStatus {
   blockers: Array<{ id: string; lane: string; title: string }>;
   reviewNeeded: boolean;
@@ -23,7 +18,6 @@ export function planningStatus(store: DocumentStore, card: Card): PlanningStatus
   return { blockers, reviewNeeded };
 }
 
-// Verb items carry a progress badge ("done/total"); notes and tweaks render bare.
 export function cardView(card: Card, planning?: PlanningStatus | undefined): CardView {
   if (!('lane' in card)) return { ...card };
   const view: CardView = { ...card };
@@ -45,8 +39,6 @@ export interface BoardView {
   epics: EpicRollup[];
 }
 
-// Per-epic rollup: stories done/total, computed live from card state —
-// no counters to drift.
 export interface EpicRollup {
   id: string;
   title: string;
@@ -63,8 +55,6 @@ export function epicRollups(store: DocumentStore): EpicRollup[] {
 }
 
 export function boardView(store: DocumentStore): BoardView {
-  // Notes carry no lane field in the domain model, so bucket by query,
-  // not by filtering a flat list.
   const lanes = {} as Record<Lane, CardView[]>;
   for (const lane of LANES) {
     lanes[lane] = store.listCards(lane).map((card) => cardView(card, planningStatus(store, card)));

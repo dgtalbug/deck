@@ -2,11 +2,6 @@ import type { ComponentChildren, VNode } from 'preact';
 import { RefreshCw } from 'lucide-preact';
 import type { BoardApi, GitDigest } from './api.ts';
 
-// Shared plumbing for the git panel sections: the action context passed down
-// from GitPage (one runner, one busy map, one confirm queue) plus the guard
-// mirror of core's ref-name pattern — the UI never invents a guard the core
-// doesn't have (design D2).
-
 export interface GitActionCtx {
   project: string;
   api: BoardApi;

@@ -3,10 +3,6 @@ import type { VNode } from 'preact';
 import type { LucideProps } from 'lucide-preact';
 import { MoreVertical } from 'lucide-preact';
 
-// Card action menu — the keyboard path for every drag action (spec:
-// keyboard parity). Arrow keys move, Enter/Space activates, Esc closes,
-// click-outside closes. Items render as plain buttons.
-
 export interface MenuItemSpec {
   label: string;
   icon?: (props: LucideProps) => VNode;
@@ -53,7 +49,6 @@ export function Menu({ label, items }: { label: string; items: MenuItemSpec[] })
         aria-expanded={open}
         aria-label={label}
         onClick={(event) => {
-          // the menu trigger must not open the card detail (parent onClick)
           event.stopPropagation();
           setOpen(!open);
         }}
