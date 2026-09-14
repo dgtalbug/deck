@@ -1,4 +1,3 @@
-import { z } from 'zod';
 import { applyTaskPatch, assignTask, getTaskAssignment } from '../core/board/task-patches.ts';
 import {
   acceptHandoff,

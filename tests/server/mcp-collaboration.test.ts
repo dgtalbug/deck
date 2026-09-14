@@ -1,4 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { mkdirSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { ProjectRegistry } from '../../src/core/projects/registry.ts';
 import { handleFrame, type McpIO } from '../../src/server/mcp.ts';
 import { openStore, type DocumentStore } from '../../src/core/board/store.ts';
@@ -8,6 +11,7 @@ import { assignTask, getTaskAssignment } from '../../src/core/board/task-patches
 import { tmpProject } from '../helpers.ts';
 
 let registry: ProjectRegistry;
+let home: string;
 let project: ReturnType<typeof tmpProject>;
 let store: DocumentStore;
 
@@ -28,6 +32,9 @@ async function raw(name: string, args: Record<string, unknown>): Promise<{ isErr
 }
 
 beforeAll(async () => {
+  home = join(tmpdir(), 'deck-collab-home-' + Date.now());
+  mkdirSync(home, { recursive: true });
+  process.env['DECK_HOME'] = home;
   registry = new ProjectRegistry();
   project = tmpProject('deck-mcp-collab-');
   registry.register(project.path, 'collabproj');
@@ -36,6 +43,7 @@ beforeAll(async () => {
 
 afterAll(() => {
   project.cleanup();
+  rmSync(home, { recursive: true, force: true });
 });
 
 function groomed(title: string): { cardId: string; taskId: string } {

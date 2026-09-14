@@ -66,6 +66,10 @@ Retryable post-delivery follow-ups: issue close, branch delete, one changelog en
 
 Before closing, make the session's knowledge durable: `deck checkpoint <id> add "<what a future session must know>" --kind remaining|blocker` for anything the next card will need.
 
+### Cooperative closure doors
+- Task ownership transfers only through accepted handoffs (`deck handoff offer/accept`); timeout never transfers.
+- Integration of overlapping work names an explicit owner and serializes on the target checkout; conflicts stop for human resolution — neither branch is discarded.
+
 ## Laws (this phase)
 
 - Your pass comes BEFORE the gate — the gate is the floor, not the ceiling.

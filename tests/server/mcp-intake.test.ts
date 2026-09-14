@@ -1,4 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { mkdirSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { ProjectRegistry } from '../../src/core/projects/registry.ts';
 import { handleFrame, type McpIO } from '../../src/server/mcp.ts';
 import { openStore, type DocumentStore } from '../../src/core/board/store.ts';
@@ -6,6 +9,7 @@ import { assignTask } from '../../src/core/board/task-patches.ts';
 import { tmpProject } from '../helpers.ts';
 
 let registry: ProjectRegistry;
+let home: string;
 let project: ReturnType<typeof tmpProject>;
 let store: DocumentStore;
 
@@ -29,6 +33,9 @@ async function call(name: string, args: Record<string, unknown>): Promise<unknow
 }
 
 beforeAll(async () => {
+  home = join(tmpdir(), 'deck-intake-home-' + Date.now());
+  mkdirSync(home, { recursive: true });
+  process.env['DECK_HOME'] = home;
   registry = new ProjectRegistry();
   project = tmpProject('deck-mcp-intake-');
   registry.register(project.path, 'intakeproj');
@@ -37,6 +44,7 @@ beforeAll(async () => {
 
 afterAll(() => {
   project.cleanup();
+  rmSync(home, { recursive: true, force: true });
 });
 
 describe('mcp intake', () => {
