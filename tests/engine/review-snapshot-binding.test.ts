@@ -15,6 +15,7 @@ import { convertToVerbItem } from '../../src/core/board/groom.ts';
 import { moveLane } from '../../src/core/board/lanes.ts';
 import { publishSpec } from '../../src/core/board/publish.ts';
 import { archiveVerb } from '../../src/core/engine/verbs.ts';
+import { enrollPolicy } from '../../src/core/board/rules.ts';
 import { reviewGate, ReviewBlockedError } from '../../src/core/engine/verify.ts';
 import type { GroomProposal } from '../../src/core/board/types.ts';
 
@@ -161,6 +162,7 @@ describe('snapshot mismatch prevents delivery', () => {
   test('archive on the wrong snapshot emits zero provider delivery calls', async () => {
     store = await openStore(dir);
     const id = await verifyLaneCard('snapshot delivery probe');
+    enrollPolicy(store, id, { mode: 'team' }); // reach the review gate at prepare
     // The checkout is on main — the review gate must block before the
     // push/PR/merge sequence even begins.
     let error: unknown;

@@ -10,6 +10,7 @@ import { DECK_VERSION } from '../../src/version.ts';
 import { convertToVerbItem } from '../../src/core/board/groom.ts';
 import type { Verb as VerbType } from '../../src/core/board/types.ts';
 import { openStore, type DocumentStore } from '../../src/core/board/store.ts';
+import { enrollPolicy } from '../../src/core/board/rules.ts';
 import { tmpProject } from '../helpers.ts';
 
 // Task 5.3 — v0.5.0 engine routes: start + archive over HTTP, refusal
@@ -35,6 +36,7 @@ case "$1 $2" in
   "issue view") echo "{\\"number\\":61,\\"state\\":\\"OPEN\\",\\"labels\\":[{\\"name\\":\\"groomed\\"}],\\"url\\":\\"u\\"}" ;;
   "issue edit"|"issue close") echo ok ;;
   "pr create") echo "https://github.com/o/r/pull/71" ;;
+  "pr list") echo "[]" ;;
   "auth status") exit 0 ;;
   *) echo ok ;;
 esac
@@ -150,21 +152,29 @@ describe('engine routes (v0.5.0)', () => {
     expect((await post('/testproj/cards/ghost/archive', {})).status).toBe(404);
   });
 
-  test('archive over HTTP: done + pr url', async () => {
+  test('archive over HTTP: delivery pending + pr url, card holds in verify', async () => {
     stubGh();
     const id = await groomed('route archive card');
     await post(`/testproj/cards/${id}/start`, { verb: 'feat' });
     const store = await openStore(project.path);
+    enrollPolicy(store, id, { mode: 'team' });
     store.syncTasks(id, store.getVerbItem(id).tasks.map((task) => ({ ...task, done: true })), 'engine');
     writeFileSync(join(project.path, 'b.txt'), 'change\n');
     git('add .');
     git('commit -m "feat: change"');
     const response = await post(`/testproj/cards/${id}/archive`, {});
     expect(response.status).toBe(200);
-    const body = (await response.json()) as { card: { lane: string }; prUrl: string; issueNumber: number };
-    expect(body.card.lane).toBe('done');
+    const body = (await response.json()) as {
+      card: { lane: string };
+      prUrl: string;
+      issueNumber: number;
+      delivery: { state: string };
+    };
+    // E05: preparation leaves the card in verify with delivery pending.
+    expect(body.card.lane).toBe('verify');
     expect(body.prUrl).toBe('https://github.com/o/r/pull/71');
     expect(body.issueNumber).toBe(61);
+    expect(body.delivery.state).toBe('pending');
   });
 
   test('openapi carries v0.5.0 with the engine routes', async () => {

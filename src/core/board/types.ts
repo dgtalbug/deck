@@ -168,6 +168,31 @@ export type CriterionOp =
   | { op: 'remove'; title: string }
   | { op: 'supersede'; title: string; replacement: string };
 
+// --- E05 delivery/evidence policy (DECK-ARCH-012/014) ------------------------
+
+// Team delivery is the default for new scope; solo/local is an explicit
+// persisted choice. Automated evidence is required wherever configured;
+// attributed manual evidence satisfies only explicitly designated criteria.
+export type DeliveryMode = 'team' | 'solo';
+
+export interface DeliveryPolicy {
+  cardId: string;
+  // Policy revision — bumped on every accepted change; stored with scope,
+  // evidence and delivery so stale-policy records cannot satisfy gates.
+  version: number;
+  mode: DeliveryMode;
+  // Named checks (deck.rules.yaml principle ids carrying a `check` cmd) whose
+  // machine evidence is required. Rule overrides cannot bypass these.
+  requiredChecks: string[];
+  // Team mode: minimum provider-observed approvals bound to the PR head.
+  requiredApprovals: number;
+  // Criterion ids explicitly designated manual — the only criteria manual
+  // records can satisfy. Unassigned accepted criteria need machine evidence.
+  manualCriteria: string[];
+  enrolledAt: string;
+  updatedAt: string;
+}
+
 export interface NextDigest {
   cardId: string;
   title: string;

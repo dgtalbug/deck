@@ -6,6 +6,8 @@ import { join } from 'node:path';
 import { convertToVerbItem } from '../../src/core/board/groom.ts';
 import { openStore, type DocumentStore } from '../../src/core/board/store.ts';
 import { archiveVerb, startVerb } from '../../src/core/engine/verbs.ts';
+import { enrollPolicy } from '../../src/core/board/rules.ts';
+import { existsSync } from 'node:fs';
 import { reviewGate, ReviewBlockedError, renderFindings } from '../../src/core/engine/verify.ts';
 import { publishSpec } from '../../src/core/board/publish.ts';
 import { DeckError } from '../../src/core/board/errors.ts';
@@ -30,6 +32,7 @@ case "$1 $2" in
   "issue view") echo "{\\"number\\":103,\\"state\\":\\"OPEN\\",\\"labels\\":[],\\"url\\":\\"u\\"}" ;;
   "issue edit"|"issue close") echo ok ;;
   "pr create") echo "https://github.com/o/r/pull/104" ;;
+  "pr list") echo "[]" ;;
   "auth status") exit 0 ;;
   "release create") echo "https://github.com/o/r/releases/tag/v9.9.9" ;;
   *) echo ok ;;
@@ -85,6 +88,7 @@ describe('reviewGate', () => {
   test('unchecked task is a danger finding that blocks archive', async () => {
     stubGh();
     const id = await started('gate unchecked card', ['never finished'], []);
+    enrollPolicy(store, id, { mode: 'team' }); // reach the review gate: policy is checked first
     const findings = await reviewGate(store, id);
     expect(findings.length).toBeGreaterThan(0);
     expect(renderFindings(findings)).toMatch(/^! .* — violates /);
@@ -112,9 +116,10 @@ describe('reviewGate', () => {
     expect(findings.some((finding) => finding.violates.includes('law 3'))).toBe(true);
   });
 
-  test('clean card passes and archives through the tail', async () => {
+  test('clean card passes review and preparation leaves it pending in verify', async () => {
     stubGh();
     const id = await started('gate clean card', ['finish everything'], []);
+    enrollPolicy(store, id, { mode: 'team' });
     store.syncTasks(id, store.getVerbItem(id).tasks.map((task) => ({ ...task, done: true })), 'engine');
     const findings = await reviewGate(store, id);
     expect(findings).toEqual([]);
@@ -122,28 +127,24 @@ describe('reviewGate', () => {
     git('add .');
     git('commit -q -m "feat: change"');
     const outcome = await archiveVerb(store, id);
-    expect(outcome.card.lane).toBe('done');
-    expect(outcome.tail.changelog).toContain('gate clean card');
-    expect(exists('CHANGELOG.md')).toBe(true);
-    function exists(file: string): boolean {
-      return require('node:fs').existsSync(join(dir, file));
-    }
+    // E05: preparation is not completion — no changelog, no done.
+    expect(outcome.card.lane).toBe('verify');
+    expect(outcome.delivery.state).toBe('pending');
+    expect(existsSync(join(dir, 'CHANGELOG.md'))).toBe(false);
   });
 
-  test('tagged merge creates a release via the tail', async () => {
+  test('tagged release moves to delivery cleanup — preparation alone never releases', async () => {
     stubGh();
     const id = await started('gate release card', ['tagged work'], []);
+    enrollPolicy(store, id, { mode: 'team' });
     store.syncTasks(id, store.getVerbItem(id).tasks.map((task) => ({ ...task, done: true })), 'engine');
     writeFileSync(join(dir, 'c.txt'), 'tagged\n');
     git('add .');
     git('commit -q -m "feat: tagged"');
-    // Tag the commit the merge will produce is impossible pre-merge; tag the
-    // branch head and re-tag the merge after — simulate by tagging HEAD
-    // post-archive is the honest path, so assert the tail's skip case here
-    // (untagged merge → no release, no warning) and cover tagged in CLI demos.
     const outcome = await archiveVerb(store, id);
+    expect(outcome.card.lane).toBe('verify');
     expect(outcome.tail.release).toBeNull();
-    expect(outcome.tail.warnings).toEqual([]);
+    expect(outcome.tail.warnings).toEqual([]); // no hidden effects at prepare
   });
 
   test('gate refuses non-verb lanes with a typed error', async () => {

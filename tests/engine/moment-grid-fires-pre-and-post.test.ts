@@ -11,6 +11,8 @@ import { openStore, type DocumentStore } from '../../src/core/board/store.ts';
 import { convertToVerbItem } from '../../src/core/board/groom.ts';
 import { startVerb, archiveVerb } from '../../src/core/engine/verbs.ts';
 import { runVerification, reviewGate } from '../../src/core/engine/verify.ts';
+import { enrollPolicy } from '../../src/core/board/rules.ts';
+import { finalizeDelivery } from '../../src/core/engine/delivery.ts';
 
 let dir: string;
 let binDir: string;
@@ -31,6 +33,7 @@ case "$1 $2" in
   "issue edit") echo ok ;;
   "issue view") echo "{\\"number\\":9,\\"state\\":\\"OPEN\\",\\"labels\\":[],\\"url\\":\\"u\\"}" ;;
   "pr create") echo "https://github.com/o/r/pull/19" ;;
+  "pr list") echo "[]" ;;
   "auth status") exit 0 ;;
   *) echo ok ;;
 esac
@@ -75,7 +78,7 @@ beforeEach(async () => {
   git('init --initial-branch=main -q');
   git('config user.email t@t');
   git('config user.name t');
-  writeFileSync(join(dir, '.gitignore'), 'bin/\n.deck/\nspecs/\norigin.git/\ndeck.rules.yaml\n');
+  writeFileSync(join(dir, '.gitignore'), 'bin/\n.deck/\nspecs/\norigin.git/\ndeck.rules.yaml\nlegacy.txt\n');
   git('init --bare origin.git');
   git('remote add origin ./origin.git');
   writeFileSync(join(dir, 'a.txt'), 'one\n');
@@ -202,15 +205,24 @@ describe('the seven moments fire pre and post', () => {
       openQuestions: [],
     });
     await startVerb(store, note.id, 'feat');
+    // Solo delivery: prepare fires pre/post around the pending outcome,
+    // finalization fires the post boundary once more on done.
+    enrollPolicy(store, note.id, { mode: 'solo' });
     store.syncTasks(note.id, [], 'engine');
     writeFileSync(join(dir, 'change.txt'), 'the change\n');
     git('add .');
     git('commit -m "feat: the change"');
     const outcome = await archiveVerb(store, note.id);
-    expect(outcome.card.lane).toBe('done');
+    expect(outcome.card.lane).toBe('verify');
+    const prepared = markerLines().filter((line) => line.startsWith('archive '));
+    expect(prepared).toEqual(['archive active pre', 'archive verify post']);
+    await finalizeDelivery(store, note.id);
+    expect(store.getVerbItem(note.id).lane).toBe('done');
 
     const lines = markerLines().filter((line) => line.startsWith('archive '));
-    expect(lines).toEqual(['archive active pre', 'archive done post']);
-    expect(readFileSync(legacy, 'utf8')).toBe('legacy\n'); // fired once, not twice
+    expect(lines).toEqual(['archive active pre', 'archive verify post', 'archive done post']);
+    // The legacy convention hook fires at every archive post boundary —
+    // E05 has two: preparation (verify) and finalization (done).
+    expect(readFileSync(legacy, 'utf8')).toBe('legacy\nlegacy\n');
   });
 });

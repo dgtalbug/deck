@@ -79,7 +79,7 @@ afterEach(() => {
 });
 
 describe('runVerification', () => {
-  test('seeded gap loops the card to active with the task appended', async () => {
+  test('seeded gap loops the card to active with its repair task visible', async () => {
     stubGh();
     const id = await verifyCard('converge seeded', ['the unfinished work']);
     const outcome = await runVerification(store, id);
@@ -87,8 +87,10 @@ describe('runVerification', () => {
     expect(outcome.gaps).toHaveLength(1);
     const card = store.getVerbItem(id);
     expect(card.lane).toBe('active');
-    const appended = card.tasks.find((task) => task.title === 'the unfinished work' && task.addedByVerify === true);
-    expect(appended).toBeDefined();
+    // The unchecked task IS the identity-linked repair task — no appended
+    // duplicate copy (repeating the gap must not grow the checklist).
+    const repair = card.tasks.filter((task) => task.title === 'the unfinished work');
+    expect(repair).toHaveLength(1);
   });
 
   test('clean verification finishes to done', async () => {
@@ -104,9 +106,9 @@ describe('runVerification', () => {
   test('the loop converges: gap → fix → clean', async () => {
     stubGh();
     const id = await verifyCard('converge loop', ['first pass']);
-    await runVerification(store, id); // gaps → active + appended
+    await runVerification(store, id); // gaps → active, repair task deduped
     const card = store.getVerbItem(id);
-    expect(card.tasks).toHaveLength(2); // original + appended copy
+    expect(card.tasks).toHaveLength(1); // no appended duplicate
     store.syncTasks(id, card.tasks.map((task) => ({ ...task, done: true })), 'engine');
     moveLane(store, id, 'verify', 'engine');
     const second = await runVerification(store, id);

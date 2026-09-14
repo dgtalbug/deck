@@ -4,6 +4,10 @@ import { execSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { archiveVerb, startVerb } from '../../src/core/engine/verbs.ts';
+import { enrollPolicy } from '../../src/core/board/rules.ts';
+import { finalizeDelivery, deliveryStatus } from '../../src/core/engine/delivery.ts';
+import { retryCleanup } from '../../src/core/engine/delivery-cleanup.ts';
+import { existsSync } from 'node:fs';
 import { versionBumpedInDiff } from '../../src/core/engine/verify.ts';
 import { convertToVerbItem } from '../../src/core/board/groom.ts';
 import { openStore, type DocumentStore } from '../../src/core/board/store.ts';
@@ -42,6 +46,8 @@ case "$1 $2" in
   "issue view") echo "{"number":21,"state":"OPEN","labels":[{"name":"groomed"}],"url":"u"}" ;;
   "issue edit"|"issue close") echo ok ;;
   "pr create") echo "https://github.com/o/r/pull/31" ;;
+  "pr list") echo "[]" ;;
+  "release view") exit 1 ;;
   "auth status") exit 0 ;;
   *) echo ok ;;
 esac
@@ -91,38 +97,51 @@ afterEach(() => {
   }
 });
 
-describe('tagged release on version bump', () => {
-  test('a version bump in the diff → tag v<version> at HEAD + gh release', async () => {
+describe('tagged release on version bump (delivery cleanup)', () => {
+  test('a version bump in the delivered revision → gh release v<version> via cleanup retry', async () => {
     stubGh();
     const id = groomed('release bump card');
     await startVerb(store, id, 'feat');
+    enrollPolicy(store, id, { mode: 'solo' });
     writeFileSync(join(dir, 'package.json'), JSON.stringify({ version: '0.7.0' }));
     git('add .');
     git('commit -m "chore: bump 0.7.0"');
     checkTasks(store, id);
     const outcome = await archiveVerb(store, id);
-    expect(outcome.card.lane).toBe('done');
-    // tag created at (merge-commit) HEAD and pushed
-    expect(git('tag --points-at HEAD').trim()).toBe('v0.7.0');
-    expect(git('ls-remote --tags origin').trim()).toContain('refs/tags/v0.7.0');
-    // the release fired with the tag name
+    expect(outcome.card.lane).toBe('verify'); // prepare only
+    const finalized = await finalizeDelivery(store, id);
+    expect(finalized.result).toBe('delivered');
+    // Cleanup reconciles the release from the RECORDED delivered revision.
+    const cleaned = await retryCleanup(store, id);
+    expect(cleaned.results.find((step) => step.kind === 'release')?.state).toBe('done');
     const releaseLog = join(dir, 'releases.log');
     expect((await Bun.file(releaseLog).text()).trim()).toBe('v0.7.0');
-    expect(outcome.tail.release).toContain('v0.7.0');
+    // The release task settled done and the log holds exactly one entry —
+    // a retry finds no pending follow-ups and cannot duplicate the release.
+    const status = deliveryStatus(store, id);
+    expect(status.cleanup.find((step) => step.kind === 'release')?.state).toBe('done');
+    expect((await Bun.file(releaseLog).text()).match(/v0\.7\.0/g)).toHaveLength(1);
+    await retryCleanup(store, id);
+    expect((await Bun.file(releaseLog).text()).match(/v0\.7\.0/g)).toHaveLength(1);
   });
 
-  test('no version bump → no tag, no release, archive unaffected', async () => {
+  test('no version bump → no tag, no release, cleanup honest about it', async () => {
     stubGh();
     const id = groomed('plain card');
     await startVerb(store, id, 'feat');
+    enrollPolicy(store, id, { mode: 'solo' });
     writeFileSync(join(dir, 'b.txt'), 'plain change\n');
     git('add .');
     git('commit -m "feat: plain"');
     checkTasks(store, id);
     const outcome = await archiveVerb(store, id);
-    expect(outcome.card.lane).toBe('done');
-    expect(git('tag').trim()).toBe('');
-    expect(outcome.tail.release).toBeNull();
+    expect(outcome.card.lane).toBe('verify');
+    await finalizeDelivery(store, id);
+    const cleaned = await retryCleanup(store, id);
+    const release = cleaned.results.find((step) => step.kind === 'release');
+    expect(release?.state).toBe('done');
+    expect(release?.detail).toContain('no eligible version tag');
+    expect(existsSync(join(dir, 'releases.log'))).toBe(false);
   });
 
   test('versionBumpedInDiff reads the added version from package.json or version.ts', async () => {

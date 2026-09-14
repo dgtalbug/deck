@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { convertToVerbItem } from '../../src/core/board/groom.ts';
 import { openStore, type DocumentStore } from '../../src/core/board/store.ts';
 import { archiveVerb, startVerb } from '../../src/core/engine/verbs.ts';
+import { enrollPolicy } from '../../src/core/board/rules.ts';
 import { runVerification } from '../../src/core/engine/verify.ts';
 import { moveLane } from '../../src/core/board/lanes.ts';
 
@@ -136,23 +137,24 @@ describe('pinned hook event contract', () => {
     });
   });
 
-  test('onArchive fires after the loop closes with lane done', async () => {
+  test('onArchive fires after preparation with lane verify — and again after delivery', async () => {
     stubGh();
     const log = logHook('onArchive');
     const id = groomed('hook contract archive');
     await startVerb(store, id, 'feat');
+    enrollPolicy(store, id, { mode: 'solo' });
     store.syncTasks(id, store.getVerbItem(id).tasks.map((task) => ({ ...task, done: true })), 'engine');
     writeFileSync(join(dir, 'b.txt'), 'the change\n');
     git('add .');
     git('commit -m "feat: the change"');
     const outcome = await archiveVerb(store, id);
-    expect(outcome.card.lane).toBe('done');
+    expect(outcome.card.lane).toBe('verify'); // E05: prepare is not done
     const events = await envelopes(log);
     expect(events).toHaveLength(1);
     expect(events[0]).toMatchObject({
       event: 'onArchive',
       cardId: id,
-      lane: 'done',
+      lane: 'verify', // E05: the archive moment fires on the pending outcome
       issueNumber: outcome.issueNumber,
       result: null,
     });

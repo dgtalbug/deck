@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { convertToVerbItem } from '../../src/core/board/groom.ts';
 import { openStore, type DocumentStore } from '../../src/core/board/store.ts';
 import { archiveVerb, startVerb, branchFor } from '../../src/core/engine/verbs.ts';
+import { enrollPolicy } from '../../src/core/board/rules.ts';
 import { getIssueMap } from '../../src/core/board/specstore.ts';
 import { nextDigest } from '../../src/core/board/next.ts';
 import { DeckError, WipLimitError } from '../../src/core/board/errors.ts';
@@ -47,6 +48,7 @@ const GH_OK = `case "$1 $2" in
   "issue view") echo "{\\"number\\":21,\\"state\\":\\"OPEN\\",\\"labels\\":[{\\"name\\":\\"groomed\\"}],\\"url\\":\\"u\\"}" ;;
   "issue close") echo closed ;;
   "pr create") echo "https://github.com/o/r/pull/31" ;;
+  "pr list") echo "[]" ;;
   "auth status") exit 0 ;;
   *) echo ok ;;
 esac`;
@@ -193,28 +195,41 @@ describe('context pack', () => {
   });
 });
 
-describe('archiveVerb', () => {
-  test('happy path: PR merged, card done, issue closed, branch deleted', async () => {
+describe('archiveVerb (preparation)', () => {
+  test('happy path: PR created, delivery pending, card holds in verify', async () => {
     stubGh(GH_OK);
     const id = groomed('archivable gate');
     const started = await startVerb(store, id, 'feat');
+    enrollPolicy(store, id, { mode: 'team' });
     store.syncTasks(id, store.getVerbItem(id).tasks.map((task) => ({ ...task, done: true })), 'engine');
     writeFileSync(join(dir, 'c.txt'), 'the change\n');
     git('add .');
     git('commit -m "feat: the change"');
     const outcome = await archiveVerb(store, id);
-    expect(outcome.card.lane).toBe('done');
+    // E05: an open PR is NOT done — the card waits in verify.
+    expect(outcome.card.lane).toBe('verify');
     expect(outcome.prUrl).toBe('https://github.com/o/r/pull/31');
     expect(outcome.issueNumber).toBe(21);
-    expect(git('rev-parse --abbrev-ref HEAD').trim()).toBe('main');
-    expect(git('branch --format="%(refname:short)"').trim().split('\n')).not.toContain(started.branch);
-    expect(git('log --merges --format="%s"')).toContain(`merge: ${started.branch}`);
+    expect(outcome.delivery.state).toBe('pending');
+    expect(outcome.delivery.reused).toBe(false);
+    // The default branch was never touched and the issue stays open.
+    expect(git('log --merges --format="%s"')).not.toContain(`merge: ${started.branch}`);
+  });
+
+  test('preparation without an enrolled policy refuses (explicit migration)', async () => {
+    stubGh(GH_OK);
+    const id = groomed('unenrolled archive');
+    await startVerb(store, id, 'feat');
+    store.syncTasks(id, store.getVerbItem(id).tasks.map((task) => ({ ...task, done: true })), 'engine');
+    await expect(archiveVerb(store, id)).rejects.toThrow(/no enrolled delivery\/evidence policy/);
+    expect(store.getVerbItem(id).lane).toBe('active');
   });
 
   test('dirty tree refuses before any mutation', async () => {
     stubGh(GH_OK);
     const id = groomed('dirty archive');
     await startVerb(store, id, 'feat');
+    enrollPolicy(store, id, { mode: 'team' });
     store.syncTasks(id, store.getVerbItem(id).tasks.map((task) => ({ ...task, done: true })), 'engine');
     writeFileSync(join(dir, 'd.txt'), 'wip\n');
     await expect(archiveVerb(store, id)).rejects.toThrow(/not clean/);

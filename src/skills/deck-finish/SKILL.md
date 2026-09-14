@@ -1,11 +1,11 @@
 ---
 name: deck-finish
-description: Close a built deck card — your own three-dimension verification pass, the mechanical review gate, and archive via PR merge. Use when implementation is done and verified, or the user says review/archive/ship it.
+description: Close a built deck card — your own three-dimension verification pass, the mechanical review gate, then delivery: prepare (PR) and finalize on observed merge. Use when implementation is done and verified, or the user says review/archive/ship/deliver it.
 allowed-tools: Bash(deck:*), Bash(git:*)
-owns: review, archive
+owns: review, archive, deliver, policy, delivery, cleanup
 ---
 
-# deck-finish — verify → review → archive
+# deck-finish — verify → review → prepare → deliver
 
 **Compose:** ← deck-build · uses deck-git-conventions (merge shapes) · → deck-sync (post-close check)
 
@@ -41,11 +41,25 @@ Findings and their fixes:
 - unchecked tasks → actually do them or uncheck honestly via the board.
 The gate is never edited or argued with — the diff changes, not the law.
 
-### Step 3 — archive
+### Step 3 — prepare the delivery
 ```bash
+deck policy <id> --mode team --check <checkId>… --approvals <n>   # once per card (team default; --mode solo is the explicit local opt-in)
 deck archive <id>
 ```
-Engine: pushes the branch, PR body = the spec, merges `--no-ff` (`merge: <branch> — <title>` — the revert door's record), card → done, issue closed, branch deleted, changelog entry, tagged release when the diff bumped the version. Refusals: `still queued` → `deck sync` then retry (deck-continue); `no published issue` → the verb never started — deck-build.
+Engine: review + current evidence gates, pushes ONLY the owned branch, opens or reuses the spec-generated PR, records the delivery attempt — the card STAYS in verify with delivery pending. An open PR is never completed work. Refusals: `still queued` → `deck sync` then retry (deck-continue); `no published issue` → the verb never started — deck-build; `no enrolled delivery/evidence policy` → run `deck policy` first; `evidence is not current` → re-run `deck verify`/`deck review` so checks recapture.
+
+### Step 4 — finalize (deck never merges for the team)
+```bash
+deck deliver <id>            # after the PR is merged on GitHub
+deck delivery <id>           # status: pending vs delivered vs refused + cleanup progress
+```
+Team mode: `deck deliver` reads fresh provider state — it requires the observed merge of the expected PR head/base plus the policy's required checks and approvals, then completes the card once (single done event). `refused` names the unsatisfied condition; fix it or re-prepare. Solo mode: `deck deliver` runs the guarded local `--no-ff` integration into the default branch — local provenance only, no hosted claim.
+
+### Step 5 — cleanup
+```bash
+deck cleanup <id>
+```
+Retryable post-delivery follow-ups: issue close, branch delete, one changelog entry, tag-reconciled release. Failures leave the card done and stay inspectable via `deck delivery <id>`.
 
 ### After
 `deck sync` should report clean; `deck doctor` all-pass is the resting state (deck-sync owns follow-ups).
@@ -55,9 +69,9 @@ Before closing, make the session's knowledge durable: `deck checkpoint <id> add 
 ## Laws (this phase)
 
 - Your pass comes BEFORE the gate — the gate is the floor, not the ceiling.
-- Archive is engine-owned: never merge, close issues, or move lanes by hand.
+- Delivery is engine-owned: never merge, close issues, tag releases, or move lanes by hand. Deck does not merge team PRs — humans do.
 - Warnings you choose to ship are named in your output — silence is how debt hides.
 
 ## Output
 
-Three-dimension report (counts per severity + shipped warnings), review verdict, archive outcome (PR url, issue number), and sync state.
+Three-dimension report (counts per severity + shipped warnings), review verdict, delivery outcome (PR url, issue number, pending/delivered), and sync state.

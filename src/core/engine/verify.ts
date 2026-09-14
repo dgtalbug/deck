@@ -2,7 +2,6 @@
 // converge driver whose ONLY writer is applyVerifyResult, a lean single-pass
 // review gate that attacks the diff and blocks archive, and a best-effort
 // archive tail. No AI anywhere in deck's loop — deck computes and enforces.
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { DeckError } from '../board/errors.ts';
 import { applyVerifyResult } from '../board/verify.ts';
@@ -10,13 +9,13 @@ import { moveLane } from '../board/lanes.ts';
 import { newestSpecVersion } from '../board/specstore.ts';
 import { getIssueMap } from '../board/specstore.ts';
 import { getSpecType } from '../board/types-registry.ts';
-import { listOverrides, loadRules, runChecks } from '../board/rules.ts';
+import { listOverrides, loadRules, runChecks, getPolicy } from '../board/rules.ts';
+import { scopeCriteria } from '../board/scope.ts';
+import { evaluateEligibility } from './evidence.ts';
 import type { DocumentStore } from '../board/store.ts';
 import { isTweak, isVerbItem, type VerbItem } from '../board/types.ts';
 import { runGit } from '../git/digest.ts';
-import { runGh } from '../git/gh.ts';
 import { branchFor } from './slug.ts';
-import { completeOperation, compensateOperation, reserveOperation } from './ownership.ts';
 import { runMomentPost, runMomentPre } from './moments.ts';
 import type { HookWarning } from './hooks.ts';
 
@@ -26,6 +25,10 @@ export interface Gap {
   requirement?: string | undefined;
   taskTitle: string;
   evidence: string;
+  // Additive E05 identity: the stable criterion and its current evidence
+  // status, when the gap is an acceptance-evidence gap.
+  criterionId?: string | undefined;
+  evidenceStatus?: string | undefined;
 }
 
 export function parseRequirementNames(markdown: string): string[] {
@@ -47,30 +50,6 @@ export function kebab(name: string): string {
     .join('-');
 }
 
-function taskReferencesRequirement(taskTitle: string, requirement: string): boolean {
-  const keyWords = requirement
-    .toLowerCase()
-    .split(/[^a-z0-9]+/)
-    .filter((word) => word.length > 3);
-  if (keyWords.length === 0) return false;
-  const title = taskTitle.toLowerCase();
-  const hits = keyWords.filter((word) => title.includes(word)).length;
-  return hits >= Math.max(1, Math.ceil(keyWords.length / 2));
-}
-
-function testFileExists(projectPath: string, slug: string): boolean {
-  const tests = join(projectPath, 'tests');
-  if (!existsSync(tests) || slug.length === 0) return false;
-  const walk = (dir: string): string[] =>
-    readdirSync(dir, { withFileTypes: true }).flatMap((entry) =>
-      entry.isDirectory() ? walk(join(dir, entry.name)) : [join(dir, entry.name)],
-    );
-  return walk(tests).some((file) => file.includes(slug));
-}
-
-// Pure data out — no mutations, no network. (a) unchecked tasks enumerate as
-// gaps; (b) a spec requirement with neither a referencing task nor a paired
-// test file in the worktree is itself a gap.
 // The documented contract ('deck verify <id> closes the loop') is reachable:
 // verify on an ACTIVE card transitions it into verify first — the engine
 // owns active→verify, archive is not the only door. Tweaks share this door
@@ -85,7 +64,18 @@ export function ensureVerifyLane(store: DocumentStore, id: string): void {
   if (card.lane === 'active') moveLane(store, id, 'verify', 'engine');
 }
 
-export function computeGaps(store: DocumentStore, id: string): Gap[] {
+// Pure data out — no mutations, no network. (a) unchecked tasks enumerate as
+// gaps; (b) accepted criteria whose CURRENT evidence is unsatisfied are gaps
+// (engine/evidence): a matching filename or a checked task is never proof.
+// Requirements map to E03 criterion identity by title; unclassified legacy
+// criteria surface as an identity gap instead of silently passing.
+// Criterion titles are stored verbatim from the accepted delta ("Requirement:
+// X"); parsed spec headers drop the prefix — both spellings are one identity.
+function normalizeCriterionTitle(title: string): string {
+  return title.replace(/^Requirement:\s*/i, '').trim();
+}
+
+export async function computeGaps(store: DocumentStore, id: string): Promise<Gap[]> {
   const card = store.getVerbItem(id); // typed 404 for non-verb ids
   if (card.lane !== 'verify') {
     throw new DeckError(`card ${id} is in ${card.lane} — verification computes on verify-lane cards`, {
@@ -98,17 +88,40 @@ export function computeGaps(store: DocumentStore, id: string): Gap[] {
     evidence: task.id,
   }));
   const version = newestSpecVersion(store, id);
-  if (version !== undefined) {
-    for (const requirement of parseRequirementNames(version.markdown)) {
-      const referenced = card.tasks.some((task) => taskReferencesRequirement(task.title, requirement));
-      const pairedTest = testFileExists(store.projectPath, kebab(requirement));
-      if (!referenced && !pairedTest) {
-        gaps.push({
-          requirement,
-          taskTitle: `provide evidence for "${requirement}"`,
-          evidence: 'none',
-        });
-      }
+  if (version === undefined) return gaps;
+  const requirements = parseRequirementNames(version.markdown);
+  if (requirements.length === 0) return gaps;
+  const policy = getPolicy(store, id);
+  if (policy === undefined) {
+    // Unknown legacy scope stays unclassified until explicitly migrated —
+    // never auto-accepted, never silently dropped.
+    gaps.push({
+      taskTitle: 'enroll a delivery/evidence policy for the accepted criteria',
+      evidence: 'policy-unenrolled',
+    });
+    return gaps;
+  }
+  const active = scopeCriteria(store.db, id).filter((criterion) => criterion.state === 'active');
+  const evaluation = await evaluateEligibility(store, id);
+  for (const requirement of requirements) {
+    const criterion = active.find((item) => normalizeCriterionTitle(item.title) === requirement);
+    if (criterion === undefined) {
+      gaps.push({
+        requirement,
+        taskTitle: `classify the criterion identity for "${requirement}" (reviewed edit)`,
+        evidence: 'unclassified',
+      });
+      continue;
+    }
+    const status = evaluation.criteria.find((item) => item.criterionId === criterion.id);
+    if (status === undefined || status.status !== 'satisfied') {
+      gaps.push({
+        requirement,
+        criterionId: criterion.id,
+        evidenceStatus: status?.status ?? 'missing',
+        taskTitle: `provide evidence for "${requirement}" (${criterion.id})`,
+        evidence: status?.status ?? 'missing',
+      });
     }
   }
   return gaps;
@@ -163,7 +176,7 @@ export async function runVerification(store: DocumentStore, id: string): Promise
   // application — the pre hook sees the card where it stands.
   await runMomentPre(store, 'verify', momentPayload(store, 'verify', before, null));
   ensureVerifyLane(store, id);
-  const gaps = computeGaps(store, id);
+  const gaps = await computeGaps(store, id);
   const result = gaps.length === 0 ? 'clean' as const : 'gaps' as const;
   if (result === 'gaps') applyVerifyResult(store, id, result, gaps.map((gap) => gap.taskTitle));
   const card = store.getVerbItem(id);
@@ -176,27 +189,20 @@ export async function runVerification(store: DocumentStore, id: string): Promise
 // The review gate lives in review.ts; the door surface stays reachable from here.
 export { reviewGate, renderFindings, ReviewBlockedError, type Finding } from './review.ts';
 
-// --- archive tail ---------------------------------------------------------------
-
-export interface TailOutcome {
-  changelog: string;
-  release: string | null;
-  warnings: string[];
-}
-
-function changelogEntry(card: VerbItem, issueNumber: number, prUrl: string): string {
-  const date = new Date().toISOString().slice(0, 10);
-  return `- ${date} — ${card.verb}: ${card.title} (#${issueNumber}, ${prUrl})`;
-}
-
-// The new version when the archived change bumps it (package.json version
-// or src/version.ts), else null. HEAD^1..HEAD is the archived change both
-// before the merge (the branch tip's last commit) and after (--no-ff merge
-// against the prior main).
-export async function versionBumpedInDiff(projectPath: string, _card: VerbItem): Promise<string | null> {
+// The new version when the delivered change bumps it (package.json version
+// or src/version.ts), else null. The diff binds to the RECORDED DELIVERY
+// revision (E05) — deliveredSha's parent..deliveredSha is the delivered
+// change, never incidental current HEAD. Cleanup (delivery-cleanup.ts) uses
+// this to reconcile the release tag identity.
+export async function versionBumpedInDiff(
+  projectPath: string,
+  _card: VerbItem,
+  deliveredSha?: string | undefined,
+): Promise<string | null> {
+  const sha = deliveredSha !== undefined && deliveredSha !== '' ? deliveredSha : 'HEAD';
   const diff = await runGit(
     projectPath,
-    ['diff', 'HEAD^1', 'HEAD', '--', 'package.json', 'src/version.ts'],
+    ['diff', `${sha}^1`, sha, '--', 'package.json', 'src/version.ts'],
     10_000,
   );
   if (diff.code !== 0 || !diff.stdout.includes('+')) return null;
@@ -208,63 +214,4 @@ export async function versionBumpedInDiff(projectPath: string, _card: VerbItem):
   if (pkg !== null) return pkg[1]!;
   const src = /DECK_VERSION = '(\d+\.\d+\.\d+)'/.exec(added);
   return src !== null ? src[1]! : null;
-}
-
-// Best-effort by construction: changelog append + tagged release; failures
-// warn and never undo the archive.
-export async function archiveTail(
-  store: DocumentStore,
-  id: string,
-  prUrl: string,
-): Promise<TailOutcome> {
-  const card = store.getVerbItem(id);
-  const map = getIssueMap(store, id);
-  const warnings: string[] = [];
-  const entry = changelogEntry(card, map?.issueNumber ?? 0, prUrl);
-  const changelogPath = join(store.projectPath, 'CHANGELOG.md');
-  const prior = existsSync(changelogPath) ? readFileSync(changelogPath, 'utf8') : '';
-  const next = prior.length === 0 ? `# Changelog\n\n${entry}\n` : `${prior.trimEnd()}\n${entry}\n`;
-  await Bun.write(changelogPath, next);
-
-  let release: string | null = null;
-  let name = (await runGit(store.projectPath, ['tag', '--points-at', 'HEAD'], 5000)).stdout
-    .trim()
-    .split('\n')[0];
-  if (name === undefined || name.length === 0) {
-    // Release slice: a version bump in the archived diff names the release
-    // itself — tag HEAD v<version>, push the tag, release from it. All
-    // best-effort, like everything in the tail.
-    const bumped = await versionBumpedInDiff(store.projectPath, card);
-    if (bumped !== null) {
-      try {
-        const created = await runGit(
-          store.projectPath,
-          ['tag', '-a', `v${bumped}`, '-m', `deck release ${bumped}`],
-          5000,
-        );
-        if (created.code === 0) await runGit(store.projectPath, ['push', 'origin', `v${bumped}`], 30_000);
-        name = `v${bumped}`;
-      } catch (error) {
-        warnings.push(`tag v${bumped} failed: ${error instanceof Error ? error.message : String(error)}`);
-      }
-    }
-  }
-  if (name !== undefined && name.length > 0) {
-    const version = newestSpecVersion(store, id);
-    try {
-      const result = await runGh(store.projectPath, [
-        'release', 'create', name,
-        '--title', name,
-        '--notes', version?.markdown ?? `deck ${name}`,
-      ]);
-      if (result === null || result.code !== 0) {
-        warnings.push(`release ${name} failed: ${result === null ? 'gh unavailable' : result.stderr.trim()}`);
-      } else {
-        release = result.stdout.trim().split('\n').pop() ?? name;
-      }
-    } catch (error) {
-      warnings.push(`release ${name} failed: ${error instanceof Error ? error.message : String(error)}`);
-    }
-  }
-  return { changelog: entry, release, warnings };
 }

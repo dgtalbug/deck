@@ -44,7 +44,7 @@ export const TOOLS: readonly ToolDescriptor[] = [
   {
     name: 'task_sync',
     description:
-      'Apply an explicit verify result to a card (applyExplicitResult core — verbs hold in verify on clean, tweaks close; completion is archive finalization alone)',
+      'Apply an explicit verify result to a card (applyExplicitResult core — verbs hold in verify on clean, tweaks close; completion is delivery finalization alone: deck archive prepares (pending), deck deliver completes)',
     inputSchema: {
       type: 'object',
       properties: {
@@ -97,7 +97,14 @@ export async function callTool(registry: ProjectRegistry, name: string, params: 
       const cardId = params['cardId'];
       if (typeof cardId !== 'string') throw new InvalidParamsError('cardId');
       const outcome = await runVerification(store, cardId);
-      return { result: outcome.result, gaps: outcome.gaps };
+      // E05 truthfulness: a clean computed result HOLDS in verify — pending
+      // preparation/finalization, never reported as completed work.
+      return {
+        result: outcome.result,
+        gaps: outcome.gaps,
+        completed: false,
+        next: outcome.result === 'clean' ? 'deck archive (prepare) then deck deliver (finalize)' : 'resolve the gaps, then re-verify',
+      };
     }
     default:
       throw new MethodNotFound();

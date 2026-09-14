@@ -3,22 +3,37 @@
 // queue flush / map refresh / label refresh — drift needing judgment is
 // reported with its fix, never auto-applied), and the one-time idempotent
 // backfill of openspec main specs.
+// E05 (DECK-ARCH-013): publication runs through the provider-intent ledger —
+// intent recorded before the network call, claimed in a short transaction,
+// reconciled after uncertain outcomes. No retry discards unresolved intent
+// merely to drain the queue.
 import { and, eq } from 'drizzle-orm';
-import { cards, issueMap, tasks } from './schema.ts';
+import { cards, providerOperations, tasks } from './schema.ts';
 import { runTx, type DocumentStore } from './store.ts';
 import { endPosition } from './positions.ts';
 import { newTaskId } from './ids.ts';
 import { emitEvent } from '../events/outbox.ts';
-import { createIssue, editIssueBody, setLaneLabel, viewIssue } from '../git/issues.ts';
+import { createIssue, editIssueBody, searchIssuesByMarker, setLaneLabel } from '../git/issues.ts';
+import { DeckError } from './errors.ts';
 import { GhUnavailableError, GitOpError } from '../git/errors.ts';
+import { runGit } from '../git/digest.ts';
+import { ownerToken } from '../engine/ownership.ts';
+import {
+  canonicalProjectId,
+  claimIntent,
+  completeIntent,
+  failIntent,
+  listCardOperations,
+  markerFor,
+  recordIntent,
+  reconcileOperation,
+} from './provider-operations.ts';
+import type { ProviderOperationRow } from './schema.ts';
 import {
   checksumOf,
-  dequeuePublish,
   enqueuePublish,
   getIssueMap,
   listMainSpecs,
-  listQueue,
-  newestSpecVersion,
   renderSpecVersion,
   setIssueMap,
   specs,
@@ -26,6 +41,45 @@ import {
 
 function nowIso(): string {
   return new Date().toISOString();
+}
+
+// Namespaced repository identity ('owner/name') from the origin remote; ''
+// when unresolvable — the ledger records it honestly either way.
+export async function repoOf(projectPath: string): Promise<string> {
+  const remote = await runGit(projectPath, ['remote', 'get-url', 'origin'], 5000);
+  if (remote.code !== 0) return '';
+  const match = /github\.com[:/](.+\/.+?)(?:\.git)?$/.exec(remote.stdout.trim());
+  return match?.[1] ?? '';
+}
+
+// Reconcile any unresolved issue-create intent for the card before another
+// create. An intent currently CLAIMED by another worker is in flight — the
+// caller queues instead of touching the network. Otherwise: marker lookup,
+// one match → the mapped issue, zero/multiple → typed refusal naming the
+// operation and its next action.
+async function reconcilePendingIssueCreate(
+  store: DocumentStore,
+  cardId: string,
+): Promise<{ recovered: number | null; inFlight: boolean }> {
+  const pending = listCardOperations(store, cardId)
+    .filter((op) => op.kind === 'issue-create' && ['claimed', 'uncertain', 'legacy-unobserved'].includes(op.state))
+    .at(-1);
+  if (pending === undefined) return { recovered: null, inFlight: false };
+  if (pending.state === 'claimed') {
+    return { recovered: null, inFlight: true };
+  }
+  const matches = await searchIssuesByMarker(store.projectPath, pending.marker);
+  const row = reconcileOperation(
+    store,
+    pending.id,
+    matches.map((issue) => ({ remoteId: String(issue.number), remoteUrl: issue.url })),
+  );
+  if (row.state === 'reconciled' && row.remoteId !== null) return { recovered: Number(row.remoteId), inFlight: false };
+  throw new GitOpError(
+    'issue create reconcile',
+    `operation ${row.id} is ${row.state}`,
+    row.nextAction ?? 'reconcile the provider operation before publishing again',
+  );
 }
 
 // --- publish ---------------------------------------------------------------
@@ -46,33 +100,87 @@ export async function publishSpec(store: DocumentStore, cardId: string): Promise
   const stage = card.lane === 'groomed' ? 'draft' : 'active';
   const version = renderSpecVersion(store, cardId);
   const map = getIssueMap(store, cardId);
+  const repo = await repoOf(store.projectPath);
+  const projectId = canonicalProjectId(store);
+  const marker = markerFor(projectId, cardId);
   try {
     if (map === undefined) {
-      const created = await createIssue(store.projectPath, {
-        title: `${card.verb}: ${card.title}`,
-        body: version.markdown,
-        label: card.lane,
-      });
-      setIssueMap(store, {
+      // Crash-after-success safety (DECK-ARCH-013): an unresolved create
+      // intent reconciles to the original resource before any new create.
+      const pending = await reconcilePendingIssueCreate(store, cardId);
+      if (pending.inFlight) {
+        // Another worker owns the dispatch — queue and reconcile on a later
+        // flush instead of double-creating.
+        enqueuePublish(store, cardId, version.checksum);
+        return { issueNumber: null, queued: true };
+      }
+      if (pending.recovered !== null) {
+        setIssueMap(store, {
+          cardId,
+          issueNumber: pending.recovered,
+          state: stage === 'draft' ? 'draft' : 'open',
+          checksum: version.checksum,
+        });
+        return { issueNumber: pending.recovered, queued: false };
+      }
+      const intent = recordIntent(store, {
         cardId,
-        issueNumber: created.number,
-        state: stage === 'draft' ? 'draft' : 'open',
-        checksum: version.checksum,
+        kind: 'issue-create',
+        repo,
+        projectId,
+        marker,
+        payload: { title: `${card.verb}: ${card.title}`, checksum: version.checksum },
       });
-      return { issueNumber: created.number, queued: false, url: created.url };
+      let claimed: ProviderOperationRow;
+      try {
+        claimed = claimIntent(store, intent.id, ownerToken);
+      } catch (error) {
+        if (error instanceof DeckError && /not claimable/.test(error.message)) {
+          // Another worker is dispatching this exact create — queue and
+          // reconcile on the next flush instead of double-creating.
+          enqueuePublish(store, cardId, version.checksum);
+          return { issueNumber: null, queued: true };
+        }
+        throw error;
+      }
+      try {
+        const created = await createIssue(store.projectPath, {
+          title: `${card.verb}: ${card.title}`,
+          body: version.markdown,
+          label: card.lane,
+        });
+        completeIntent(store, intent.id, ownerToken, String(created.number), created.url);
+        setIssueMap(store, {
+          cardId,
+          issueNumber: created.number,
+          state: stage === 'draft' ? 'draft' : 'open',
+          checksum: version.checksum,
+        });
+        return { issueNumber: created.number, queued: false, url: created.url };
+      } catch (error) {
+        if (error instanceof GhUnavailableError) {
+          // gh never ran — release the claim; the queued entry retries later.
+          await releaseIntent(store, intent.id, ownerToken);
+          enqueuePublish(store, cardId, version.checksum);
+          return { issueNumber: null, queued: true };
+        }
+        if (error instanceof GitOpError) {
+          const detail = `${error.message}${error.details['output'] ? `: ${error.details['output']}` : ''}`;
+          failIntent(store, intent.id, ownerToken, detail, 'inspect the provider error, fix the cause, then publish again');
+        }
+        throw error;
+      }
     }
     if (map.state === 'draft' && stage === 'active') {
       // Retarget: groom's draft becomes the build issue — refresh the body
       // if the spec changed, move the lane label, flip the map state.
-      if (map.checksum !== version.checksum) {
-        await editIssueBody(store.projectPath, map.issueNumber, version.markdown);
-      }
+      if (map.checksum !== version.checksum) await editThroughLedger(store, cardId, map.issueNumber, version.checksum, version.markdown, marker, repo, projectId);
       await setLaneLabel(store.projectPath, map.issueNumber, card.lane);
       setIssueMap(store, { cardId, issueNumber: map.issueNumber, state: 'open', checksum: version.checksum });
       return { issueNumber: map.issueNumber, queued: false };
     }
     if (map.checksum !== version.checksum) {
-      await editIssueBody(store.projectPath, map.issueNumber, version.markdown);
+      await editThroughLedger(store, cardId, map.issueNumber, version.checksum, version.markdown, marker, repo, projectId);
       setIssueMap(store, { cardId, issueNumber: map.issueNumber, state: map.state, checksum: version.checksum });
     }
     return { issueNumber: map.issueNumber, queued: false };
@@ -85,165 +193,64 @@ export async function publishSpec(store: DocumentStore, cardId: string): Promise
   }
 }
 
-// --- reconcile ---------------------------------------------------------------
-
-export type DriftKind = 'state' | 'checksum' | 'label' | 'missing';
-
-export interface DriftLine {
-  cardId: string;
-  issueNumber: number;
-  kind: DriftKind;
-  detail: string;
-  fix: string;
-}
-
-export interface ReconcileReport {
-  gh: 'reachable' | 'unavailable';
-  flushed: { cardId: string; issueNumber: number | null; queued: boolean }[];
-  flushedPending: number;
-  labelsRefreshed: number;
-  drift: DriftLine[];
-}
-
-function cardDone(store: DocumentStore, cardId: string): boolean {
-  const card = store.getCard(cardId);
-  return 'lane' in card && card.lane === 'done';
-}
-
-// Pinned contract: syncProject(project)→ReconcileReport. Flush first (in
-// enqueue order), then diff map vs reality; report drift with prescribed
-// fixes before (and instead of) writing anything beyond the three allowed
-// writes: queue flush, map refresh, label refresh.
-export async function syncProject(store: DocumentStore): Promise<ReconcileReport> {
-  const report: ReconcileReport = {
-    gh: 'reachable',
-    flushed: [],
-    flushedPending: 0,
-    labelsRefreshed: 0,
-    drift: [],
-  };
-
-  // Queue flush — in order; an offline gh stops the flush, not the command.
-  for (const entry of listQueue(store)) {
-    try {
-      const outcome = await publishSpec(store, entry.cardId);
-      if (!outcome.queued) dequeuePublish(store, entry.cardId);
-      report.flushed.push({ cardId: entry.cardId, issueNumber: outcome.issueNumber, queued: outcome.queued });
-    } catch (error) {
-      if (error instanceof GhUnavailableError) break;
-      // A broken entry must not wedge the queue forever: drop it and let the
-      // drift section surface the card for judgment.
-      dequeuePublish(store, entry.cardId);
-      report.drift.push({
-        cardId: entry.cardId,
-        issueNumber: getIssueMap(store, entry.cardId)?.issueNumber ?? 0,
-        kind: 'missing',
-        detail: `queue flush failed: ${error instanceof Error ? error.message : String(error)}`,
-        fix: 're-run deck sync once gh can reach GitHub (check the git remote and gh auth)',
-      });
-    }
+// Body refresh through the ledger: intent + short claim serialize per
+// resource so two flush handles cannot interleave writes, and an older
+// payload revision can never overwrite a newer intent.
+async function editThroughLedger(
+  store: DocumentStore,
+  cardId: string,
+  issueNumber: number,
+  checksum: string,
+  body: string,
+  marker: string,
+  repo: string,
+  projectId: string,
+): Promise<void> {
+  const intent = recordIntent(store, {
+    cardId,
+    kind: 'issue-edit',
+    repo,
+    projectId,
+    marker,
+    payload: { issueNumber, checksum },
+  });
+  try {
+    claimIntent(store, intent.id, ownerToken);
+  } catch (error) {
+    if (error instanceof DeckError && /not claimable/.test(error.message)) return; // another worker owns it
+    throw error;
   }
-  report.flushedPending = listQueue(store).length;
-
-  // Drift diff — map rows vs live issues, cards, and versions.
-  const mappedCards = store.db.select().from(issueMap).all().map((row) => ({ ...row }));
-  const labelRefreshes: Array<{ issueNumber: number; lane: 'todo' | 'groomed' | 'active' | 'verify' | 'done' }> = [];
-  for (const row of mappedCards) {
-    // Rows orphaned before the deleteCard cascade (or by hand-edited dbs)
-    // must surface as drift, never abort the whole report.
-    let card: ReturnType<typeof store.getCard>;
-    try {
-      card = store.getCard(row.cardId);
-    } catch {
-      report.drift.push({
-        cardId: row.cardId,
-        issueNumber: row.issueNumber,
-        kind: 'missing',
-        detail: `map row references deleted card — orphaned issue #${row.issueNumber}`,
-        fix: 'close the issue on GitHub, then delete the map row (re-delete the card to cascade-clean)',
-      });
-      continue;
-    }
-    const newest = newestSpecVersion(store, row.cardId);
-    try {
-      const issue = await viewIssue(store.projectPath, row.issueNumber);
-      const lane = 'lane' in card ? card.lane : 'todo';
-      if (row.state === 'draft' && lane !== 'todo' && lane !== 'groomed') {
-        report.drift.push({
-          cardId: row.cardId,
-          issueNumber: row.issueNumber,
-          kind: 'state',
-          detail: `issue #${row.issueNumber} is still draft but card is ${lane}`,
-          fix: 'run deck sync to flush the retarget, or re-run the verb start',
-        });
-      } else if (issue.state === 'closed' && !cardDone(store, row.cardId)) {
-        report.drift.push({
-          cardId: row.cardId,
-          issueNumber: row.issueNumber,
-          kind: 'state',
-          detail: `issue #${row.issueNumber} is closed but card is not done (${lane})`,
-          fix: 'finish + verify the card, or reopen the issue on GitHub',
-        });
-      } else if (issue.state === 'open' && cardDone(store, row.cardId)) {
-        report.drift.push({
-          cardId: row.cardId,
-          issueNumber: row.issueNumber,
-          kind: 'state',
-          detail: `card is done but issue #${row.issueNumber} is still open`,
-          fix: 'deck publish will close-loop on next archive; or close the issue',
-        });
-      }
-      if (newest !== undefined && newest.checksum !== row.checksum) {
-        report.drift.push({
-          cardId: row.cardId,
-          issueNumber: row.issueNumber,
-          kind: 'checksum',
-          detail: 'spec version is newer than what was published',
-          fix: `publish the card again (POST /cards/${row.cardId}/publish)`,
-        });
-      }
-      const hasLaneLabel = issue.labels.includes(lane);
-      const laneLabels = issue.labels.filter((label) =>
-        ['todo', 'groomed', 'active', 'verify', 'done'].includes(label),
-      );
-      // Batch label writes for AFTER the read loop — interleaving gh
-      // writes with reads serializes N round-trips and re-reads issues
-      // that a label edit would have refreshed anyway.
-      if (!hasLaneLabel || laneLabels.length > 1) {
-        labelRefreshes.push({ issueNumber: row.issueNumber, lane });
-      }
-    } catch (error) {
-      if (error instanceof GhUnavailableError) {
-        report.gh = 'unavailable';
-        break;
-      }
-      if (error instanceof GitOpError) {
-        report.drift.push({
-          cardId: row.cardId,
-          issueNumber: row.issueNumber,
-          kind: 'missing',
-          detail: `issue #${row.issueNumber} could not be read: ${error.message}`,
-          fix: 'recreate the publication (publish the card) or fix gh access',
-        });
-      } else {
-        throw error;
-      }
-    }
-  }
-  for (const refresh of labelRefreshes) {
-    try {
-      await setLaneLabel(store.projectPath, refresh.issueNumber, refresh.lane);
-      report.labelsRefreshed += 1;
-    } catch (error) {
-      if (error instanceof GhUnavailableError) {
-        report.gh = 'unavailable';
-        break;
-      }
+  try {
+    await editIssueBody(store.projectPath, issueNumber, body);
+    completeIntent(store, intent.id, ownerToken, String(issueNumber));
+  } catch (error) {
+    if (error instanceof GhUnavailableError) {
+      enqueuePublish(store, cardId, checksum);
       throw error;
     }
+    if (error instanceof GitOpError) {
+      const detail = `${error.message}${error.details['output'] ? `: ${error.details['output']}` : ''}`;
+      failIntent(store, intent.id, ownerToken, detail, 'inspect the provider error, fix the cause, then publish again');
+    }
+    throw error;
   }
-  return report;
 }
+
+// Release a claim when the dispatch provably never started (gh unavailable
+// at call time): back to 'intented' so the next worker can claim cleanly.
+async function releaseIntent(store: DocumentStore, id: string, owner: string): Promise<void> {
+  runTx(store.db, (tx) => {
+    tx.update(providerOperations)
+      .set({ state: 'intented', owner: null, updatedAt: nowIso() })
+      .where(and(eq(providerOperations.id, id), eq(providerOperations.owner, owner)))
+      .run();
+  });
+}
+
+// The syncProject reconcile report lives in sync.ts; re-exported for the
+// existing publish.ts importers.
+export { syncProject } from './sync.ts';
+export type { DriftKind, DriftLine, ReconcileReport } from './sync.ts';
 
 // --- backfill ----------------------------------------------------------------
 

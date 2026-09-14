@@ -14,6 +14,8 @@ import { completeOperation, compensateOperation, reserveOperation } from './owne
 import { branchFor } from './slug.ts';
 import { runMomentPost, runMomentPre } from './moments.ts';
 import { kebab, momentPayload, parseRequirementNames } from './verify.ts';
+import { captureCheckEvidence, evaluateEligibility } from './evidence.ts';
+import { getPolicy } from '../board/rules.ts';
 
 export interface Finding {
   risk: string;
@@ -188,11 +190,15 @@ export async function reviewGate(store: DocumentStore, id: string): Promise<Find
     // deck.rules.yaml machine gates (engine/rules): FAIL(error) principles are
     // review findings; a recorded override is the user's answer — the check is
     // skipped for that rule, and the override itself is surfaced by the CLI.
+    // E05: a policy-required check is NOT skippable by override — evidence
+    // cannot be bypassed by a recorded decision.
     const rulesLoad = loadRules(store.projectPath);
+    const policy = getPolicy(store, id);
     if (rulesLoad !== null) {
       const overridden = new Set(listOverrides(store, id).map((record) => record.ruleId));
       for (const check of await runChecks(store.projectPath, rulesLoad.rules)) {
-        if (check.ok || check.severity !== 'error' || overridden.has(check.id)) continue;
+        if (check.ok || check.severity !== 'error') continue;
+        if (overridden.has(check.id) && !policy?.requiredChecks.includes(check.id)) continue;
         findings.push({
           risk:
             `rules check '${check.id}' failed${check.detail.length > 0 ? ` — ${check.detail}` : ''} ` +
@@ -200,6 +206,47 @@ export async function reviewGate(store: DocumentStore, id: string): Promise<Find
           violates: `deck.rules: ${check.id}`,
         });
       }
+    }
+    // E05 evidence capture (engine/evidence): policy-required checks execute
+    // through the configured runner with pre/post fingerprint validation and
+    // their machine records land here — review can bind dirty-worktree
+    // evidence honestly; preparation later requires a clean committed tree
+    // and recollection at that head. A capture that fails or mutates inputs
+    // leaves a failed/unavailable record, which the gap computation surfaces.
+    if (policy !== undefined && policy.requiredChecks.length > 0) {
+      const before = await evaluateEligibility(store, id);
+      for (const checkId of policy.requiredChecks) {
+        try {
+          const records = await captureCheckEvidence(store, id, { checkId });
+          for (const record of records) {
+            if (record.result !== 'passed') {
+              findings.push({
+                risk: `required check '${checkId}' did not pass (${record.result}) — evidence records the failure, completion stays blocked`,
+                violates: `evidence: ${checkId}`,
+              });
+            }
+          }
+        } catch (error) {
+          findings.push({
+            risk: `required check '${checkId}' could not be captured: ${error instanceof Error ? error.message : String(error)}`,
+            violates: `evidence: ${checkId}`,
+          });
+        }
+      }
+      // The evaluation AFTER capture names every criterion the fresh records
+      // still do not satisfy (missing links, stale identity).
+      const after = await evaluateEligibility(store, id);
+      for (const criterion of after.criteria) {
+        if (criterion.status !== 'satisfied') {
+          const wasAlsoMissing = before.criteria.find((item) => item.criterionId === criterion.criterionId);
+          findings.push({
+            risk: `criterion "${criterion.title}" (${criterion.criterionId}) lacks current ${criterion.requirement} evidence — status ${criterion.status}` +
+              (wasAlsoMissing !== undefined ? '' : ' (newly visible after capture)'),
+            violates: `evidence: ${criterion.title}`,
+          });
+        }
+      }
+      if (!after.enrolled) findings.push({ risk: 'delivery/evidence policy not enrolled', violates: 'evidence policy' });
     }
     // Revalidation AFTER hooks and checks — only when the snapshot bound in
     // the first place: head or content moved during the review → the result

@@ -4,6 +4,8 @@ import * as publish from '../../src/core/board/publish.ts';
 import * as engineVerbs from '../../src/core/engine/verbs.ts';
 import * as gitIssues from '../../src/core/git/issues.ts';
 import * as engineVerify from '../../src/core/engine/verify.ts';
+import * as engineDelivery from '../../src/core/engine/delivery.ts';
+import * as engineDeliveryCleanup from '../../src/core/engine/delivery-cleanup.ts';
 import * as engineHooks from '../../src/core/engine/hooks.ts';
 import * as boardMemory from '../../src/core/board/memory.ts';
 import * as projectsHarness from '../../src/core/projects/harness.ts';
@@ -37,6 +39,7 @@ import { parity as notesParity } from '../../src/server/routes/notes.ts';
 import { parity as sseParity } from '../../src/server/sse.ts';
 import { parity as epicsParity } from '../../src/server/routes/epics.ts';
 import { parity as typesParity } from '../../src/server/routes/types.ts';
+import { parity as deliveryParity } from '../../src/server/routes/delivery.ts';
 
 // Route → core parity (epic rule): every route maps to exactly one core
 // function with the same name — endpoint tests double as CLI tests.
@@ -47,6 +50,8 @@ const functions: Record<string, unknown> = {
   ...engineVerbs,
   ...gitIssues,
   ...engineVerify,
+  ...engineDelivery,
+  ...engineDeliveryCleanup,
   ...engineHooks,
   ...boardMemory,
   ...projectsHarness,
@@ -80,7 +85,7 @@ const functions: Record<string, unknown> = {
   list: ProjectRegistry.prototype.list,
 };
 
-const parityTables = [homeParity, boardParity, notesParity, cardsParity, specsParity, engineParity, gitParity, sseParity, epicsParity, typesParity];
+const parityTables = [homeParity, boardParity, notesParity, cardsParity, specsParity, engineParity, deliveryParity, gitParity, sseParity, epicsParity, typesParity];
 
 describe('route-to-core parity', () => {
   test('every declared route maps to an existing core function', () => {

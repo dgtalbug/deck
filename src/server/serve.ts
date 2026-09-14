@@ -7,6 +7,7 @@ import { DEFAULT_PORT, parseServeArgs, resolvePort } from './config.ts';
 import { boardRoutes } from './routes/board.ts';
 import { cardsRoutes } from './routes/cards.ts';
 import { engineRoutes } from './routes/engine.ts';
+import { deliveryRoutes } from './routes/delivery.ts';
 import { epicsRoutes } from './routes/epics.ts';
 import { gitRoutes } from './routes/git.ts';
 import { homeRoutes } from './routes/home.ts';
@@ -40,6 +41,7 @@ export function buildRoutes(registry: ProjectRegistry, staticRoot?: string, embe
     ...typesRoutes(registry),
     ...timelineRoutes(registry),
     ...engineRoutes(registry),
+    ...deliveryRoutes(registry),
     ...epicsRoutes(registry),
     ...gitRoutes(registry),
     ...(DECK_FEATURE_SSE ? sseRoutes(registry) : {}),
