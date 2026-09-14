@@ -1,3 +1,4 @@
+import { executionPath } from '../board/context.ts';
 import { DeckError } from '../board/errors.ts';
 import { newestSpecVersion, getIssueMap } from '../board/specstore.ts';
 import { getSpecType } from '../board/types-registry.ts';
@@ -116,8 +117,9 @@ export async function reviewGate(store: DocumentStore, id: string): Promise<Find
     let boundSnapshot: CheckoutState | null = null;
     if (version !== undefined) {
       const branch = branchFor(card, card.verb);
-      const base = await defaultBranchOf(store.projectPath);
-      const resolved = await resolveReviewSnapshot(store.projectPath, base, branch);
+      const checkout = executionPath(store, id);
+      const base = await defaultBranchOf(checkout);
+      const resolved = await resolveReviewSnapshot(checkout, base, branch);
       let files: string[] = [];
       if (!resolved.ok) {
         findings.push(resolved.finding);
@@ -162,11 +164,11 @@ export async function reviewGate(store: DocumentStore, id: string): Promise<Find
         }
       }
     }
-    const rulesLoad = loadRules(store.projectPath);
+    const rulesLoad = loadRules(executionPath(store, id));
     const policy = getPolicy(store, id);
     if (rulesLoad !== null) {
       const overridden = new Set(listOverrides(store, id).map((record) => record.ruleId));
-      for (const check of await runChecks(store.projectPath, rulesLoad.rules)) {
+      for (const check of await runChecks(executionPath(store, id), rulesLoad.rules)) {
         if (check.ok || check.severity !== 'error') continue;
         if (overridden.has(check.id) && !policy?.requiredChecks.includes(check.id)) continue;
         findings.push({
@@ -211,7 +213,7 @@ export async function reviewGate(store: DocumentStore, id: string): Promise<Find
       if (!after.enrolled) findings.push({ risk: 'delivery/evidence policy not enrolled', violates: 'evidence policy' });
     }
     if (boundSnapshot !== null) {
-      const after = await captureCheckoutState(store.projectPath);
+      const after = await captureCheckoutState(executionPath(store, id));
       if (after.headSha !== boundSnapshot.headSha || after.status !== boundSnapshot.status) {
         findings.push({
           risk: 'the checkout changed during review (head or worktree moved) — the review result is invalidated',

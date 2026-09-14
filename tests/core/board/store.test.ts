@@ -196,4 +196,10 @@ describe('E03 dependency graph', () => {
     expect(() => setDependencies(store, a.id, [], current + 3)).toThrow(StaleWriterError);
     expect(listDependencies(store, a.id)).toEqual([]);
   });
+
+  test('whole-list task replacement refuses non-internal sources', () => {
+    const item = convertToVerbItem(store, proposal(store.addNote('replacement gate probe').id));
+    expect(() => store.syncTasks(item.id, item.tasks, 'public' as never)).toThrow(/internal-only/);
+    expect(store.getVerbItem(item.id).tasks).toEqual(item.tasks);
+  });
 });

@@ -22,6 +22,8 @@ import { noteBody } from '../server/routes/notes.ts';
 import { serveMain } from '../server/serve.ts';
 import { flagString, flagStrings, parseArgs, UsageError, type ParsedArgs } from './args.ts';
 import { startCommand } from './start.ts';
+import { handoffCommand, taskCommand } from './collab.ts';
+import { workspaceCommand } from './workspace.ts';
 import { graphCommand } from './graph.ts';
 import { overrideCommand, rulesCommand } from './rules.ts';
 import {
@@ -95,6 +97,9 @@ export const parity = {
   'deck rules': 'loadRules',
   'deck graph': 'indexGraph',
   'deck override': 'recordOverride',
+  'deck task': 'applyTaskPatch',
+  'deck handoff': 'offerHandoff',
+  'deck workspace': 'createWorkspace',
 };
 
 export interface CliIo {
@@ -123,6 +128,10 @@ commands:
   tweak <id>                        promote a note to a tweak build
   verify <id> [--result clean|gaps]      compute gaps (or override the result)
   review <id>                       attack the diff vs spec — blocks archive
+  task show|assign|patch            cooperative task edits (owner handle + revision-checked patch)
+  handoff offer|accept|cancel|list  explicit task ownership transfer with basis validation
+  workspace create|attach|status|reconcile|cancel
+                                    opt-in isolated worktrees sharing one canonical board
   ops [list]                        unsettled operations (recovery ledger)
   ops reconcile <id> --confirm|--clean   release a crashed/legacy operation explicitly
   types [list] | types new <json-file> | types remove <id>
@@ -245,6 +254,9 @@ const commands: Record<string, Command> = {
     return cardSummary(card);
   },
   review: reviewCommand,
+  task: taskCommand,
+  handoff: handoffCommand,
+  workspace: workspaceCommand,
   types: typesCommand,
   ops: opsCommand,
   init: async (args, ctx) => {

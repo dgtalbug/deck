@@ -2,7 +2,7 @@
 name: deck-build
 description: Build an approved, groomed deck card — start the verb, implement scoped to the spec with the type's task law, run the verify loop. Use after the user approves a card (deck feat/fix/… <id>) or says "start/build card X".
 allowed-tools: Bash(deck:*), Bash(git:*)
-owns: feat, fix, docs, style, refactor, perf, test, build, ci, chore, revert, tweak, override
+owns: feat, fix, docs, style, refactor, perf, test, build, ci, chore, revert, tweak, override, workspace
 ---
 
 # deck-build — approved card → code
@@ -33,7 +33,7 @@ Load nothing else — the digest carries the spec, tasks, and the type's task la
    - dep-touching diffs need a /depend|lock|package/i task title;
    - the fix hard rule: a test file must be in the diff, red→green;
    - `deck.rules.yaml` principles ride the digest (MUST — surface conflicts, never dilute); a user decision is recorded with `deck override <rule-id> --reason "…"` on this card;
-   - sync checkboxes through the board as tasks complete (`_source: 'engine'`);
+   - sync checkboxes through the board as tasks complete (`_source: 'engine'`); on an assigned task use the revision-checked patch instead: `deck task patch <card> <task> --rev <n> --owner <handle> --command <id> --done true|false` (MCP hosts: `task_patch`; `task_sync` is verification-only and never patches checkboxes);
    - capture durable session facts as you go: `deck checkpoint <id> add "<text>" --kind decision|gotcha|remaining|blocker` — the next resume reads them from the digest, so no decision dies with the session.
 3. **Verify — the loop, not a formality:**
    ```bash

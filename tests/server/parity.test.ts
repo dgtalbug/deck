@@ -26,6 +26,9 @@ import * as typesRegistry from '../../src/core/board/types-registry.ts';
 import * as boardRules from '../../src/core/board/rules.ts';
 import * as graphIndex from '../../src/core/graph/index.ts';
 import * as planning from '../../src/core/board/planning.ts';
+import * as taskPatches from '../../src/core/board/task-patches.ts';
+import * as engineHandoffs from '../../src/core/engine/handoffs.ts';
+import * as projectsWorkspaces from '../../src/core/projects/workspaces.ts';
 import { DocumentStore } from '../../src/core/board/store.ts';
 import { ProjectRegistry } from '../../src/core/projects/registry.ts';
 import { parity as cliParity } from '../../src/cli/main.ts';
@@ -44,6 +47,9 @@ import { parity as deliveryParity } from '../../src/server/routes/delivery.ts';
 // Route → core parity (epic rule): every route maps to exactly one core
 // function with the same name — endpoint tests double as CLI tests.
 const functions: Record<string, unknown> = {
+  ...taskPatches,
+  ...engineHandoffs,
+  ...projectsWorkspaces,
   ...crud,
   ...publish,
   ...specstore,

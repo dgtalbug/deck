@@ -278,6 +278,66 @@ export const cleanupTasks = sqliteTable('cleanup_tasks', {
   updatedAt: text('updated_at').notNull(),
 });
 
+export const taskState = sqliteTable('task_state', {
+  taskId: text('task_id').primaryKey(),
+  cardId: text('card_id').notNull(),
+  revision: integer('revision').notNull().default(1),
+  owner: text('owner'),
+  assignedAt: text('assigned_at'),
+  updatedAt: text('updated_at').notNull(),
+});
+
+export const taskPatches = sqliteTable('task_patches', {
+  commandId: text('command_id').primaryKey(),
+  cardId: text('card_id').notNull(),
+  taskId: text('task_id').notNull(),
+  owner: text('owner').notNull(),
+  expectedRevision: integer('expected_revision').notNull(),
+  payloadDigest: text('payload_digest').notNull(),
+  result: text('result').notNull(),
+  createdAt: text('created_at').notNull(),
+});
+
+export const handoffs = sqliteTable('handoffs', {
+  id: text('id').primaryKey(),
+  cardId: text('card_id').notNull(),
+  taskId: text('task_id').notNull(),
+  sender: text('sender').notNull(),
+  recipient: text('recipient').notNull(),
+  scopeRevision: integer('scope_revision').notNull(),
+  checkpointRevision: integer('checkpoint_revision').notNull(),
+  remainingWork: text('remaining_work'),
+  evidenceIds: text('evidence_ids'),
+  state: text('state', { enum: ['offered', 'accepted', 'cancelled'] })
+    .$type<'offered' | 'accepted' | 'cancelled'>()
+    .notNull(),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+  closedAt: text('closed_at'),
+});
+
+export const workspaces = sqliteTable('workspaces', {
+  id: text('id').primaryKey(),
+  projectPath: text('project_path').notNull(),
+  path: text('path'),
+  branch: text('branch').notNull(),
+  expectedHead: text('expected_head'),
+  state: text('state', {
+    enum: ['creating', 'attached', 'recovery-required', 'detached'],
+  })
+    .$type<'creating' | 'attached' | 'recovery-required' | 'detached'>()
+    .notNull(),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+  closedAt: text('closed_at'),
+});
+
+export type WorkspaceRow = typeof workspaces.$inferSelect;
+
+export type TaskStateRow = typeof taskState.$inferSelect;
+export type TaskPatchRow = typeof taskPatches.$inferSelect;
+export type HandoffRow = typeof handoffs.$inferSelect;
+
 export type DeliveryPolicyRow = typeof deliveryPolicies.$inferSelect;
 export type EvidenceRecordRow = typeof evidenceRecords.$inferSelect;
 export type ProviderOperationRow = typeof providerOperations.$inferSelect;

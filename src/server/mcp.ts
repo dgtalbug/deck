@@ -2,9 +2,36 @@ import { boardView } from '../core/board/views.ts';
 import { nextDigest } from '../core/board/next.ts';
 import { applyExplicitResult } from '../core/board/verify.ts';
 import { runVerification } from '../core/engine/verify.ts';
+import { convertToVerbItem } from '../core/board/groom.ts';
+import { applyTaskPatch, assignTask } from '../core/board/task-patches.ts';
+import {
+  acceptHandoff,
+  listHandoffs,
+  offerHandoff,
+} from '../core/engine/handoffs.ts';
+import { openGraph, readMeta } from '../core/graph/schema.ts';
+import { graphExists, graphStatus } from '../core/graph/index.ts';
+import { findSymbol, impact } from '../core/graph/queries.ts';
+import { searchSymbols } from '../core/graph/search.ts';
+import { eq } from 'drizzle-orm';
+import { epicCriteria, workspaces } from '../core/board/schema.ts';
 
 import { projectStore } from './stores.ts';
+import { groomBody } from './routes/cards.ts';
 import { DECK_VERSION } from '../version.ts';
+import {
+  TOOLS,
+  MCP_INPUT_MAX,
+  GRAPH_SEARCH_DEFAULT,
+  GRAPH_SEARCH_MAX,
+  GRAPH_IMPACT_DEPTH_DEFAULT,
+  GRAPH_IMPACT_DEPTH_MAX,
+  MCP_RESULT_CAP_BYTES,
+  MCP_TOOL_PROFILE,
+  graphTool,
+  InvalidParamsError,
+} from './mcp-tools.ts';
+export { TOOLS, MCP_TOOL_PROFILE } from './mcp-tools.ts';
 import type { ProjectRegistry } from '../core/projects/registry.ts';
 
 interface JsonRpcRequest {
@@ -19,48 +46,10 @@ interface ToolDescriptor {
   description: string;
   inputSchema: {
     type: 'object';
-    properties: Record<string, { type: string; description: string; enum?: string[] }>;
+    properties: Record<string, unknown>;
     required: string[];
   };
 }
-
-const PROJECT_ARG = { type: 'string', description: 'project name (deck projects lists them)' };
-export const TOOLS: readonly ToolDescriptor[] = [
-  {
-    name: 'board_view',
-    description: 'The board view: lanes with cards and progress (boardView core)',
-    inputSchema: { type: 'object', properties: { project: PROJECT_ARG }, required: ['project'] },
-  },
-  {
-    name: 'next_digest',
-    description: 'The WIP-aware next digest with the ≤8k-char context pack (nextDigest core)',
-    inputSchema: { type: 'object', properties: { project: PROJECT_ARG }, required: ['project'] },
-  },
-  {
-    name: 'task_sync',
-    description:
-      'Apply an explicit verify result to a card (applyExplicitResult core — verbs hold in verify on clean, tweaks close; completion is delivery finalization alone: deck archive prepares (pending), deck deliver completes)',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        project: PROJECT_ARG,
-        cardId: { type: 'string', description: 'card id' },
-        result: { type: 'string', description: 'verify result', enum: ['clean', 'gaps'] },
-        newTasks: { type: 'array', description: 'gap tasks to append (result=gaps)' },
-      },
-      required: ['project', 'cardId', 'result'],
-    },
-  },
-  {
-    name: 'verify',
-    description: 'Computed converge verification for a verify-lane card (runVerification core)',
-    inputSchema: {
-      type: 'object',
-      properties: { project: PROJECT_ARG, cardId: { type: 'string', description: 'card id' } },
-      required: ['project', 'cardId'],
-    },
-  },
-] as const;
 
 export interface McpIO {
   read(): Promise<string | null>; 
@@ -97,6 +86,130 @@ export async function callTool(registry: ProjectRegistry, name: string, params: 
         next: outcome.result === 'clean' ? 'deck archive (prepare) then deck deliver (finalize)' : 'resolve the gaps, then re-verify',
       };
     }
+    case 'note_capture': {
+      const title = params['title'];
+      if (typeof title !== 'string' || title.length === 0) throw new InvalidParamsError('title');
+      if (title.length > MCP_INPUT_MAX) throw new InvalidParamsError(`title exceeds ${MCP_INPUT_MAX} chars`);
+      return store.addNote(title);
+    }
+    case 'groom': {
+      const body = groomBody.parse({
+        proposedVerb: params['proposedVerb'],
+        refinedTitle: params['refinedTitle'],
+        research: params['research'],
+        specDeltas: params['specDeltas'],
+        tasks: params['tasks'],
+        openQuestions: params['openQuestions'],
+      });
+      const noteId = params['noteId'];
+      if (typeof noteId !== 'string' || noteId.length === 0) throw new InvalidParamsError('noteId');
+      return convertToVerbItem(store, { ...body, noteId });
+    }
+    case 'epic_read': {
+      const epicId = params['epicId'];
+      if (typeof epicId !== 'string') throw new InvalidParamsError('epicId');
+      const epic = store.getEpic(epicId);
+      const criteria = store.db.select().from(epicCriteria).where(eq(epicCriteria.epicId, epicId)).all();
+      const stories = store.epicStories(epicId).map((card) => ({
+        id: card.id,
+        title: 'title' in card ? card.title : '',
+        lane: 'lane' in card ? card.lane : 'todo',
+      }));
+      return { epic, criteria, stories };
+    }
+    case 'task_patch': {
+      const cardId = params['cardId'];
+      const taskId = params['taskId'];
+      const owner = params['owner'];
+      const commandId = params['commandId'];
+      const expectedRevision = params['expectedRevision'];
+      const done = params['done'];
+      if (typeof cardId !== 'string' || typeof taskId !== 'string') throw new InvalidParamsError('cardId/taskId');
+      if (typeof owner !== 'string' || typeof commandId !== 'string') throw new InvalidParamsError('owner/commandId');
+      if (typeof expectedRevision !== 'number' || !Number.isInteger(expectedRevision) || expectedRevision < 1) {
+        throw new InvalidParamsError('expectedRevision');
+      }
+      if (typeof done !== 'boolean') throw new InvalidParamsError('done');
+      return applyTaskPatch(store, { cardId, taskId, expectedRevision, owner, commandId, done });
+    }
+    case 'handoff_offer': {
+      const cardId = params['cardId'];
+      const taskId = params['taskId'];
+      const sender = params['sender'];
+      const recipient = params['recipient'];
+      if (typeof cardId !== 'string' || typeof taskId !== 'string') throw new InvalidParamsError('cardId/taskId');
+      if (typeof sender !== 'string' || typeof recipient !== 'string') throw new InvalidParamsError('sender/recipient');
+      const remainingWork = params['remainingWork'];
+      const evidenceIds = params['evidenceIds'];
+      return offerHandoff(store, {
+        cardId,
+        taskId,
+        sender,
+        recipient,
+        remainingWork: typeof remainingWork === 'string' ? remainingWork : undefined,
+        evidenceIds: Array.isArray(evidenceIds) ? (evidenceIds as string[]) : undefined,
+      });
+    }
+    case 'handoff_accept': {
+      const handoffId = params['handoffId'];
+      const recipient = params['recipient'];
+      if (typeof handoffId !== 'string' || typeof recipient !== 'string') throw new InvalidParamsError('handoffId/recipient');
+      return acceptHandoff(store, { handoffId, recipient });
+    }
+    case 'handoff_status': {
+      const cardId = params['cardId'];
+      return listHandoffs(store, typeof cardId === 'string' && cardId.length > 0 ? { cardId } : undefined);
+    }
+    case 'graph_search':
+      return graphTool(store, params, (db, graphPath, fresh) => {
+        const query = params['query'];
+        if (typeof query !== 'string' || query.trim().length === 0) throw new InvalidParamsError('query');
+        if (query.length > MCP_INPUT_MAX) throw new InvalidParamsError(`query exceeds ${MCP_INPUT_MAX} chars`);
+        const requested = params['limit'];
+        const limit =
+          typeof requested === 'number' && Number.isInteger(requested)
+            ? Math.min(Math.max(requested, 1), GRAPH_SEARCH_MAX)
+            : GRAPH_SEARCH_DEFAULT;
+        const hits = searchSymbols(db, query, limit + 1);
+        return {
+          workspace: { path: graphPath, freshness: fresh },
+          truncated: hits.length > limit,
+          results: hits.slice(0, limit),
+        };
+      });
+    case 'graph_impact': {
+      const symbol = params['symbol'];
+      if (typeof symbol !== 'string' || symbol.trim().length === 0) throw new InvalidParamsError('symbol');
+      if (symbol.length > MCP_INPUT_MAX) throw new InvalidParamsError(`symbol exceeds ${MCP_INPUT_MAX} chars`);
+      const requestedDepth = params['depth'];
+      if (requestedDepth !== undefined && (typeof requestedDepth !== 'number' || !Number.isInteger(requestedDepth))) {
+        throw new InvalidParamsError('depth must be an integer');
+      }
+      return graphTool(store, params, (db, graphPath, fresh) => {
+        const depth =
+          typeof requestedDepth === 'number'
+            ? Math.min(Math.max(requestedDepth, 1), GRAPH_IMPACT_DEPTH_MAX)
+            : GRAPH_IMPACT_DEPTH_DEFAULT;
+        const direction = params['direction'];
+        const dir = direction === 'in' || direction === 'out' ? direction : 'both';
+        const seeds = findSymbol(db, symbol);
+        if (seeds.length === 0) {
+          return { workspace: { path: graphPath, freshness: fresh }, seed: symbol, found: false, nodes: [], edges: [] };
+        }
+        const seed = seeds[0]!;
+        const result = impact(db, seed.id, { maxDepth: depth, direction: dir });
+        return {
+          workspace: { path: graphPath, freshness: fresh },
+          seed: seed.fqn,
+          found: true,
+          direction: result.direction,
+          nodes: result.nodes,
+          edges: result.edges,
+          truncated: result.truncated,
+          cap: result.cap,
+        };
+      });
+    }
     default:
       throw new MethodNotFound();
   }
@@ -105,11 +218,6 @@ export async function callTool(registry: ProjectRegistry, name: string, params: 
 class MethodNotFound extends Error {
   constructor() {
     super('method not found');
-  }
-}
-class InvalidParamsError extends Error {
-  constructor(field: string) {
-    super(`invalid params: ${field}`);
   }
 }
 
@@ -143,6 +251,7 @@ export async function handleFrame(registry: ProjectRegistry, line: string, io: M
               protocolVersion: requested ?? '2025-06-18',
               capabilities: { tools: {}, listChanged: false },
               serverInfo: { name: 'deck', version: DECK_VERSION },
+              toolProfile: MCP_TOOL_PROFILE,
             },
           }),
         );

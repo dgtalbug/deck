@@ -1,3 +1,4 @@
+import { executionPath } from '../board/context.ts';
 import { join } from 'node:path';
 import { z } from 'zod';
 import { DeckError } from '../board/errors.ts';
@@ -143,8 +144,9 @@ function execSyncHook(hook: MomentHook, payload: MomentPayload, projectPath: str
 }
 
 export function runMomentPreSync(store: DocumentStore, moment: Moment, payload: MomentPayload): void {
-  for (const hook of planMomentHooks(store.projectPath, moment, 'pre')) {
-    const { code, stderr } = execSyncHook(hook, payload, store.projectPath);
+  const checkout = executionPath(store, payload.cardId);
+  for (const hook of planMomentHooks(checkout, moment, 'pre')) {
+    const { code, stderr } = execSyncHook(hook, payload, checkout);
     if (code !== 0) {
       throw new PreHookBlockedError(moment, hook.id, tail(stderr), code);
     }
@@ -209,8 +211,9 @@ export function withMomentSync<T>(
 
 export function runMomentPostSync(store: DocumentStore, moment: Moment, payload: MomentPayload): HookWarning[] {
   const warnings: HookWarning[] = [];
-  for (const hook of planMomentHooks(store.projectPath, moment, 'post')) {
-    const { code, stderr } = execSyncHook(hook, payload, store.projectPath);
+  const checkout = executionPath(store, payload.cardId);
+  for (const hook of planMomentHooks(checkout, moment, 'post')) {
+    const { code, stderr } = execSyncHook(hook, payload, checkout);
     if (code !== 0) {
       const warning: HookWarning = { hook: `${moment}.post ${hook.id}`, code, stderr: tail(stderr) };
       warnings.push(warning);
@@ -265,8 +268,9 @@ async function execAsyncHook(hook: MomentHook, payload: MomentPayload, projectPa
 }
 
 export async function runMomentPre(store: DocumentStore, moment: Moment, payload: MomentPayload): Promise<void> {
-  for (const hook of planMomentHooks(store.projectPath, moment, 'pre')) {
-    const { code, stderr } = await execAsyncHook(hook, payload, store.projectPath);
+  const checkout = executionPath(store, payload.cardId);
+  for (const hook of planMomentHooks(checkout, moment, 'pre')) {
+    const { code, stderr } = await execAsyncHook(hook, payload, checkout);
     if (code !== 0) {
       throw new PreHookBlockedError(moment, hook.id, tail(stderr), code);
     }
@@ -275,8 +279,9 @@ export async function runMomentPre(store: DocumentStore, moment: Moment, payload
 
 export async function runMomentPost(store: DocumentStore, moment: Moment, payload: MomentPayload): Promise<HookWarning[]> {
   const warnings: HookWarning[] = [];
-  for (const hook of planMomentHooks(store.projectPath, moment, 'post')) {
-    const { code, stderr } = await execAsyncHook(hook, payload, store.projectPath);
+  const checkout = executionPath(store, payload.cardId);
+  for (const hook of planMomentHooks(checkout, moment, 'post')) {
+    const { code, stderr } = await execAsyncHook(hook, payload, checkout);
     if (code !== 0) {
       warnings.push({ hook: `${moment}.post ${hook.id}`, code, stderr: tail(stderr) });
       if (hook.source === 'declared') {

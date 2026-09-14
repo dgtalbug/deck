@@ -5,6 +5,7 @@ import { deleteCard, updateCard, updateGroom } from '../../core/board/crud.ts';
 import { moveLane } from '../../core/board/lanes.ts';
 import type { Lane } from '../../core/board/types.ts';
 import { runVerification } from '../../core/engine/verify.ts';
+import { applyTaskPatch, assignTask, getTaskAssignment } from '../../core/board/task-patches.ts';
 import type { ProjectRegistry } from '../../core/projects/registry.ts';
 import { projectStore } from '../stores.ts';
 import { attempt, type RouteTable } from '../http.ts';
@@ -21,6 +22,9 @@ export const parity = {
   'POST /:project/cards/:id/tweak': 'tweak',
   'POST /:project/cards/:id/verify': 'runVerification',
   'POST /:project/cards/:id/demote': 'demoteToNote',
+  'POST /:project/cards/:id/tasks/:taskId/assign': 'assignTask',
+  'GET /:project/cards/:id/tasks/:taskId': 'getTaskAssignment',
+  'PATCH /:project/cards/:id/tasks/:taskId': 'applyTaskPatch',
 };
 
 export const groomBody = z.object({
@@ -51,6 +55,18 @@ export const updateBody = z.object({ title: z.string().min(1) });
 export const verifyBody = z.object({
   result: z.enum(['clean', 'gaps']),
   newTasks: z.array(z.string()).optional(),
+});
+
+export const taskAssignBody = z.object({
+  owner: z.string().min(1).max(64),
+  by: z.string().min(1).max(64).default('human'),
+});
+
+export const taskPatchBody = z.object({
+  expectedRevision: z.number().int().min(1),
+  owner: z.string().min(1).max(64),
+  commandId: z.string().min(1).max(128),
+  done: z.boolean(),
 });
 
 export function cardsRoutes(registry: ProjectRegistry): RouteTable {
@@ -115,6 +131,38 @@ export function cardsRoutes(registry: ProjectRegistry): RouteTable {
         attempt(async () => {
           const store = await projectStore(registry, req.params.project!);
           return Response.json(demoteToNote(store, req.params.id!));
+        }),
+    },
+    '/:project/cards/:id/tasks/:taskId/assign': {
+      POST: (req) =>
+        attempt(async () => {
+          const body = taskAssignBody.parse(await req.json());
+          const store = await projectStore(registry, req.params.project!);
+          return Response.json(
+            assignTask(store, { cardId: req.params.id!, taskId: req.params.taskId!, owner: body.owner, by: body.by }),
+          );
+        }),
+    },
+    '/:project/cards/:id/tasks/:taskId': {
+      GET: (req) =>
+        attempt(async () => {
+          const store = await projectStore(registry, req.params.project!);
+          return Response.json(getTaskAssignment(store, req.params.id!, req.params.taskId!));
+        }),
+      PATCH: (req) =>
+        attempt(async () => {
+          const body = taskPatchBody.parse(await req.json());
+          const store = await projectStore(registry, req.params.project!);
+          return Response.json(
+            applyTaskPatch(store, {
+              cardId: req.params.id!,
+              taskId: req.params.taskId!,
+              expectedRevision: body.expectedRevision,
+              owner: body.owner,
+              commandId: body.commandId,
+              done: body.done,
+            }),
+          );
         }),
     },
   };

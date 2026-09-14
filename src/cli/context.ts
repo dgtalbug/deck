@@ -1,3 +1,4 @@
+import { realpathSync } from 'node:fs';
 import type { ProjectInfo } from '../core/projects/types.ts';
 import type { ProjectRegistry } from '../core/projects/registry.ts';
 import { flagString, type ParsedArgs } from './args.ts';
@@ -30,6 +31,27 @@ export function resolveProject(
     return project;
   }
   const byPath = registry.list().find((project) => project.path === cwd);
-  if (byPath === undefined) throw new ProjectResolutionError(cwd);
-  return byPath;
+  if (byPath !== undefined) return byPath;
+  // a worktree of a registered repository resolves to its canonical project —
+  // the shared board lives there; execution still targets the assigned checkout
+  const common = gitCommonDirOrNull(cwd);
+  if (common !== null) {
+    const owner = registry.list().find((project) => gitCommonDirOrNull(project.path) === common);
+    if (owner !== undefined) return owner;
+  }
+  throw new ProjectResolutionError(cwd);
+}
+
+function gitCommonDirOrNull(cwd: string): string | null {
+  try {
+    const proc = Bun.spawnSync(['git', 'rev-parse', '--path-format=absolute', '--git-common-dir'], {
+      cwd,
+      stdout: 'pipe',
+      stderr: 'pipe',
+    });
+    if (proc.exitCode !== 0) return null;
+    return realpathSync(proc.stdout.toString().trim());
+  } catch {
+    return null;
+  }
 }

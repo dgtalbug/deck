@@ -2,6 +2,7 @@ import { realpathSync } from 'node:fs';
 import type { Database } from 'bun:sqlite';
 import { DECK_VERSION } from '../../version.ts';
 import { DeckError } from './errors.ts';
+import { ensureCollaborationState } from './collaboration-state.ts';
 
 function versionValue(version: string): number {
   const parts = version.split('.').map((part) => Number.parseInt(part, 10) || 0);
@@ -126,6 +127,7 @@ export async function ensureEngineState(sqlite: Database, projectPath = '.'): Pr
   );
   ensurePlanningState(sqlite);
   ensureDeliveryState(sqlite);
+  ensureCollaborationState(sqlite);
 }
 
 function ensurePlanningState(sqlite: Database): void {
