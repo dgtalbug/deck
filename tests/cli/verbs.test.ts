@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { runCli } from '../../src/cli/main.ts';
 import { convertToVerbItem } from '../../src/core/board/groom.ts';
 import { openStore, type DocumentStore } from '../../src/core/board/store.ts';
+import { enrollPolicy } from '../../src/core/board/rules.ts';
 import { ProjectRegistry } from '../../src/core/projects/registry.ts';
 import { tmpProject, type TmpProject } from '../helpers.ts';
 
@@ -33,6 +34,7 @@ case "$1 $2" in
   "issue view") echo "{\\"number\\":41,\\"state\\":\\"OPEN\\",\\"labels\\":[{\\"name\\":\\"groomed\\"}],\\"url\\":\\"u\\"}" ;;
   "issue edit"|"issue close") echo ok ;;
   "pr create") echo "https://github.com/o/r/pull/51" ;;
+  "pr list") echo "[]" ;;
   "auth status") exit 0 ;;
   *) echo ok ;;
 esac
@@ -123,21 +125,23 @@ describe('deck feat / deck fix', () => {
   });
 });
 
-describe('deck archive', () => {
-  test('archives end-to-end from the terminal', async () => {
+describe('deck archive (preparation)', () => {
+  test('prepares delivery from the terminal: pending, card holds in verify', async () => {
     stubGh();
     const id = groomed('cli archive card');
     await run(['feat', id]);
+    enrollPolicy(store, id, { mode: 'team' });
     store.syncTasks(id, store.getVerbItem(id).tasks.map((task) => ({ ...task, done: true })), 'engine');
     writeFileSync(join(proj.path, 'b.txt'), 'the fix\n');
     git('add .');
     git('commit -m "feat: the fix"');
     expect(await run(['archive', id])).toBe(0);
     const text = out.join('\n');
-    expect(text).toContain('archived — cli archive card');
+    expect(text).toContain('prepared — cli archive card');
+    expect(text).toContain('delivery pending');
     expect(text).toContain('https://github.com/o/r/pull/51');
-    expect(text).toContain('#41 closed');
-    expect(store.getVerbItem(id).lane).toBe('done');
-    expect(git('rev-parse --abbrev-ref HEAD').trim()).toBe('main');
+    // The issue closes after delivery, not at preparation.
+    expect(text).toContain('(closes after delivery)');
+    expect(store.getVerbItem(id).lane).toBe('verify');
   });
 });

@@ -11,6 +11,7 @@ import { join } from 'node:path';
 import { desc, eq } from 'drizzle-orm';
 import { NotFoundError } from './errors.ts';
 import { cards, issueMap, publishQueue, specs as specsTable } from './schema.ts';
+import { canonicalProjectId, markerFor } from './provider-operations.ts';
 import { runTx, type DocumentStore } from './store.ts';
 import type { VerbItem } from './types.ts';
 import { branchFor } from '../engine/slug.ts';
@@ -72,6 +73,9 @@ export function renderCardSpec(store: DocumentStore, card: VerbItem): string {
   // '# title' h1 — this render owns the header, so a leading h1 line drops.
   const spec = raw.startsWith('# ') ? raw.slice(raw.indexOf('\n') + 1) : raw;
   const checklist = card.tasks.map((task) => `- [${task.done ? 'x' : ' '}] ${task.title}`).join('\n');
+  // Provider-intent marker (DECK-ARCH-013): stable across payload revisions —
+  // reconciliation finds the card's issue/PR by this line, never by title.
+  const marker = `<!-- ${markerFor(canonicalProjectId(store), card.id)} -->`;
   return [
     `# ${card.verb}: ${card.title}`,
     '',
@@ -81,6 +85,8 @@ export function renderCardSpec(store: DocumentStore, card: VerbItem): string {
     '## Checklist',
     '',
     checklist,
+    '',
+    marker,
     '',
   ].join('\n');
 }

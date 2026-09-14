@@ -7,9 +7,14 @@
 // and counted here, never executed.
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { eq } from 'drizzle-orm';
 import type { Database } from 'bun:sqlite';
 import { z } from 'zod';
+import { DeckError } from './errors.ts';
+import { scopeCriteria } from './scope.ts';
+import { deliveryPolicies } from './schema.ts';
 import type { DocumentStore } from './store.ts';
+import type { DeliveryPolicy } from './types.ts';
 
 export const RULES_FILE_NAME = 'deck.rules.yaml';
 
@@ -133,7 +138,7 @@ export interface CheckResult {
 // A rules check IS a shell command line authored by the user in
 // deck.rules.yaml — unlike deck's own git/gh arg-array calls, sh -c is the
 // contract here, scoped to the project dir with the pinned timeout.
-async function runCheckCmd(projectPath: string, cmd: string): Promise<{ code: number; stderr: string }> {
+export async function runCheckCmd(projectPath: string, cmd: string): Promise<{ code: number; stderr: string }> {
   const proc = Bun.spawn(['sh', '-c', cmd], {
     cwd: projectPath,
     stdout: 'ignore',
@@ -214,4 +219,118 @@ export function listOverrides(store: DocumentStore, cardId?: string): RuleOverri
     reason: row['reason']!,
     createdAt: row['created_at']!,
   }));
+}
+
+// --- delivery/evidence policy (E05 DECK-ARCH-012/014) ---------------------------
+//
+// Versioned per-card policy over the raw `delivery_policies` table. Team is
+// the default for new scope; solo/local exists only as this explicit persisted
+// choice. Named required checks must exist as machine-checked principles in
+// deck.rules.yaml (merged view); manual designation is limited to ACTIVE
+// criteria with stable scope identity — unclassified legacy criteria must be
+// classified first, and there is no implicit manual escape hatch.
+
+export const deliveryPolicyInputSchema = z.object({
+  mode: z.enum(['team', 'solo']),
+  requiredChecks: z.array(z.string().min(1)).default([]),
+  requiredApprovals: z.number().int().min(0).default(0),
+  manualCriteria: z.array(z.string().min(1)).default([]),
+});
+
+// Input shape (defaults still optional — z.input); the parsed output type is
+// what validation and storage see.
+export type DeliveryPolicyInput = z.input<typeof deliveryPolicyInputSchema>;
+
+export class PolicyValidationError extends DeckError {}
+
+export function getPolicy(store: DocumentStore, cardId: string): DeliveryPolicy | undefined {
+  const row = store.db.select().from(deliveryPolicies).where(eq(deliveryPolicies.cardId, cardId)).get();
+  if (row === undefined) return undefined;
+  return {
+    cardId: row.cardId,
+    version: row.version,
+    mode: row.mode,
+    requiredChecks: JSON.parse(row.requiredChecks) as string[],
+    requiredApprovals: row.requiredApprovals,
+    manualCriteria: JSON.parse(row.manualCriteria) as string[],
+    enrolledAt: row.enrolledAt,
+    updatedAt: row.updatedAt,
+  };
+}
+
+// Validate before any write: named checks exist as `check` principles, manual
+// criteria are active classified criteria, no duplicate designations.
+export function validatePolicy(
+  store: DocumentStore,
+  cardId: string,
+  input: DeliveryPolicyInput,
+): void {
+  const rules = loadRules(store.projectPath);
+  const namedChecks = new Set((rules?.rules.principles ?? []).filter((p) => p.check !== undefined).map((p) => p.id));
+  for (const check of input.requiredChecks ?? []) {
+    if (!namedChecks.has(check)) {
+      throw new PolicyValidationError(
+        `required check '${check}' is not a machine-checked principle in deck.rules.yaml — ` +
+          `add a principle with a check cmd (deck rules list) before requiring its evidence`,
+        { cardId, check },
+      );
+    }
+  }
+  const activeIds = new Set(
+    scopeCriteria(store.db, cardId)
+      .filter((criterion) => criterion.state === 'active')
+      .map((criterion) => criterion.id),
+  );
+  for (const criterionId of input.manualCriteria ?? []) {
+    if (!activeIds.has(criterionId)) {
+      throw new PolicyValidationError(
+        `manual criterion '${criterionId}' is not an active classified criterion of ${cardId} — ` +
+          `classify scope identity first (legacy 'unclassified' criteria cannot take manual designation)`,
+        { cardId, criterionId },
+      );
+    }
+  }
+}
+
+// Enroll or update the policy. Team is the default when input.mode is 'team'
+// and no policy exists; switching to solo is the explicit opt-in. Every
+// accepted change bumps the policy version — evidence bound to an older
+// version stops satisfying gates until recollected.
+export function enrollPolicy(
+  store: DocumentStore,
+  cardId: string,
+  rawInput: DeliveryPolicyInput,
+): DeliveryPolicy {
+  const input = deliveryPolicyInputSchema.parse(rawInput);
+  store.getVerbItem(cardId); // 404 contract for non-verbs
+  validatePolicy(store, cardId, input);
+  const existing = getPolicy(store, cardId);
+  const now = new Date().toISOString();
+  const version = (existing?.version ?? 0) + 1;
+  const row = {
+    cardId,
+    version,
+    mode: input.mode,
+    requiredChecks: JSON.stringify(input.requiredChecks),
+    requiredApprovals: input.requiredApprovals,
+    manualCriteria: JSON.stringify(input.manualCriteria),
+    enrolledAt: existing?.enrolledAt ?? now,
+    updatedAt: now,
+  };
+  store.db
+    .insert(deliveryPolicies)
+    .values(row)
+    .onConflictDoUpdate({
+      target: deliveryPolicies.cardId,
+      set: {
+        version: row.version,
+        mode: row.mode,
+        requiredChecks: row.requiredChecks,
+        requiredApprovals: row.requiredApprovals,
+        manualCriteria: row.manualCriteria,
+        updatedAt: row.updatedAt,
+      },
+    })
+    .run();
+  return getPolicy(store, cardId)!;
 }

@@ -38,7 +38,14 @@ export function engineRoutes(registry: ProjectRegistry): RouteTable {
           await req.json().catch(() => undefined);
           try {
             const outcome = await archiveVerb(await store(req.params.project!), req.params.id!);
-            return Response.json({ card: outcome.card, prUrl: outcome.prUrl, issueNumber: outcome.issueNumber });
+            // E05: preparation outcome — delivery is pending, not done.
+            return Response.json({
+              card: outcome.card,
+              prUrl: outcome.prUrl,
+              issueNumber: outcome.issueNumber,
+              delivery: outcome.delivery,
+              warnings: outcome.warnings,
+            });
           } catch (error) {
             if (error instanceof GitOpError && /conflict/.test(error.message)) {
               return Response.json({ error: error.message, details: error.details }, { status: 409 });

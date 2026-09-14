@@ -74,9 +74,12 @@ describe('POST /:project/cards/:id/verify computes gaps', () => {
     const body = (await response.json()) as { result: 'clean' | 'gaps'; gaps: { taskTitle: string }[]; card: { lane: string } };
     expect(body.result).toBe('gaps');
     expect(body.gaps.some((gap) => gap.taskTitle === 'unchecked work item')).toBe(true);
-    // the converge loop moved it back to active with the gap appended
+    // the converge loop moved it back to active; the unchecked-task gap is
+    // identity-deduped against the existing task title (no duplicate repair copy)
     expect(body.card.lane).toBe('active');
-    expect(store.getVerbItem(id).tasks.some((task) => task.addedByVerify === true)).toBe(true);
+    const tasks = store.getVerbItem(id).tasks;
+    expect(tasks.filter((task) => task.title === 'unchecked work item').length).toBe(1);
+    expect(tasks.some((task) => task.title === 'unchecked work item' && task.done)).toBe(false);
   });
 
   test('once every task is checked the same route converges clean', async () => {

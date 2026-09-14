@@ -141,3 +141,61 @@ export async function setLaneLabel(projectPath: string, number: number, lane: La
   }
   await issueOp(projectPath, 'edit labels', args);
 }
+
+// --- E05 provider-intent lookup (DECK-ARCH-013) ------------------------------
+//
+// Injectable seam: every lookup takes an optional provider runner so tests
+// drive fake providers without network or new dependencies; the default rides
+// the same runGh resolver chain as every other gh call.
+
+export interface ProviderRunner {
+  run(args: string[], timeoutMs?: number): Promise<{ code: number; stdout: string; stderr: string } | null>;
+}
+
+export function defaultProviderRunner(projectPath: string): ProviderRunner {
+  return {
+    async run(args, timeoutMs) {
+      return runGh(projectPath, args, timeoutMs);
+    },
+  };
+}
+
+export interface IssueRef {
+  number: number;
+  title: string;
+  state: string;
+  url: string;
+}
+
+// Exhaustive bounded/paginated marker lookup: issues carry the deck marker in
+// their body, so search is by content, never by title guess. Pages of 100 up
+// to maxPages keeps the search bounded; delayed visibility is handled by the
+// ledger (zero matches stays uncertain), not by unbounded retries here.
+export async function searchIssuesByMarker(
+  projectPath: string,
+  marker: string,
+  options: { maxPages?: number | undefined; provider?: ProviderRunner | undefined } = {},
+): Promise<IssueRef[]> {
+  const provider = options.provider ?? defaultProviderRunner(projectPath);
+  const maxPages = options.maxPages ?? 5;
+  const out: IssueRef[] = [];
+  for (let page = 1; page <= maxPages; page++) {
+    const result = await provider.run([
+      'issue', 'list', '--search', marker, '--json', 'number,title,state,url',
+      '--limit', '100', '--page', String(page),
+    ], 30_000);
+    if (result === null) throw new GhUnavailableError();
+    if (result.code !== 0) {
+      throw new GitOpError('issue list --search', `exit ${result.code}`, `${result.stdout}${result.stderr}`.trim());
+    }
+    let parsed: IssueRef[];
+    try {
+      parsed = JSON.parse(result.stdout) as IssueRef[];
+    } catch {
+      throw new GitOpError('issue list --search', 'unparseable gh output', result.stdout.trim());
+    }
+    out.push(...parsed);
+    if (parsed.length < 100) break;
+  }
+  return out;
+}

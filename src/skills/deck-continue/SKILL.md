@@ -41,12 +41,15 @@ Kinds: decision · gotcha · remaining · blocker. Concurrent writers: pass `--e
 
 ### Verify overrides
 - You found gaps the computed pass missed: `deck verify <id> --result gaps` — card → active, gaps appended as tasks.
-- Explicit clean on a verb: the card HOLDS in verify — review + archive close the loop (deck-finish); a tweak's clean completes per tweak policy.
+- Explicit clean on a verb: the card HOLDS in verify — review + prepare + deliver close the loop (deck-finish); a tweak's clean completes per tweak policy.
 
 ### Repair — wedged states and their exact fixes
 | Symptom | Fix |
 |---|---|
 | archive refuses `publish … still queued (gh was offline)` | `deck sync` to flush, then retry archive |
+| archive refuses `no enrolled delivery/evidence policy` | `deck policy <id> --mode team\|solo` — unfinished cards need the explicit enrollment |
+| `deck deliver` refused (checks/approval/head drift) | `deck delivery <id>` shows the reason; resolve on the provider, deliver again |
+| cleanup step failed after delivery | card stays done; `deck cleanup <id>` retries only unfinished follow-ups |
 | sync: `still queued` after flush | gh unreachable — fix auth/remote, re-run `deck sync` |
 | sync drift `draft … but card is active` | re-run the verb start or `deck sync` until the retarget flushes |
 | sync drift `closed but card is not done` | finish/verify the card, or reopen the issue on GitHub |

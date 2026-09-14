@@ -18,7 +18,7 @@ deck is early and building in the open. The **board, CLI, server, UI, the SDD en
 
 - **Board core** — `todo → groomed → active → verify → done` lanes on SQLite (WAL for concurrent agents, FTS5-ready), engine-owned lane law (humans move `todo ↔ groomed` only; `active`/`verify`/`done` are engine events), WIP limits, transactional event outbox.
 - **Three doors, one core** — the same core functions behind a REST/SSE server ([OpenAPI 0.3.0](http://127.0.0.1:3325/openapi.json)), a CLI, and a single-file compiled binary.
-- **CLI** — `deck note · board · groom · move · reorder · block · unblock · next · tweak · feat/fix/… · verify · review · archive · recall · checkpoint · ops · rules · graph · init · doctor · projects · serve`.
+- **CLI** — `deck note · board · groom · move · reorder · block · unblock · next · tweak · feat/fix/… · verify · review · archive · deliver · delivery · policy · cleanup · recall · checkpoint · ops · rules · graph · init · doctor · projects · serve`.
 - **Web UI** — dark-default board at `http://127.0.0.1:3325` with live SSE updates, note capture in one action, card detail, groom form, deep-linkable `?view=todo|git`, guarded git view (branch/merge/commit/stash/PR), skeleton loading states.
 - **Git + gh** — 13 guarded git operations plus PR create/list behind typed `GhUnavailable` handling; `gh` resolved beyond `PATH`.
 - **Fast lane** — `deck tweak` promotes a one-line note straight to a build; ceremony scales with blast radius, never the other way around.
@@ -27,6 +27,7 @@ deck is early and building in the open. The **board, CLI, server, UI, the SDD en
 - **Trustworthy recall** — session memory stays authoritative Markdown; the FTS index rebuilds transactionally from a content signature (mtime games can't fool it), queries are literal, and stale/error diagnostics surface in `deck recall` and the digest instead of pretending the memory is empty.
 - **Tracked skill pack** — the fourteen `deck-*` runbooks are authored in `src/skills/`, embedded byte-for-byte into the binary, and `deck doctor` reports missing/stale/customized installs; `deck setup` repairs managed regions without touching your edits.
 - **Versioned project intent (E03)** — epics carry optional intent + acceptance criteria with stable IDs (`deck epic-plan <id> intent/link/defer`), children acknowledge parent revisions, and the epic read shows uncovered criteria. Stories take dependency edges (`deck deps <story> add <prereq>`): ready selection skips blocked work and explains why, and a direct start re-checks every prerequisite inside the start reservation. Task/criterion identities survive re-grooms (no-op and reorder keep IDs; renames and removals are explicit ops), and accepted scope carries immutable revisions distinct from the publication checksum — checking a box never changes scope identity.
+- **Delivery & evidence policy (E05)** — every card enrolls a versioned delivery policy (`deck policy`): **team** is the default (prepare a PR, complete only on an observed merge with the configured required checks and approvals bound to the expected PR head); **solo** is an explicit opt-in that completes on guarded local integration and claims no hosted assurance. Acceptance evidence binds machine runs (or attributed manual review for criteria explicitly designated manual) to the exact scope revision, policy version, and byte-level execution-input fingerprint — changed inputs, failed or missing evidence block completion, and manual review can never override a required automated check. Rule overrides cannot bypass required evidence.
 
 ## Quick start
 
@@ -52,8 +53,12 @@ deck note ─→ groom ─→ deck feat ──→ implement ──→ verify ─
               │          │                          │
               │          └─ issue published at      └─ clean → review gate
               │             implementation start         │
-              └─ GroomProposal: verb · research ·       └─ archive: merge PR
-                 spec deltas · tasks                      card → done · issue closed
+              └─ GroomProposal: verb · research ·       └─ archive: prepare PR
+                 spec deltas · tasks                      delivery pending · card stays verify
+                                                          │
+                                                          └─ deliver: observed merge
+                                                             (or solo local integration)
+                                                             card → done · cleanup retries
 ```
 
 - **Specs live in the db, not markdown folders** — every groomed change carries its delta spec, research, and tasks as first-class data.

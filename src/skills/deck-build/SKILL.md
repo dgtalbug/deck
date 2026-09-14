@@ -46,7 +46,7 @@ Load nothing else — the digest carries the spec, tasks, and the type's task la
 
 - The digest is the build context — if it reports `context: INCOMPLETE`, make the named direct reads first; no issue-thread dives.
 - Never commit to main; commits follow deck-git-conventions.
-- Verify-clean HOLDS the card in verify — review + archive close the loop (deck-finish); completion is finalization alone. A tweak's clean completes per tweak policy.
+- Verify-clean HOLDS the card in verify — review + prepare + deliver close the loop (deck-finish); completion is delivery finalization alone. A tweak's clean completes per tweak policy.
 
 ## Output
 

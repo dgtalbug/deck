@@ -19,7 +19,7 @@ export interface GitOpResult {
 
 const BRANCH_NAME = /^[A-Za-z0-9][A-Za-z0-9._/-]*$/;
 
-function validateBranchName(name: string): void {
+export function validateBranchName(name: string): void {
   if (
     name.length > 100 ||
     !BRANCH_NAME.test(name) ||
@@ -32,7 +32,7 @@ function validateBranchName(name: string): void {
   }
 }
 
-async function output(projectPath: string, args: string[], timeoutMs = LOCAL_TIMEOUT_MS): Promise<string> {
+export async function output(projectPath: string, args: string[], timeoutMs = LOCAL_TIMEOUT_MS): Promise<string> {
   const { code, stdout, stderr } = await runGit(projectPath, args, timeoutMs);
   if (code !== 0) {
     const combined = `${stdout}${stderr}`.trim();
@@ -41,7 +41,7 @@ async function output(projectPath: string, args: string[], timeoutMs = LOCAL_TIM
   return `${stdout}${stderr}`.trim();
 }
 
-async function assertCleanTree(projectPath: string, operation: string): Promise<void> {
+export async function assertCleanTree(projectPath: string, operation: string): Promise<void> {
   const status = await runGit(projectPath, ['status', '--porcelain']);
   if (status.code !== 0) {
     throw new GitOpError('status', `exit ${status.code}`, `${status.stdout}${status.stderr}`.trim());
@@ -52,13 +52,13 @@ async function assertCleanTree(projectPath: string, operation: string): Promise<
   }
 }
 
-async function currentBranch(projectPath: string): Promise<string> {
+export async function currentBranch(projectPath: string): Promise<string> {
   const { code, stdout, stderr } = await runGit(projectPath, ['rev-parse', '--abbrev-ref', 'HEAD']);
   if (code !== 0) throw new GitOpError('rev-parse', `exit ${code}`, `${stdout}${stderr}`.trim());
   return stdout.trim();
 }
 
-async function branchExists(projectPath: string, name: string): Promise<boolean> {
+export async function branchExists(projectPath: string, name: string): Promise<boolean> {
   const { code } = await runGit(projectPath, ['rev-parse', '--verify', '--quiet', `refs/heads/${name}`]);
   return code === 0;
 }
@@ -320,3 +320,13 @@ export async function createPullRequest(
     if (bodyFile !== undefined) rmSync(join(bodyFile, '..'), { recursive: true, force: true });
   }
 }
+
+// Provider-facing PR observation/integration surface (E05) lives in provider.ts;
+// re-exported here so existing ops.ts imports stay stable.
+export {
+  integrateLocally,
+  editPullRequestBody,
+  viewPullRequest,
+  searchPullRequestsByMarker,
+} from './provider.ts';
+export type { LocalIntegration, PrRef, ProviderCheck, PullRequestObservation } from './provider.ts';

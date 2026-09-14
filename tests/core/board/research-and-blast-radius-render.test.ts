@@ -85,11 +85,13 @@ describe('renderCardSpec full document', () => {
     expect(rendered).toContain('old body');
   });
 
-  test('the checklist lands at the end and the published version matches', async () => {
+  test('the checklist is the last content, followed only by the provider marker', async () => {
     const id = await groomedCard();
     const card = store.getVerbItem(id);
     const rendered = renderCardSpec(store, card);
-    expect(rendered.trimEnd().endsWith('- [ ] compose the full document')).toBe(true);
+    // E05: the stable provider-intent marker closes the document; the
+    // checklist is the last human-readable content before it.
+    expect(rendered.trimEnd()).toMatch(/- \[ \] compose the full document\n\n<!-- deck:[0-9a-f]+:[^>]+ -->$/);
 
     const version = renderSpecVersion(store, id);
     expect(version.markdown).toBe(rendered);

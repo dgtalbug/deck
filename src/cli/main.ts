@@ -7,7 +7,7 @@ import { DeckError } from '../core/board/errors.ts';
 import { tweak } from '../core/board/groom.ts';
 import { moveLane } from '../core/board/lanes.ts';
 import { applyExplicitResult } from '../core/board/verify.ts';
-import { archiveVerb } from '../core/engine/verbs.ts';
+import { archiveCommand, cleanupCommand, deliverCommand, deliveryStatusCommand, policyCommand } from './delivery.ts';
 import { renderHookWarnings } from '../core/engine/hooks.ts';
 import { runVerification } from '../core/engine/verify.ts';
 import { opsCommand } from './ops.ts';
@@ -91,6 +91,10 @@ export const parity = {
   'deck epics': 'listEpics',
   'deck story': 'addNote',
   'deck archive': 'archiveVerb',
+  'deck deliver': 'finalizeDelivery',
+  'deck delivery': 'deliveryStatus',
+  'deck policy': 'enrollPolicy',
+  'deck cleanup': 'retryCleanup',
   'deck issue': 'viewIssue',
   'deck review': 'reviewGate',
   'deck types': 'listSpecTypes',
@@ -151,7 +155,11 @@ commands:
   deps <card> [list|add|remove|set <p>…] story dependency edges (cycle-checked)
   epics                            list epics with done/total rollup
   story <epicId> "<title>"          capture a story attached to an epic
-  archive <id>                     merge the PR, close the issue, card → done
+  archive <id>                     prepare delivery: review + evidence + PR — card stays verify, delivery pending
+  deliver <id>                     finalize: observe the merge/team policy (or local solo integration) — card → done
+  delivery <id>                    delivery + cleanup status (pending vs delivered, retryable follow-ups)
+  policy <id> --mode team|solo     enroll the delivery/evidence policy (--check, --approvals, --manual)
+  cleanup <id>                     retry unfinished post-delivery follow-ups (issue close, branch, changelog, release)
   issue <id>                       print the card's mapped GitHub issue
   serve [--port <n>] [--host <h>]   start the server (default when bare)`;
 
@@ -288,28 +296,11 @@ const commands: Record<string, Command> = {
   chore: (args, ctx) => startCommand(args, ctx, 'chore'),
   // The revert verb doubles as the done-card door (hold law): see cli/revert.ts
   revert: revertCommand,
-  archive: async (args, ctx) => {
-    const id = requiredId(args, 'archive <id>');
-    const project = resolveProject(ctx.registry, args, ctx.cwd);
-    const store = await getStore(project.path);
-    const p = ctx.pal;
-    return withSpinner(
-      { isatty: Boolean(process.stdout.isTTY), dumb: Bun.env['TERM'] === 'dumb', io: ctx.io },
-      'archiving…',
-      async () => {
-        const outcome = await archiveVerb(store, id);
-        if (outcome.hookWarnings.length > 0) ctx.io.err(renderHookWarnings(outcome.hookWarnings).join('\n'));
-        for (const warning of outcome.warnings) ctx.io.err(`warn   ${warning}`);
-        return [
-          `${p.color('primary', '♠')} ${p.bold(`archived — ${outcome.card.title}`)}`,
-          '',
-          `  ${p.dim('card')}   ${outcome.card.id} → done`,
-          `  ${p.dim('pr')}     ${p.color('primary', outcome.prUrl)}`,
-          `  ${p.dim('issue')}  #${outcome.issueNumber} closed`,
-        ].join('\n');
-      },
-    );
-  },
+  archive: archiveCommand,
+  deliver: deliverCommand,
+  delivery: deliveryStatusCommand,
+  policy: policyCommand,
+  cleanup: cleanupCommand,
   hooks: hooksCommand,
   rules: rulesCommand,
   graph: graphCommand,
