@@ -8,6 +8,8 @@ import { boardRoutes } from './routes/board.ts';
 import { cardsRoutes } from './routes/cards.ts';
 import { engineRoutes } from './routes/engine.ts';
 import { deliveryRoutes } from './routes/delivery.ts';
+import { evidenceRoutes } from './routes/evidence.ts';
+import { capabilityRoutes } from './routes/capabilities.ts';
 import { epicsRoutes } from './routes/epics.ts';
 import { gitRoutes } from './routes/git.ts';
 import { homeRoutes } from './routes/home.ts';
@@ -40,6 +42,8 @@ export function buildRoutes(registry: ProjectRegistry, staticRoot?: string, embe
     ...timelineRoutes(registry),
     ...engineRoutes(registry),
     ...deliveryRoutes(registry),
+    ...evidenceRoutes(registry),
+    ...capabilityRoutes(registry),
     ...epicsRoutes(registry),
     ...gitRoutes(registry),
     ...(DECK_FEATURE_SSE ? sseRoutes(registry) : {}),

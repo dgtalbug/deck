@@ -1,4 +1,6 @@
 
+import type { EvidenceBundle } from '../../../core/board/evidence-bundle-schema.ts';
+
 export const LANES = ['todo', 'groomed', 'active', 'verify', 'done'] as const;
 export type Lane = (typeof LANES)[number];
 
@@ -127,6 +129,45 @@ export interface EpicTree {
   stories: EpicTreeStory[];
 }
 
+export type EvidenceBundleView = EvidenceBundle;
+
+export interface CapabilityStatementView {
+  capabilityId: string;
+  statementId: string;
+  text: string;
+  digest: string;
+  state: 'current' | 'removed';
+  sourceCardId: string;
+  sourceCriterionId: string;
+  sourceScopeRevision: number;
+  evidenceId: string;
+  deliveryId: string;
+  sourceDrift: 'none' | 'changed' | 'unknown';
+}
+
+export interface CapabilityPreviewView {
+  id: string;
+  batchId: string;
+  preview: {
+    changes: Array<{
+      op: 'add' | 'modify' | 'remove';
+      deltaId: string;
+      capabilityId: string;
+      statementId: string;
+      before: string | null;
+      after: string | null;
+    }>;
+    conflicts: Array<{ deltaId: string; reason: string }>;
+    statements: Array<{
+      capabilityId: string;
+      statementId: string;
+      text: string;
+      state: 'current' | 'removed';
+    }>;
+  };
+  resolution: { acceptedBy: string; rationale: string } | null;
+}
+
 export interface SpecTypeView {
   id: string;
   displayName: string;
@@ -234,6 +275,15 @@ function buildApi(base: string): BoardApi {
     request(base, `/${project}/board?view=history&limit=${limit}${cursor === undefined ? '' : `&cursor=${encodeURIComponent(cursor)}`}`),
 
   fetchCardDetail: (project: string, id: string): Promise<UiCard> => request(base, `/${project}/cards/${id}/detail`),
+
+  fetchEvidenceBundle: (project: string, epicId: string): Promise<EvidenceBundleView> =>
+    request(base, `/${project}/epics/${epicId}/evidence`),
+
+  fetchCapabilities: (project: string): Promise<{ statements: CapabilityStatementView[] }> =>
+    request(base, `/${project}/capabilities`),
+
+  fetchCapabilityPreview: (project: string, previewId: string): Promise<CapabilityPreviewView> =>
+    request(base, `/${project}/capabilities/previews/${previewId}`),
 
   updateCard: (project: string, id: string, title: string): Promise<UiCard> =>
     patch(base, `/${project}/cards/${id}`, { title }),
@@ -344,6 +394,9 @@ export type BoardApi = {
   fetchTypes?: (project: string) => Promise<SpecTypeView[]>;
 
   fetchEpicTree?: (project: string, epicId: string) => Promise<EpicTree>;
+  fetchEvidenceBundle?: (project: string, epicId: string) => Promise<EvidenceBundleView>;
+  fetchCapabilities?: (project: string) => Promise<{ statements: CapabilityStatementView[] }>;
+  fetchCapabilityPreview?: (project: string, previewId: string) => Promise<CapabilityPreviewView>;
   fetchGit: (project: string) => Promise<GitDigest>;
   fetchTimeline?: (project: string, limit?: number) => Promise<TimelineView>;
   fetchHistorySummary?: (project: string, limit: number, cursor?: string) => Promise<SummaryPageResult>;
