@@ -41,6 +41,7 @@ export async function startVerb(
   store: DocumentStore,
   id: string,
   verb: VerbName,
+  exec?: { workspacePath?: string | undefined },
 ): Promise<StartOutcome> {
   const card = store.getVerbItem(id); 
   if (card.lane !== 'groomed') {
@@ -75,7 +76,8 @@ export async function startVerb(
   assertUnderWip(store);
 
   const owner = ownerToken;
-  const checkout = canonicalCheckout(store.projectPath);
+  const executionPath = exec?.workspacePath ?? store.projectPath;
+  const checkout = canonicalCheckout(executionPath);
   let operation: Operation | undefined;
   runTx(store.db, (tx) => {
     const row = tx.select().from(cards).where(eq(cards.id, id)).get();
@@ -122,13 +124,13 @@ export async function startVerb(
   }
   const branch = branchFor(card, verb);
   try {
-    await assertCleanTree(store.projectPath);
-    await createBranch(store.projectPath, { name: branch, checkout: true });
-    scaffoldSession(store.projectPath, id, verb, branch); 
+    await assertCleanTree(executionPath);
+    await createBranch(executionPath, { name: branch, checkout: true });
+    scaffoldSession(executionPath, id, verb, branch);
   } catch (error) {
     moveLane(store, id, 'groomed', 'engine'); 
     compensateOperation(store, operation!.id);
-    rmSync(sessionPath(store.projectPath, id), { force: true }); 
+    rmSync(sessionPath(executionPath, id), { force: true });
     let drift: string | undefined;
     if (publish !== undefined && !publish.queued && publish.issueNumber !== null) {
       deleteIssueMap(store, id);

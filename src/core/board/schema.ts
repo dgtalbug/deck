@@ -316,6 +316,24 @@ export const handoffs = sqliteTable('handoffs', {
   closedAt: text('closed_at'),
 });
 
+export const workspaces = sqliteTable('workspaces', {
+  id: text('id').primaryKey(),
+  projectPath: text('project_path').notNull(),
+  path: text('path'),
+  branch: text('branch').notNull(),
+  expectedHead: text('expected_head'),
+  state: text('state', {
+    enum: ['creating', 'attached', 'recovery-required', 'detached'],
+  })
+    .$type<'creating' | 'attached' | 'recovery-required' | 'detached'>()
+    .notNull(),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+  closedAt: text('closed_at'),
+});
+
+export type WorkspaceRow = typeof workspaces.$inferSelect;
+
 export type TaskStateRow = typeof taskState.$inferSelect;
 export type TaskPatchRow = typeof taskPatches.$inferSelect;
 export type HandoffRow = typeof handoffs.$inferSelect;

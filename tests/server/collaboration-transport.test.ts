@@ -19,7 +19,7 @@ async function req(method: string, path: string, body?: unknown): Promise<Respon
   return fetch(`${baseUrl}${path}`, {
     method,
     headers: { 'content-type': 'application/json' },
-    body: body === undefined ? undefined : JSON.stringify(body),
+    body: body === undefined ? null : JSON.stringify(body),
   });
 }
 

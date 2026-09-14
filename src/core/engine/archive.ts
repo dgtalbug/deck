@@ -1,3 +1,4 @@
+import { executionPath } from '../board/context.ts';
 import { DeckError } from '../board/errors.ts';
 import { moveLane } from '../board/lanes.ts';
 import { getIssueMap, listQueue, newestSpecVersion } from '../board/specstore.ts';
@@ -126,7 +127,8 @@ async function prepareDelivery(
   operation: Operation,
 ): Promise<ArchiveOutcome> {
   const branch = branchFor(card, card.verb);
-  const base = await defaultBranch(store.projectPath);
+  const checkout = executionPath(store, id);
+  const base = await defaultBranch(checkout);
 
   const findings = await reviewGate(store, id);
   if (findings.length > 0) throw new ReviewBlockedError(id, findings);
@@ -151,25 +153,25 @@ async function prepareDelivery(
     timestamp: new Date().toISOString(),
   });
 
-  await assertCleanTree(store.projectPath);
-  const remote = await runGit(store.projectPath, ['remote']);
+  await assertCleanTree(checkout);
+  const remote = await runGit(checkout, ['remote']);
   if (mode === 'team' && remote.stdout.trim() === '') {
     throw new DeckError('team delivery requires a git remote — push the repository to origin first (or enroll solo mode)', {
       cardId: id,
     });
   }
 
-  const inputs = await captureExecutionInputs(store.projectPath, { base });
+  const inputs = await captureExecutionInputs(checkout, { base });
   let prNumber: number | null = null;
   let prUrl: string | null = null;
   let reused = false;
 
   if (mode === 'team') {
-    const current = await runGit(store.projectPath, ['rev-parse', '--abbrev-ref', 'HEAD']);
+    const current = await runGit(checkout, ['rev-parse', '--abbrev-ref', 'HEAD']);
     if (current.stdout.trim() !== branch) {
-      await switchBranch(store.projectPath, branch);
+      await switchBranch(checkout, branch);
     }
-    await pushRemote(store.projectPath);
+    await pushRemote(checkout);
     const projectId = canonicalProjectId(store);
     const marker = markerFor(projectId, id);
     const resolved = await resolvePullRequest(store, id, marker, version.markdown, branch, base);
@@ -227,7 +229,7 @@ async function resolvePullRequest(
   base: string,
 ): Promise<{ number: number; url: string; reused: boolean }> {
   const card = store.getVerbItem(id);
-  const open = await searchPullRequestsByMarker(store.projectPath, marker, { state: 'open' });
+  const open = await searchPullRequestsByMarker(executionPath(store, id), marker, { state: 'open' });
   const pendingIntent = listCardOperations(store, id)
     .filter((op) => op.kind === 'pr-create' && ['claimed', 'uncertain', 'legacy-unobserved'].includes(op.state))
     .at(-1);
@@ -259,7 +261,7 @@ async function resolvePullRequest(
     projectId: canonicalProjectId(store),
     marker,
     payload: { title: `merge: ${branch} — ${card.title}`, base, branch },
-    expectedHead: (await runGit(store.projectPath, ['rev-parse', 'HEAD'], 5000)).stdout.trim(),
+    expectedHead: (await runGit(executionPath(store, id), ['rev-parse', 'HEAD'], 5000)).stdout.trim(),
     expectedBase: base,
   });
   let claimed: ProviderOperationRow;
@@ -272,7 +274,7 @@ async function resolvePullRequest(
     throw error;
   }
   try {
-    const pr = await createPullRequest(store.projectPath, {
+    const pr = await createPullRequest(executionPath(store, id), {
       title: `merge: ${branch} — ${card.title}`,
       base,
       body,

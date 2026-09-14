@@ -95,6 +95,23 @@ Error contract, in order of check:
 
 Timeout alone never transfers ownership; only explicit acceptance does. Checkbox patches never change scope identity or complete a card — title/scope edits go through grooming.
 
+## Isolated workspaces (opt-in)
+
+Checkout mode stays the default. Opt into isolated execution with worktrees that share one canonical board:
+
+```
+deck workspace create --name <name>    # managed sibling worktree on branch deck/<name>
+deck workspace attach <path>           # attach an existing worktree (same repo only)
+deck workspace status                  # canonical + per-workspace health
+deck workspace reconcile <id>          # inspect actual Git state vs the record
+deck workspace cancel <id>             # stop + remove a clean, owned worktree
+```
+
+- **One board** — every worktree opens the same canonical `board.sqlite`; events, WIP limits and duplicate-start fencing are shared. Separate board databases are never merged; attachment refuses them.
+- **Execution follows the assignment** — hooks, checks, review diffs and delivery read the checkout the card was started in (`deck feat <id>` from inside the worktree), never silently the canonical path. CLI commands discover the canonical project from any worktree of a registered repository.
+- **Recovery, not guessing** — creation intent is recorded before any Git effect; a crash leaves an inspectable `creating`/`recovery-required` row. Missing or replaced assigned paths refuse execution with recovery details (`deck workspace status` → `reconcile`) instead of falling back to the canonical checkout. Cancel never force-removes dirty trees or unmerged branches — they stay with an actionable note.
+- **Overlaps stop for a human** — integration writes serialize on the target checkout with a named owner; conflicting merges abort with both branches preserved.
+
 ## Architecture
 
 | Concern | Choice |

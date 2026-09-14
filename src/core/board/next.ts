@@ -1,3 +1,4 @@
+import { executionPath } from './context.ts';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { DocumentStore } from './store.ts';
@@ -48,12 +49,22 @@ function readSource(store: DocumentStore, displayPath: string, ...segments: stri
 
 function specSource(store: DocumentStore, card: VerbItem): Source {
   const display = `${card.specPath.replace(/\/+$/, '')}/spec.md`;
-  return readSource(store, display, card.specPath, 'spec.md');
+  const base = executionPath(store, card.id);
+  const absolute = join(base, card.specPath, 'spec.md');
+  return sourceAt(display, absolute);
 }
 
 function tasksSource(store: DocumentStore, card: VerbItem): Source {
   const display = `${card.specPath.replace(/\/+$/, '')}/tasks.md`;
-  return readSource(store, display, card.specPath, 'tasks.md');
+  const base = executionPath(store, card.id);
+  const absolute = join(base, card.specPath, 'tasks.md');
+  return sourceAt(display, absolute);
+}
+
+function sourceAt(displayPath: string, absolute: string): Source {
+  if (!existsSync(absolute)) return { path: displayPath, bytes: undefined, rev: 'unknown' };
+  const bytes = readFileSync(absolute, 'utf8');
+  return { path: displayPath, bytes, rev: sha16(bytes) };
 }
 
 function sourceLine(source: Source, role: string): string {
@@ -70,7 +81,7 @@ function sourceLine(source: Source, role: string): string {
 }
 
 function checkpointSection(store: DocumentStore, card: VerbItem | Tweak, specRev: string | undefined): { body: string; readPath: string } | undefined {
-  const state = readCheckpoint(store.projectPath, card.id);
+  const state = readCheckpoint(executionPath(store, card.id), card.id);
   if (state.entries.length === 0) return undefined;
   const basis = checkpointBasis(isVerbItem(card) ? currentScopeRevision(store.db, card.id) : 0, specRev);
   const provenance = checkpointProvenance(state.entries, basis);
@@ -140,7 +151,7 @@ function mandatorySections(store: DocumentStore, card: VerbItem | Tweak, mode: '
     sections.push({ title: 'Tasks', body: taskList([{ id: 'tweak', title: card.requirement, done: false }]) });
   }
 
-  const rulesLoad = loadRules(store.projectPath);
+  const rulesLoad = loadRules(executionPath(store, card.id));
   if (rulesLoad !== null) {
     sections.push({
       title: 'Project rules',
@@ -178,7 +189,7 @@ function envelope(store: DocumentStore, card: VerbItem | Tweak, mode: 'queued' |
     requiredReads.push(`${card.specPath}/spec.md (full current scope — mandatory context overflowed the packet)`);
     requiredReads.push(`${card.specPath}/tasks.md (task list)`);
   }
-  if (loadRules(store.projectPath) !== null) requiredReads.push('deck.rules.yaml (project law)');
+  if (loadRules(executionPath(store, card.id)) !== null) requiredReads.push('deck.rules.yaml (project law)');
   const text = [
     ...identity.header,
     'context: INCOMPLETE — mandatory content exceeds the packet budget; direct reads are REQUIRED before work',

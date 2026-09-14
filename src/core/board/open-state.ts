@@ -172,6 +172,21 @@ function ensureCollaborationState(sqlite: Database): void {
   sqlite.exec('CREATE INDEX IF NOT EXISTS handoffs_card_state ON handoffs (card_id, state)');
   sqlite.exec('CREATE INDEX IF NOT EXISTS task_state_card ON task_state (card_id)');
 
+  sqlite.exec(
+    `CREATE TABLE IF NOT EXISTS workspaces (
+      id TEXT PRIMARY KEY NOT NULL,
+      project_path TEXT NOT NULL,
+      path TEXT,
+      branch TEXT NOT NULL,
+      expected_head TEXT,
+      state TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      closed_at TEXT
+    )`,
+  );
+  sqlite.exec('CREATE INDEX IF NOT EXISTS workspaces_project_state ON workspaces (project_path, state)');
+
   const now = new Date().toISOString();
   sqlite
     .query(
