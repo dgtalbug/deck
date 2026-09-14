@@ -230,6 +230,11 @@ function buildApi(base: string): BoardApi {
   fetchTimeline: (project: string, limit?: number): Promise<TimelineView> =>
     request(base, `/${project}/timeline${limit === undefined ? '' : `?limit=${limit}`}`),
 
+  fetchHistorySummary: (project: string, limit: number, cursor?: string): Promise<SummaryPageResult> =>
+    request(base, `/${project}/board?view=history&limit=${limit}${cursor === undefined ? '' : `&cursor=${encodeURIComponent(cursor)}`}`),
+
+  fetchCardDetail: (project: string, id: string): Promise<UiCard> => request(base, `/${project}/cards/${id}/detail`),
+
   updateCard: (project: string, id: string, title: string): Promise<UiCard> =>
     patch(base, `/${project}/cards/${id}`, { title }),
 
@@ -305,6 +310,32 @@ function buildApi(base: string): BoardApi {
 
 export const boardApi: BoardApi = createBoardApi();
 
+export interface SummaryItem {
+  id: string;
+  type: 'note' | 'verb' | 'tweak' | 'epic';
+  title: string;
+  truncated: boolean;
+  lane: string;
+  position: number;
+  verb: string | null;
+  epicId: string | null;
+  blocked: boolean;
+  taskCounts: { done: number; total: number } | null;
+  historyAt: string | null;
+}
+
+export interface SummaryPageResult {
+  view: 'live' | 'history';
+  items: SummaryItem[];
+  total: number;
+  page_count: number;
+  cursor: string | null;
+  stale: boolean;
+  revision: number;
+  oversize: boolean;
+  overflow: { records: number; tasks: number; overflow: string | null } | null;
+}
+
 export type BoardApi = {
   listProjects: () => Promise<{ projects: ProjectSummary[] }>;
   fetchBoard: (project: string) => Promise<BoardDoc>;
@@ -315,6 +346,8 @@ export type BoardApi = {
   fetchEpicTree?: (project: string, epicId: string) => Promise<EpicTree>;
   fetchGit: (project: string) => Promise<GitDigest>;
   fetchTimeline?: (project: string, limit?: number) => Promise<TimelineView>;
+  fetchHistorySummary?: (project: string, limit: number, cursor?: string) => Promise<SummaryPageResult>;
+  fetchCardDetail?: (project: string, id: string) => Promise<UiCard>;
   updateCard: (project: string, id: string, title: string) => Promise<UiCard>;
   deleteCard: (project: string, id: string) => Promise<void>;
   updateGroom: (project: string, id: string, input: GroomInput) => Promise<UiCard>;

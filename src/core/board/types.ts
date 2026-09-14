@@ -49,6 +49,7 @@ export interface Epic {
   title: string;
   createdAt: string;
   type: 'epic';
+  historyAt?: string | undefined;
 }
 
 export interface TaskState {
@@ -77,6 +78,8 @@ export interface VerbItem {
   tasks: TaskState[];
   research: Research;
   blocked?: { reason: string; at: string } | undefined;
+  historyAt?: string | undefined;
+  completedAt?: string | undefined;
   createdAt: string;
   updatedAt: string;
 }
@@ -88,6 +91,8 @@ export interface Tweak {
   requirement: string;
   lane: Lane;
   position: number;
+  historyAt?: string | undefined;
+  completedAt?: string | undefined;
   createdAt: string;
   updatedAt: string;
 }

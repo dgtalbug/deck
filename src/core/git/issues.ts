@@ -18,9 +18,13 @@ async function issueOp(
   operation: string,
   args: string[],
   timeoutMs = 60_000,
+  options: { signal?: AbortSignal } = {},
 ): Promise<GhRun> {
-  const result = await runGh(projectPath, ['issue', ...args], timeoutMs);
+  const result = await runGh(projectPath, ['issue', ...args], timeoutMs, options);
   if (result === null) throw new GhUnavailableError();
+  if (result.timedOut === true) {
+    throw new GitOpError(`issue ${operation}`, 'remote call deadline exceeded', `${result.stdout}${result.stderr}`.trim());
+  }
   if (result.code !== 0) {
     throw new GitOpError(`issue ${operation}`, `exit ${result.code}`, `${result.stdout}${result.stderr}`.trim());
   }
@@ -86,10 +90,10 @@ export async function closeIssue(projectPath: string, number: number): Promise<v
   await issueOp(projectPath, 'close', ['close', String(number)]);
 }
 
-export async function viewIssue(projectPath: string, number: number): Promise<IssueView> {
+export async function viewIssue(projectPath: string, number: number, options: { signal?: AbortSignal; timeoutMs?: number } = {}): Promise<IssueView> {
   const result = await issueOp(projectPath, 'view', [
     'view', String(number), '--json', 'number,state,labels,url',
-  ]);
+  ], options.timeoutMs ?? 60_000, options.signal !== undefined ? { signal: options.signal } : {});
   try {
     const parsed = JSON.parse(result.stdout) as { number: number; state: string; labels: { name: string }[]; url: string };
     const state = parsed.state.toLowerCase();

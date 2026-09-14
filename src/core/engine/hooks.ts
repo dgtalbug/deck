@@ -29,6 +29,8 @@ export interface HookWarning {
   hook: string; 
   code: number; 
   stderr: string;
+  durationMs?: number;
+  timedOut?: boolean;
 }
 
 export const HOOK_TIMEOUT_MS = 10_000;
@@ -64,6 +66,7 @@ export async function runHooks(
   const { run } = hookNames(projectPath, event);
   for (const name of run) {
     let proc: Bun.Subprocess<'pipe', 'ignore', 'pipe'>;
+    const started = performance.now();
     try {
       proc = Bun.spawn([join(hooksDir(projectPath, event), name)], {
         cwd: projectPath,
@@ -73,7 +76,7 @@ export async function runHooks(
         env: { ...process.env, DECK_HOOK_EVENT: event },
       });
     } catch {
-      warnings.push({ hook: `${event}/${name}`, code: -1, stderr: 'spawn failed' });
+      warnings.push({ hook: `${event}/${name}`, code: -1, stderr: 'spawn failed', durationMs: Math.round(performance.now() - started), timedOut: false });
       continue;
     }
     proc.stdin.write(JSON.stringify(payload));
@@ -101,7 +104,13 @@ export async function runHooks(
     }
     if (code !== 0) {
       const stderr = new TextDecoder().decode(concat(chunks));
-      warnings.push({ hook: `${event}/${name}`, code: timedOut || code === null ? -2 : code, stderr: stderr.trim() });
+      warnings.push({
+        hook: `${event}/${name}`,
+        code: timedOut || code === null ? -2 : code,
+        stderr: stderr.trim(),
+        durationMs: Math.round(performance.now() - started),
+        timedOut,
+      });
     }
   }
   return warnings;
@@ -137,7 +146,8 @@ export function concat(chunks: Uint8Array[]): Uint8Array {
 export function renderHookWarnings(warnings: HookWarning[]): string[] {
   return warnings.map((warning) => {
     const reason = warning.code === -1 ? 'spawn failed' : warning.code === -2 ? 'timeout' : `exited ${warning.code}`;
+    const duration = warning.durationMs === undefined ? '' : ` after ${warning.durationMs}ms`;
     const detail = warning.stderr.length > 0 ? `\n       ${warning.stderr}` : '';
-    return `warn   hook ${warning.hook} ${reason}${detail}`;
+    return `warn   hook ${warning.hook} ${reason}${duration}${detail}`;
   });
 }

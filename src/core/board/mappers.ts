@@ -24,7 +24,13 @@ export function toNote(row: CardRow): Note {
 }
 
 export function toEpic(row: CardRow): Epic {
-  return { id: row.id, title: row.title, createdAt: row.createdAt, type: 'epic' };
+  return {
+    id: row.id,
+    title: row.title,
+    createdAt: row.createdAt,
+    type: 'epic',
+    ...(row.historyAt !== null ? { historyAt: row.historyAt } : {}),
+  };
 }
 
 export function toTweak(row: CardRow): Tweak {
@@ -35,6 +41,8 @@ export function toTweak(row: CardRow): Tweak {
     requirement: row.requirement ?? row.title,
     lane: row.lane,
     position: row.position,
+    ...(row.historyAt !== null ? { historyAt: row.historyAt } : {}),
+    ...(row.completedAt !== null ? { completedAt: row.completedAt } : {}),
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -54,6 +62,8 @@ export function toVerbItem(row: CardRow, taskRows: TaskRow[]): VerbItem {
     ...(row.blockedReason !== null && row.blockedAt !== null
       ? { blocked: { reason: row.blockedReason, at: row.blockedAt } }
       : {}),
+    ...(row.historyAt !== null ? { historyAt: row.historyAt } : {}),
+    ...(row.completedAt !== null ? { completedAt: row.completedAt } : {}),
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };

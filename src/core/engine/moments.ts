@@ -130,8 +130,9 @@ function tail(text: string): string {
   return text.trim().split('\n').slice(-3).join(' | ').slice(0, 200);
 }
 
-function execSyncHook(hook: MomentHook, payload: MomentPayload, projectPath: string): { code: number; stderr: string } {
+function execSyncHook(hook: MomentHook, payload: MomentPayload, projectPath: string): { code: number; stderr: string; durationMs: number; timedOut: boolean } {
   const cardJson = JSON.stringify(payload.card ?? null);
+  const started = performance.now();
   const proc = Bun.spawnSync(['sh', '-c', hook.cmd], {
     cwd: projectPath,
     env: hookEnv(hook, payload, projectPath),
@@ -140,7 +141,9 @@ function execSyncHook(hook: MomentHook, payload: MomentPayload, projectPath: str
     stdin: new Blob([hookInput(hook, payload, cardJson)]),
     timeout: hook.timeout,
   });
-  return { code: proc.exitCode ?? -1, stderr: proc.stderr.toString() };
+  const durationMs = Math.round(performance.now() - started);
+  const code = proc.exitCode ?? -1;
+  return { code, stderr: proc.stderr.toString(), durationMs, timedOut: code === -2 || durationMs >= hook.timeout };
 }
 
 export function runMomentPreSync(store: DocumentStore, moment: Moment, payload: MomentPayload): void {
@@ -213,9 +216,9 @@ export function runMomentPostSync(store: DocumentStore, moment: Moment, payload:
   const warnings: HookWarning[] = [];
   const checkout = executionPath(store, payload.cardId);
   for (const hook of planMomentHooks(checkout, moment, 'post')) {
-    const { code, stderr } = execSyncHook(hook, payload, checkout);
+    const { code, stderr, durationMs, timedOut } = execSyncHook(hook, payload, checkout);
     if (code !== 0) {
-      const warning: HookWarning = { hook: `${moment}.post ${hook.id}`, code, stderr: tail(stderr) };
+      const warning: HookWarning = { hook: `${moment}.post ${hook.id}`, code, stderr: tail(stderr), durationMs, timedOut };
       warnings.push(warning);
       if (hook.source === 'declared') {
         recordHookFailure(store, payload.cardId, `${moment}.post ${hook.id}`, code, stderr);
@@ -227,8 +230,9 @@ export function runMomentPostSync(store: DocumentStore, moment: Moment, payload:
   return warnings;
 }
 
-async function execAsyncHook(hook: MomentHook, payload: MomentPayload, projectPath: string): Promise<{ code: number; stderr: string }> {
+async function execAsyncHook(hook: MomentHook, payload: MomentPayload, projectPath: string): Promise<{ code: number; stderr: string; durationMs: number; timedOut: boolean }> {
   let proc: Bun.Subprocess<'pipe', 'ignore', 'pipe'>;
+  const started = performance.now();
   try {
     proc = Bun.spawn(['sh', '-c', hook.cmd], {
       cwd: projectPath,
@@ -238,7 +242,7 @@ async function execAsyncHook(hook: MomentHook, payload: MomentPayload, projectPa
       env: hookEnv(hook, payload, projectPath),
     });
   } catch {
-    return { code: -1, stderr: 'spawn failed' };
+    return { code: -1, stderr: 'spawn failed', durationMs: Math.round(performance.now() - started), timedOut: false };
   }
   proc.stdin.write(hookInput(hook, payload, JSON.stringify(payload.card ?? null)));
   proc.stdin.end();
@@ -263,8 +267,9 @@ async function execAsyncHook(hook: MomentHook, payload: MomentPayload, projectPa
     await reader.cancel();
   } catch {
   }
-  if (timedOut) return { code: -2, stderr: new TextDecoder().decode(concat(chunks)) };
-  return { code: code ?? -1, stderr: new TextDecoder().decode(concat(chunks)) };
+  const durationMs = Math.round(performance.now() - started);
+  if (timedOut) return { code: -2, stderr: new TextDecoder().decode(concat(chunks)), durationMs, timedOut };
+  return { code: code ?? -1, stderr: new TextDecoder().decode(concat(chunks)), durationMs, timedOut };
 }
 
 export async function runMomentPre(store: DocumentStore, moment: Moment, payload: MomentPayload): Promise<void> {
@@ -281,9 +286,9 @@ export async function runMomentPost(store: DocumentStore, moment: Moment, payloa
   const warnings: HookWarning[] = [];
   const checkout = executionPath(store, payload.cardId);
   for (const hook of planMomentHooks(checkout, moment, 'post')) {
-    const { code, stderr } = await execAsyncHook(hook, payload, checkout);
+    const { code, stderr, durationMs, timedOut } = await execAsyncHook(hook, payload, checkout);
     if (code !== 0) {
-      warnings.push({ hook: `${moment}.post ${hook.id}`, code, stderr: tail(stderr) });
+      warnings.push({ hook: `${moment}.post ${hook.id}`, code, stderr: tail(stderr), durationMs, timedOut });
       if (hook.source === 'declared') {
         recordHookFailure(store, payload.cardId, `${moment}.post ${hook.id}`, code, stderr);
         break;

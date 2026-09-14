@@ -21,6 +21,8 @@ export const cards = sqliteTable('cards', {
   blockedReason: text('blocked_reason'),
   blockedAt: text('blocked_at'),
   scopeRevision: integer('scope_revision'),
+  historyAt: text('history_at'),
+  completedAt: text('completed_at'),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
 });

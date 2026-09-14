@@ -7,6 +7,7 @@ import type { Lane } from '../../core/board/types.ts';
 import { runVerification } from '../../core/engine/verify.ts';
 import { applyTaskPatch, assignTask, getTaskAssignment } from '../../core/board/task-patches.ts';
 import type { ProjectRegistry } from '../../core/projects/registry.ts';
+import { cardView, planningStatus } from '../../core/board/views.ts';
 import { projectStore } from '../stores.ts';
 import { attempt, type RouteTable } from '../http.ts';
 
@@ -141,6 +142,15 @@ export function cardsRoutes(registry: ProjectRegistry): RouteTable {
           return Response.json(
             assignTask(store, { cardId: req.params.id!, taskId: req.params.taskId!, owner: body.owner, by: body.by }),
           );
+        }),
+    },
+    '/:project/cards/:id/detail': {
+      GET: (req) =>
+        attempt(async () => {
+          const store = await projectStore(registry, req.params.project!);
+          // Inclusive by id: retained history stays viewable without a lane change.
+          const card = store.getCard(req.params.id!);
+          return Response.json(cardView(card, planningStatus(store, card)));
         }),
     },
     '/:project/cards/:id/tasks/:taskId': {

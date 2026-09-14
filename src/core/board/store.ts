@@ -91,7 +91,12 @@ export class DocumentStore {
     }
     await ensureEngineState(sqlite, projectPath);
     const config = await readDeckConfig(projectPath);
-    return new DocumentStore(projectPath, dbPath, db, config.board?.wipLimit ?? 3, sqlite);
+    const store = new DocumentStore(projectPath, dbPath, db, config.board?.wipLimit ?? 3, sqlite);
+    // Startup reconciliation (not write-on-GET): bring migrated or older
+    // state under the live retention thresholds once per open.
+    const { runRetention } = await import('./history.ts');
+    runRetention(store);
+    return store;
   }
 
   listUserVerbs(): string[] {
