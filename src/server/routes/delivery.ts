@@ -1,8 +1,3 @@
-// Delivery routes (E05 DECK-ARCH-014, additive): policy enrollment,
-// finalization, delivery status and cleanup retries over HTTP — the same
-// cores the CLI doors call. Outcomes are explicit: preparation returns
-// delivery pending; `deliver` returns delivered | awaiting-merge | refused
-// with the unsatisfied condition.
 import { z } from 'zod';
 import { enrollPolicy } from '../../core/board/rules.ts';
 import { deliveryStatus, finalizeDelivery } from '../../core/engine/delivery.ts';

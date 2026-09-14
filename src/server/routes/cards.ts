@@ -24,8 +24,6 @@ export const parity = {
 };
 
 export const groomBody = z.object({
-  // Any well-formed verb name parses here; convertToVerbItem refuses names
-  // that are neither built-in nor registered through `deck workflow`.
   proposedVerb: z.string().regex(/^[a-z][a-z0-9-]*$/),
   refinedTitle: z.string().min(1),
   research: z.object({
@@ -50,10 +48,6 @@ export const moveBody = z.object({ to: z.enum(['todo', 'groomed', 'active', 'ver
 export const reorderBody = z.object({ afterId: z.string().optional() });
 export const blockBody = z.object({ reason: z.string().optional() });
 export const updateBody = z.object({ title: z.string().min(1) });
-// The explicit-result schema for the CLI's --result flag (and the shape the
-// MCP task_sync tool accepts). The HTTP route runs the COMPUTED converge
-// loop instead (like MCP `verify` and the CLI default) — a client-chosen
-// result would bypass computeGaps.
 export const verifyBody = z.object({
   result: z.enum(['clean', 'gaps']),
   newTasks: z.array(z.string()).optional(),
@@ -125,7 +119,6 @@ export function cardsRoutes(registry: ProjectRegistry): RouteTable {
     },
   };
 
-  // Fast lanes are feature-gated by bunfig defines (project-rules rule 4).
   if (DECK_FEATURE_GROOMING) {
     routes['/:project/cards/:id/groom'] = {
       POST: (req) =>
@@ -135,7 +128,6 @@ export function cardsRoutes(registry: ProjectRegistry): RouteTable {
           const item = convertToVerbItem(store, { ...body, noteId: req.params.id! });
           return Response.json(item);
         }),
-      // v0.2.0 re-edit of an already-groomed item (no openQuestions gate)
       PATCH: (req) =>
         attempt(async () => {
           const body = groomBody.parse(await req.json());

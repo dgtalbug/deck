@@ -13,23 +13,11 @@ import { epicPlanning } from './planning.ts';
 import { checkpointBasis, checkpointProvenance, readCheckpoint, type CheckpointEntry } from './checkpoint.ts';
 import { currentScopeRevision } from './scope.ts';
 
-// The digest packet (E02 DECK-ARCH-002): one bounded builder for queued,
-// active and tweak. Budget is 8,000 UTF-16 code units (the existing slice
-// contract); sections are tiered — mandatory identity/scope/laws first,
-// checkpoint and diagnostics next, optional excerpts last — and cut BEFORE
-// final assembly so no mandatory fact is ever silently truncated. When
-// mandatory content alone exceeds the budget the packet becomes an explicit
-// incomplete-context envelope naming every required direct read.
-// Overflow envelope + source-basis contract: design.md "Packet envelope
-// contract" (task 7.1).
 const MAX_CONTEXT_CHARS = 8000;
 const RULES_DIGEST_CHARS = 1500;
-// The recall (memory) digest sub-budget — pinned; the pack total stays 8000.
 const RECALL_DIGEST_CHARS = 1000;
 const SPEC_HEAD_CHARS = MAX_CONTEXT_CHARS / 2;
 const CHECKLIST_HEAD_CHARS = MAX_CONTEXT_CHARS / 2;
-// Reserved up front for omission/read directives, so optional excerpts can
-// never crowd out the footer that names what the agent must read directly.
 const FOOTER_RESERVE = 400;
 const ENVELOPE_RESERVE = 300;
 
@@ -46,14 +34,11 @@ function tasksOf(card: VerbItem | Tweak): TaskState[] {
 }
 
 interface Source {
-  path: string; // repo-relative display path
-  bytes: string | undefined; // undefined → missing
-  rev: string; // sha16 of the bytes actually read, or 'unknown'
+  path: string; 
+  bytes: string | undefined; 
+  rev: string; 
 }
 
-// Source basis (pre-E03): the revision is the digest of the exact bytes this
-// packet read — never a published checksum. Missing sources are named, and
-// scope/parent revisions without bytes are explicitly unknown.
 function readSource(store: DocumentStore, displayPath: string, ...segments: string[]): Source {
   const absolute = join(store.projectPath, ...segments);
   if (!existsSync(absolute)) return { path: displayPath, bytes: undefined, rev: 'unknown' };
@@ -84,8 +69,6 @@ function sourceLine(source: Source, role: string): string {
   }
 }
 
-// Checkpoints bind both accepted E03 scope and the spec bytes actually read.
-// Legacy byte-only entries cannot prove which task revision they describe.
 function checkpointSection(store: DocumentStore, card: VerbItem | Tweak, specRev: string | undefined): { body: string; readPath: string } | undefined {
   const state = readCheckpoint(store.projectPath, card.id);
   if (state.entries.length === 0) return undefined;
@@ -103,7 +86,7 @@ function checkpointSection(store: DocumentStore, card: VerbItem | Tweak, specRev
 interface Section {
   title: string;
   body: string;
-  readPath?: string | undefined; // named in the footer when the section is cut
+  readPath?: string | undefined; 
 }
 
 function joinSections(sections: Section[]): string {
@@ -115,8 +98,6 @@ interface PacketIdentity {
   laws: Section[];
 }
 
-// Mandatory per-mode identity + laws. Mode covers queued, active (resume or
-// wip-blocked) and tweak — the same packet shape with a different identity.
 function mandatorySections(store: DocumentStore, card: VerbItem | Tweak, mode: 'queued' | 'active' | 'tweak'): PacketIdentity {
   const header: string[] = [];
   if (isVerbItem(card)) {
@@ -131,8 +112,6 @@ function mandatorySections(store: DocumentStore, card: VerbItem | Tweak, mode: '
   }
   const parent = parentLine(store, card);
   if (parent !== undefined) header.push(parent);
-  // E03 DECK-ARCH-015: bounded parent intent reference — revision, criterion
-  // count and uncovered titles only; the full epic document is a direct read.
   if (card.epicId !== undefined) {
     try {
       const planning = epicPlanning(store, card.epicId);
@@ -147,7 +126,6 @@ function mandatorySections(store: DocumentStore, card: VerbItem | Tweak, mode: '
         );
       }
     } catch {
-      // parent planning is optional context — never a digest failure
     }
   }
 
@@ -178,8 +156,6 @@ function mandatorySections(store: DocumentStore, card: VerbItem | Tweak, mode: '
   return { header, laws: sections };
 }
 
-// Memory diagnostics never disappear into the string wrapper (task 7.4): a
-// stale or failed index is a visible status line, never a silent empty recall.
 function memoryDiagnostics(store: DocumentStore): Section | undefined {
   const status = memoryStatus(store);
   if (status.status === 'fresh') return undefined;
@@ -210,12 +186,9 @@ function envelope(store: DocumentStore, card: VerbItem | Tweak, mode: 'queued' |
     ...requiredReads.map((line) => `read: ${line}`),
   ].join('\n');
   if (text.length <= MAX_CONTEXT_CHARS) return text;
-  // Absurdly long identity content: keep the honest cut visible.
   return `${text.slice(0, MAX_CONTEXT_CHARS - 20)}…[envelope truncated]`;
 }
 
-// One prioritized assembler for all modes. Returns ≤8000 units with the
-// footer reserved before optional text is considered.
 function assemble(store: DocumentStore, card: VerbItem | Tweak, mode: 'queued' | 'active' | 'tweak'): string {
   const identity = mandatorySections(store, card, mode);
   const head = identity.header.join('\n');
@@ -239,7 +212,6 @@ function assemble(store: DocumentStore, card: VerbItem | Tweak, mode: 'queued' |
       optional.push({ title: 'Checklist', body: checklist.bytes.slice(0, CHECKLIST_HEAD_CHARS), readPath: checklist.path });
     }
   } else {
-    // tweaks have no spec to bind a basis to — explicitly unknown (pre-E03)
     const checkpoint = checkpointSection(store, card, undefined);
     if (checkpoint !== undefined) optional.push({ title: 'Checkpoint', body: checkpoint.body, readPath: checkpoint.readPath });
   }
@@ -258,7 +230,7 @@ function assemble(store: DocumentStore, card: VerbItem | Tweak, mode: 'queued' |
       remaining -= block.length;
       continue;
     }
-    const room = remaining - 120; // keep the truncation marker itself
+    const room = remaining - 120; 
     if (room > 200) {
       text += `\n\n## ${section.title}\n${section.body.slice(0, room)}\n[truncated]`;
       remaining = 0;
@@ -268,7 +240,6 @@ function assemble(store: DocumentStore, card: VerbItem | Tweak, mode: 'queued' |
   return `${text.slice(0, MAX_CONTEXT_CHARS - footer(directives).length)}${footer(directives)}`;
 }
 
-// Queued packet — the groomed card's build pack.
 export function buildContext(store: DocumentStore, card: VerbItem | Tweak): string {
   return assemble(store, card, isVerbItem(card) ? 'queued' : 'tweak');
 }
@@ -276,8 +247,6 @@ function queuedDigest(store: DocumentStore, top: VerbItem): NextDigest {
   return { cardId: top.id, title: top.title, verb: top.verb, context: buildContext(store, top) };
 }
 
-// No-work result: friendly, explicit, and non-mutating (board/cli "Empty
-// board") — never an unknown-card failure.
 function noWorkDigest(store: DocumentStore): NextDigest {
   return {
     cardId: '',
@@ -292,10 +261,6 @@ function noWorkDigest(store: DocumentStore): NextDigest {
   };
 }
 
-// Resume-first selection (board/cli "Next selects resumable work before
-// queued work"): the most-advanced active card leads, including when WIP has
-// spare capacity. Selection is read-only — the start path (and its E01
-// reservation) is never touched from here.
 export function nextDigest(store: DocumentStore): NextDigest {
   const blockedOn = mostAdvancedActive(store);
   if (blockedOn !== undefined) {
@@ -310,8 +275,6 @@ export function nextDigest(store: DocumentStore): NextDigest {
     };
     return wipBlocked ? { ...digest, wipBlockedBy: digest.cardId } : digest;
   }
-  // Dependency-aware selection: skip stories with unmet prerequisites, keep
-  // queue order among eligible ones, and explain the skipped work.
   const ready = firstReady(store);
   if (ready.card !== undefined) return queuedDigest(store, ready.card);
   const firstSkipped = ready.skipped[0];
@@ -331,9 +294,6 @@ export function nextDigest(store: DocumentStore): NextDigest {
   return noWorkDigest(store);
 }
 
-// Explicit ready-work discovery: the ready queue, read-only — no start, no
-// reservation, no lane change (board/cli "Explicit ready-work discovery").
-// Unmet prerequisites are named, never silently skipped.
 export function readyWork(store: DocumentStore): NextDigest {
   const ready = firstReady(store);
   if (ready.card !== undefined) return queuedDigest(store, ready.card);

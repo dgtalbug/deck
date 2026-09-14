@@ -2,12 +2,8 @@ import type { VNode } from 'preact';
 import { ShieldAlert } from 'lucide-preact';
 import { exposedHost } from './mode.ts';
 
-// Persistent banners: server-unreachable is rendered by Board (it owns the
-// online signal); this component carries the non-loopback exposure warning
-// (D-UI-009 — unauthenticated LAN access when the server runs --host).
-
 export function Banners(props: { online: boolean }): VNode {
-  void props; // online banner lives in Board next to the stale-view notice
+  void props; 
   if (!exposedHost()) return <></>;
   return (
     <div class="callout c-danger banner" role="alert">

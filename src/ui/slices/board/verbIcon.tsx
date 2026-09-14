@@ -16,10 +16,6 @@ import {
 } from 'lucide-preact';
 import { VERBS, type Verb } from './api.ts';
 
-// One Verb → icon mapping, consumed everywhere a verb appears (Card, TodoView
-// rows, CardDetail, GroomForm). Per-icon lucide-preact imports keep
-// tree-shaking honest — the barrel import would pull the whole icon set.
-
 type IconComponent = LucideIcon;
 
 export const VERB_ICONS: Record<Verb, IconComponent> = {
@@ -37,8 +33,7 @@ export const VERB_ICONS: Record<Verb, IconComponent> = {
 };
 
 export function VerbIcon(props: { verb: Verb | undefined; size?: number }): VNode | null {
-  if (props.verb === undefined) return null; // callers gate on card kind; keep the guard local
-  // User-registered verbs have no mapping — a dot beats a crash or a blank.
+  if (props.verb === undefined) return null; 
   const Icon = VERB_ICONS[props.verb as (typeof VERBS)[number]] ?? CircleDot;
   return <Icon size={props.size ?? 12} />;
 }

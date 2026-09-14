@@ -1,4 +1,3 @@
-// Core domain types — names and shapes per .meta/board-epic.md "Type list".
 
 export const Lane = {
   Todo: 'todo',
@@ -27,14 +26,11 @@ export const Verb = {
 } as const;
 export type Verb = (typeof Verb)[keyof typeof Verb];
 
-// A verb name at rest: a built-in from the Verb const, or a user verb
-// registered through `deck workflow` (same engine, same lanes).
 export type VerbName = Verb | (string & {});
 
 export const VerifyResult = { Clean: 'clean', Gaps: 'gaps' } as const;
 export type VerifyResult = (typeof VerifyResult)[keyof typeof VerifyResult];
 
-// Allowed manual lane transitions (everything else: engine-only)
 export const MANUAL_TRANSITIONS = [
   'todo->groomed',
   'groomed->todo',
@@ -48,13 +44,10 @@ export interface Note {
   createdAt: string;
 }
 
-// An epic is a planning container: title + rollup computed from the cards
-// attached to it. It never enters engine lanes (todo/groomed only).
 export interface Epic {
   id: string;
   title: string;
   createdAt: string;
-  // discriminant: epics share Note's shape otherwise
   type: 'epic';
 }
 
@@ -69,14 +62,7 @@ export interface Research {
   codebaseFindings: string[];
   rca?: string | undefined;
   blastRadius?: string[] | undefined;
-  // Story-first spec law: what this is and why — the narrative section of
-  // spec.md. Optional (minimal groom = title + tasks), but it is the only
-  // home for the feature explanation; tasks stay technical. Lives on
-  // Research so the groomed row persists it and re-edits recover it.
   story?: string | undefined;
-  // Spec-type registry sections (spec-type-registry): id → content. The
-  // registry defines which ids exist and when they are required; this map
-  // is the groomed content the spec renders and the gate checks.
   sections?: Record<string, string> | undefined;
 }
 
@@ -108,7 +94,6 @@ export interface Tweak {
 
 export type Card = Note | VerbItem | Tweak | Epic;
 
-// The epic's Card union carries no discriminant field; narrow structurally.
 export function isVerbItem(card: Card): card is VerbItem {
   return 'tasks' in card;
 }
@@ -123,8 +108,6 @@ export function isEpic(card: Card): card is Epic {
 }
 
 export function isNote(card: Card): card is Note {
-  // VerbItem/Tweak are structurally assignable to Note, so the discriminant
-  // is the one field only lane-dwelling cards have; epics carry their own.
   return !('lane' in card) && !isEpic(card);
 }
 
@@ -142,52 +125,31 @@ export interface GroomProposal {
   specDeltas: Delta[];
   tasks: string[];
   openQuestions: string[];
-  // E03 DECK-ARCH-011 identity-bearing edit operations (re-groom only).
-  // Absent = legacy title-only payload: no-op/reorder still preserves
-  // identity, but any title change refuses as ambiguous instead of guessing.
   taskOps?: TaskOp[] | undefined;
   criterionOps?: CriterionOp[] | undefined;
-  // Expected current scope revision for re-groom (stale-writer refusal).
   expectedRevision?: number | undefined;
 }
 
-// Explicit task edit operations. `keep`/`rename` reference an existing task
-// id; `add` mints one; `remove` retires it. Array order after applying ops
-// is the checklist order.
 export type TaskOp =
   | { op: 'keep'; id: string }
   | { op: 'rename'; id: string; title: string }
   | { op: 'add'; title: string }
   | { op: 'remove'; id: string };
 
-// Explicit criterion edit operations over the accepted spec deltas.
-// `classify` attaches a stable id to a legacy (unclassified) criterion.
 export type CriterionOp =
   | { op: 'keep'; title: string }
   | { op: 'classify'; title: string }
   | { op: 'remove'; title: string }
   | { op: 'supersede'; title: string; replacement: string };
 
-// --- E05 delivery/evidence policy (DECK-ARCH-012/014) ------------------------
-
-// Team delivery is the default for new scope; solo/local is an explicit
-// persisted choice. Automated evidence is required wherever configured;
-// attributed manual evidence satisfies only explicitly designated criteria.
 export type DeliveryMode = 'team' | 'solo';
 
 export interface DeliveryPolicy {
   cardId: string;
-  // Policy revision — bumped on every accepted change; stored with scope,
-  // evidence and delivery so stale-policy records cannot satisfy gates.
   version: number;
   mode: DeliveryMode;
-  // Named checks (deck.rules.yaml principle ids carrying a `check` cmd) whose
-  // machine evidence is required. Rule overrides cannot bypass these.
   requiredChecks: string[];
-  // Team mode: minimum provider-observed approvals bound to the PR head.
   requiredApprovals: number;
-  // Criterion ids explicitly designated manual — the only criteria manual
-  // records can satisfy. Unassigned accepted criteria need machine evidence.
   manualCriteria: string[];
   enrolledAt: string;
   updatedAt: string;
@@ -199,7 +161,5 @@ export interface NextDigest {
   verb?: VerbName | undefined;
   context: string;
   wipBlockedBy?: string | undefined;
-  // Empty-board result (E02 board/cli): friendly no-work digest; the board
-  // was not mutated. cardId/title are '' when set.
   empty?: boolean | undefined;
 }

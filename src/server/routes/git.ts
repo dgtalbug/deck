@@ -53,9 +53,6 @@ export const pullsBody = z.object({
   body: z.string().optional(),
 });
 
-// Local git facts for the sidebar (v0.2.0) + guarded git writes (v0.3.0):
-// per-request, no caching, no events. Non-repo projects collapse the digest
-// to { repo: false } at 200; write ops fail with git's own refusal.
 export function gitRoutes(registry: ProjectRegistry): RouteTable {
   const resolve = (name: string): string => {
     const project = registry.find(name);

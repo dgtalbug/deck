@@ -1,5 +1,3 @@
-// Spec-type registry routes (spec-type-registry): the registry is board
-// state — the UI type editor and the groom form read it live over HTTP.
 import { z } from 'zod';
 import { listSpecTypes, upsertSpecType, removeSpecType } from '../../core/board/types-registry.ts';
 import type { ProjectRegistry } from '../../core/projects/registry.ts';

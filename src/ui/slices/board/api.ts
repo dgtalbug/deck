@@ -1,5 +1,3 @@
-// Typed fetch wrappers over the frozen board/api REST contract. The UI never
-// imports core types — these mirror the JSON the server actually returns.
 
 export const LANES = ['todo', 'groomed', 'active', 'verify', 'done'] as const;
 export type Lane = (typeof LANES)[number];
@@ -7,8 +5,6 @@ export type Lane = (typeof LANES)[number];
 export const VERBS = [
   'feat', 'fix', 'docs', 'style', 'refactor', 'perf', 'test', 'build', 'ci', 'chore', 'revert',
 ] as const;
-// Built-ins autocomplete; user-registered verbs (deck workflow) are plain
-// strings — the server serves both, so the type must admit both.
 export type Verb = (typeof VERBS)[number] | (string & {});
 
 export interface TaskView {
@@ -23,7 +19,6 @@ export interface BlockedView {
   at: string;
 }
 
-// GET /board card rows: Note | VerbItem | Tweak (+ progress for verb items).
 export interface UiCard {
   id: string;
   title: string;
@@ -37,7 +32,6 @@ export interface UiCard {
   blocked?: BlockedView;
   requirement?: string;
   epicId?: string;
-  // E03 planning status (board/store): unmet prerequisites + review-needed.
   unmetDeps?: Array<{ id: string; lane: string; title: string }>;
   reviewNeeded?: boolean;
   createdAt?: string;
@@ -71,11 +65,9 @@ export interface NextDigest {
   verb?: Verb;
   context: string;
   wipBlockedBy?: string;
-  // Empty-board digest (E02 board/cli): friendly no-work result, board untouched.
   empty?: boolean;
 }
 
-// GET /<project>/git — mirrors src/core/git/digest.ts (local facts only).
 export interface GitDigest {
   repo: boolean;
   branch?: string;
@@ -104,11 +96,6 @@ export interface GitOpResult {
   output: string;
 }
 
-// Spec-type registry row (GET /:project/types) — drives the groom form's
-// per-type section fields and their required hints.
-// Epic tree (GET /:project/epics/:id): the epic plus navigable story rows.
-// Project timeline (GET /:project/timeline): one delivery narrative — board
-// cards interleaved with merged PR titles and commit subjects, newest first.
 export interface TimelineEntry {
   at: string;
   kind: 'epic' | 'card' | 'pr' | 'commit';
@@ -126,7 +113,6 @@ export interface TimelineView {
   view: 'timeline';
   entries: TimelineEntry[];
   sources: { pulls: 'ok' | 'unavailable'; commits: 'ok' | 'unavailable' };
-  /** deprecated v1 alias of sources.pulls */
   pulls: 'ok' | 'unavailable';
 }
 export interface EpicTreeStory {
@@ -167,7 +153,6 @@ export interface GroomInput {
   openQuestions: string[];
 }
 
-// SSE envelope — the server frames `data: {"rowid":n,"type":t,"payload":p}`.
 export interface BoardEvent {
   rowid: number;
   type:
@@ -195,8 +180,6 @@ export class ApiError extends Error {
   }
 }
 
-// `base` stays '' in the browser (same-origin); tests inject a server URL
-// because Bun's fetch has no document base URI for relative paths.
 export function createBoardApi(base = ''): BoardApi {
   return buildApi(base);
 }
@@ -221,7 +204,6 @@ function patch<T>(base: string, path: string, body?: unknown): Promise<T> {
   return request<T>(base, path, { method: 'PATCH', body: JSON.stringify(body ?? {}) });
 }
 
-// DELETE returns 204 with no body — its own path, not request<T>.
 async function del(base: string, path: string): Promise<void> {
   const response = await fetch(`${base}${path}`, { method: 'DELETE' });
   if (!response.ok) {

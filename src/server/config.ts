@@ -9,9 +9,6 @@ export class ConfigError extends DeckError {
   }
 }
 
-// Override order locked by the epic: --port flag > server.port config >
-// DECK_PORT env > 3325. The config file is the deck project's own
-// deck.config.yaml in the server's working directory.
 export async function resolvePort(flag?: number): Promise<number> {
   if (flag !== undefined) return flag;
   const config = await readDeckConfig(process.cwd());

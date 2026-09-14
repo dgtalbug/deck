@@ -6,9 +6,6 @@ import { noteBody } from './routes/notes.ts';
 import { branchBody, commitBody, mergeBody, pullsBody, stashBody, switchBody } from './routes/git.ts';
 import { startBody } from './routes/engine.ts';
 
-// OpenAPI 3.1 document generated from the same zod schemas that validate
-// request bodies — one source of truth, no doc drift, no extra dependency.
-// Served at /openapi.json with a Scalar UI at /docs (CDN asset).
 function schema(body: z.ZodType): Record<string, unknown> {
   return z.toJSONSchema(body, { target: 'openApi31' }) as Record<string, unknown>;
 }
@@ -246,8 +243,6 @@ function docsPage(): Response {
   return new Response(html, { headers: { 'content-type': 'text/html' } });
 }
 
-// Swagger UI assets come from the swagger-ui-dist devDependency (installed in
-// node_modules) so the docs page works offline — no CDN.
 function swaggerAsset(name: string): Response {
   return new Response(
     Bun.file(join(import.meta.dir, '../../node_modules/swagger-ui-dist', name)),

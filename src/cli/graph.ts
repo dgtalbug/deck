@@ -1,6 +1,3 @@
-// `deck graph` (build-graph-code-intel): code intelligence at the terminal —
-// index, status, impact, why, lens, search. Read-only verbs degrade loudly
-// when the graph is absent or stale and never block the engine.
 import { UsageError } from './args.ts';
 import { resolveProject } from './context.ts';
 import { openGraph, GRAPH_SCHEMA_VERSION, readMeta } from '../core/graph/schema.ts';
@@ -101,8 +98,6 @@ function num(value: string | true | string[] | undefined): number | undefined {
   return typeof value === 'string' && /^\d+$/.test(value) ? Number(value) : undefined;
 }
 
-// Seed resolution: name → symbol ids (possibly several); impact/why run per
-// seed and merge into one rendering.
 async function seedQuery(
   args: ParsedArgs,
   projectPath: string,

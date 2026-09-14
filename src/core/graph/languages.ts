@@ -1,10 +1,3 @@
-// languages.ts: the LanguageProvider table — "languages are data; the engine
-// never branches on a language name" (dextree's extractor law). Each provider
-// is a tree-sitter tags query (compact deck subset) plus the capture→edge-kind
-// map. Grammars load lazily from the prebuilt tree-sitter-wasms package and
-// are cached as promises so concurrent files share one load.
-// Grammar wasms are Bun file-imports: embedded in compiled binaries,
-// resolved on disk in dev — the same mechanism as the runtime wasm.
 import typescriptWasm from '../../../node_modules/tree-sitter-wasms/out/tree-sitter-typescript.wasm' with { type: 'file' };
 import tsxWasm from '../../../node_modules/tree-sitter-wasms/out/tree-sitter-tsx.wasm' with { type: 'file' };
 import javascriptWasm from '../../../node_modules/tree-sitter-wasms/out/tree-sitter-javascript.wasm' with { type: 'file' };
@@ -12,7 +5,7 @@ import javascriptWasm from '../../../node_modules/tree-sitter-wasms/out/tree-sit
 export interface LanguageProvider {
   language: string;
   extensions: string[];
-  wasm: string; // resolved path of the grammar .wasm
+  wasm: string; 
   tagsQuery: string;
   relationCaptures: Record<string, EdgeKind>;
 }
@@ -25,11 +18,6 @@ export type EdgeKind =
   | 'REFERENCES'
   | 'RE_EXPORTS';
 
-// The deck subset of the upstream tags.scm: definitions mint symbols, the
-// reference captures become the relation edges. Query-first extraction keeps
-// the extractor one engine for every language.
-// The JavaScript subset: same engine, but without TS-only node types
-// (type_identifier, interfaces, type annotations) that would not parse.
 const JS_QUERY = `
 (function_declaration name: (identifier) @name) @definition.function
 (generator_function_declaration name: (identifier) @name) @definition.function

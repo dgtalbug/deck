@@ -1,11 +1,6 @@
-// Terminal color law (Deck CLI Identity §1): color is information, never
-// decoration; foreground SGR only; muted scale rides dim/bold, not greys.
-// Codes transcribed from the locked artifact set — do not retune here.
 
 export type Level = 'off' | '16' | '256' | '24bit';
 
-// Detection order is the contract (spec: cli/identity). FORCE_COLOR=1
-// overrides the isatty check only.
 export function detectLevel(
   env: Record<string, string | undefined>,
   isatty: boolean,
@@ -22,7 +17,6 @@ export function detectLevel(
 
 type Codes = { tc: string; c256: string; c16: string };
 
-// vivid collapses to bold lime below truecolor; the rest keep their hue.
 const TOKENS = {
   primary: { tc: '38;2;159;225;24', c256: '38;5;154', c16: '92' },
   vivid: { tc: '38;2;174;242;39', c256: '38;5;154;1', c16: '92;1' },
@@ -45,7 +39,6 @@ export interface Palette {
   bold(text: string): string;
 }
 
-// off = identity functions: output stays byte-identical with color stripped.
 export function palette(level: Level): Palette {
   if (level === 'off') {
     return {

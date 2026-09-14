@@ -5,11 +5,6 @@ import type { PullRequest } from './api.ts';
 import { pushToast } from '../../components/Toast.tsx';
 import { ActionBtn, CLEAN_HINT, type GitActionCtx } from './gitShared.tsx';
 
-// Remote card (fetch / pull --ff-only / push behind a confirm naming branch +
-// remote) and the pull-requests card (gh badge, open PR list, create form →
-// URL + toast). The page only mounts this card when gh is available — the
-// gh-unavailable state renders GitLocalCard instead.
-
 export function GitRemote({ ctx }: { ctx: GitActionCtx }): VNode {
   const { api, digest, busy, run, askConfirm, project } = ctx;
   const dirty = (digest?.dirtyCount ?? 0) > 0;

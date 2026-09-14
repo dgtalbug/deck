@@ -11,10 +11,6 @@ import { AGENTS_END, AGENTS_START, agentsBlock, boardUrlFor } from './init.ts';
 import { HOST_SEED, skillPackStatus } from './harness.ts';
 import type { ProjectRegistry } from './registry.ts';
 
-// Read-only drift reporter (design D6): reuses the existing resolvers
-// (registry, config port, git/gh runners, the init template constant).
-// Never repairs — `deck init` does that.
-
 export interface DoctorCheck {
   name: string;
   pass: boolean;
@@ -111,9 +107,6 @@ export async function runDoctor(
   return checks;
 }
 
-// Skill-pack drift (E02 DECK-ARCH-020): missing/stale managed files are
-// repairable drift (deck setup is the safe repair command); a customized
-// file is user content — reported, never counted as drift to fix.
 function skillPackCheck(projectPath: string): DoctorCheck {
   const status = skillPackStatus(projectPath, HOST_SEED);
   if (status.files.length === 0) {
@@ -136,10 +129,6 @@ function skillPackCheck(projectPath: string): DoctorCheck {
   };
 }
 
-// Spec-store map drift (v0.4.0): every mapped issue must exist on GitHub,
-// carry the state and checksum the map recorded. gh-down is a skip with a
-// warning, not a failure — absent tooling is not drift. Requires a board db;
-// doctor never creates one, so a missing db also skips.
 async function mapDriftCheck(projectPath: string): Promise<DoctorCheck> {
   const dbPath = join(projectPath, '.deck', BOARD_DB_NAME);
   if (!existsSync(dbPath)) {

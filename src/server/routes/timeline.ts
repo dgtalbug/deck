@@ -1,5 +1,3 @@
-// Project timeline routes: one chronological read blending board cards with
-// merged PR titles. `?limit=` caps the feed (default 50).
 import { timelineView } from '../../core/board/timeline.ts';
 import type { ProjectRegistry } from '../../core/projects/registry.ts';
 import { projectStore } from '../stores.ts';

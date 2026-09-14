@@ -1,7 +1,3 @@
-// `deck rules` and `deck override` (wire-rules-yaml-gates): the project-law
-// surface — list what gates, run the machine checks, validate the file, and
-// record explicit user overrides on the active build card. One core module
-// (src/core/board/rules.ts) plus rendering, like every extension command.
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { UsageError } from './args.ts';
@@ -24,8 +20,6 @@ function severityLabel(severity: 'error' | 'warn'): string {
   return severity === 'error' ? 'error' : 'warn ';
 }
 
-// `deck rules [list]` — ids, enforcement mode, severity; hooks shown as
-// reserved (slice 2 activates them); references as digest context.
 export async function rulesCommand(args: ParsedArgs, ctx: RunContext): Promise<string | number> {
   const [sub] = args.positionals;
   if (sub === 'check') return rulesCheck(args, ctx);
@@ -65,8 +59,6 @@ export async function rulesCommand(args: ParsedArgs, ctx: RunContext): Promise<s
   return lines.join('\n');
 }
 
-// `deck rules check` — run every machine check, one line per rule id; any
-// FAIL(error) exits non-zero (review consumes the same result).
 async function rulesCheck(args: ParsedArgs, ctx: RunContext): Promise<string | number> {
   const project = resolveProject(ctx.registry, args, ctx.cwd);
   const load = loadRules(project.path);
@@ -88,8 +80,6 @@ function renderCheck(result: CheckResult): string {
   return `FAIL  ${result.id} (${result.severity})${detail}`;
 }
 
-// `deck rules validate` — the file parses and every check's first token
-// resolves on PATH (dry-run: nothing executes).
 async function rulesValidate(args: ParsedArgs, ctx: RunContext): Promise<string> {
   const project = resolveProject(ctx.registry, args, ctx.cwd);
   const load = loadRules(project.path);
@@ -111,9 +101,6 @@ function binOnPath(bin: string): boolean {
     .some((dir) => dir !== '' && existsSync(join(dir, bin)));
 }
 
-// `deck override <rule-id> --reason "<text>"` — the only sanctioned per-task
-// override: an explicit user decision recorded on the active build card.
-// `override: never` refuses; unknown ids refuse typed.
 export async function overrideCommand(args: ParsedArgs, ctx: RunContext): Promise<string> {
   const ruleId = args.positionals[0];
   if (ruleId === undefined || ruleId.length === 0) {

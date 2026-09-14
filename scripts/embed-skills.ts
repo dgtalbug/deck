@@ -1,15 +1,6 @@
 import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-// Generates src/core/projects/skill-assets.ts: relative skill path →
-// SKILL.md content, so the compiled binary carries the agent skill pack
-// (deck setup installs it into detected hosts). Unlike ui-assets (a build
-// artifact, gitignored), this file is COMMITTED: it is authored content
-// that ships, and committing it keeps tests + runtime working on fresh
-// clones before any build. The authored source of truth is the TRACKED
-// src/skills/deck-*/SKILL.md (E02 DECK-ARCH-020 — fresh-clone
-// reproducibility); re-run after editing those.
-
 const root = process.cwd();
 const skillsDir = join(root, 'src', 'skills');
 

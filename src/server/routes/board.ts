@@ -26,8 +26,6 @@ export function boardRoutes(registry: ProjectRegistry): RouteTable {
       GET: (req) =>
         attempt(async () => {
           const store = await projectStore(registry, req.params.project!);
-          // ?ready=1 is the explicit discovery door: read-only queue peek,
-          // never a start or reservation (board/cli).
           const ready = new URL(req.url).searchParams.get('ready');
           return Response.json(ready !== null && ready !== '0' ? readyWork(store) : nextDigest(store));
         }),

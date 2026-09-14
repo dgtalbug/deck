@@ -1,11 +1,6 @@
 import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-// Generates src/core/board/migrations.ts — the drizzle migration journal
-// embedded as data, so a compiled `deck` binary can migrate a fresh board
-// without the drizzle/ folder on disk (store.ts prefers the folder in dev,
-// same disk-first rule as the embedded UI assets).
-
 function millisFrom(name: string): number {
   return Date.UTC(
     Number(name.slice(0, 4)),

@@ -1,6 +1,3 @@
-// The recovery ledger door (make-build-execution-trustworthy): list the
-// unsettled operations fencing a checkout, and reconcile crashed/legacy work
-// explicitly — confirm or clean, never a guessed takeover.
 import type { ParsedArgs } from './args.ts';
 import { UsageError, flagString } from './args.ts';
 import { resolveProject } from './context.ts';

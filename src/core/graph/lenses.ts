@@ -1,6 +1,3 @@
-// lenses.ts: the seven selectors with dextree's pinned semantics — pure
-// functions over the indexed graph, deterministic order (metric desc, id asc
-// tiebreak) so reindexes never reshuffle results.
 import type { Database } from 'bun:sqlite';
 
 export const LENS_IDS = [
@@ -66,8 +63,6 @@ export function runLens(db: Database, lens: LensId): LensNode[] {
   const all = db.query(`${SELECT_ALL}`).all() as SymbolRow[];
   switch (lens) {
     case 'dead-code': {
-      // fanIn 0 AND not an entry point — "absence of the signal is unknown,
-      // not provably dead", but pass-1 always writes fan_in, so 0 is a signal.
       return deterministic(
         all.filter((row) => row.fan_in === 0 && row.entry_kind === 'unclassified'),
         () => 0,
@@ -77,8 +72,6 @@ export function runLens(db: Database, lens: LensId): LensNode[] {
       return deterministic(all.filter((row) => row.entry_kind !== 'unclassified'), () => 0).map((row) => toNode(row));
     }
     case 'god-function': {
-      // Live outbound CALLS fan-out (not persisted) top 10; a leaf is the
-      // opposite of a god-function — zero fan-out excluded.
       const rows = deterministic(all.filter((row) => row.kind === 'function' || row.kind === 'method'), (row) => liveFanOut(db, row.id)).filter(
         (row) => liveFanOut(db, row.id) > 0,
       ).slice(0, 10);
@@ -94,8 +87,6 @@ export function runLens(db: Database, lens: LensId): LensNode[] {
       return deterministic(all, (row) => row.fan_in).filter((row) => row.fan_in > 0).slice(0, 25).map((row) => toNode(row));
     }
     case 'least-used': {
-      // fanIn ≤ 1 within the largest connected component — orphans excluded
-      // (an unused util nobody reaches is still a choice; an orphan is noise).
       const component = largestComponent(db);
       return deterministic(all.filter((row) => row.fan_in <= 1 && component.has(row.id)), () => 0).slice(0, 50).map((row) => toNode(row));
     }
@@ -109,7 +100,6 @@ function liveFanOut(db: Database, symbolId: string): number {
   return (db.query("SELECT COUNT(*) AS n FROM g_edge WHERE source_id = ? AND kind = 'CALLS' AND target_id IS NOT NULL").get(symbolId) as { n: number }).n;
 }
 
-// Largest connected component over the undirected resolved edge set (union-find).
 function largestComponent(db: Database): Set<string> {
   const edges = db.query('SELECT source_id, target_id FROM g_edge WHERE target_id IS NOT NULL').all() as Array<{ source_id: string; target_id: string }>;
   const parent = new Map<string, string>();

@@ -1,8 +1,3 @@
-// gh issue operations (spec-store v0.4.0): one integration for all issue
-// surface, riding the existing runGh resolver chain (DECK_GH_BIN → PATH →
-// well-known). Lane labels mirror board lanes deck→GitHub only. Body content
-// passes through temp files (--body-file) so long markdown never touches an
-// argv slot.
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -59,8 +54,6 @@ export async function createIssue(
         'create', '--title', input.title, '--body-file', file, ...labelArgs,
       ]);
     } catch (error) {
-      // A missing label must not block publication (the label set is a
-      // convenience, not the contract) — retry bare and let sync heal labels.
       if (error instanceof GitOpError && input.label !== undefined && /label/i.test(error.details['output'] as string ?? '')) {
         result = await issueOp(projectPath, 'create', [
           'create', '--title', input.title, '--body-file', file,
@@ -99,7 +92,6 @@ export async function viewIssue(projectPath: string, number: number): Promise<Is
   ]);
   try {
     const parsed = JSON.parse(result.stdout) as { number: number; state: string; labels: { name: string }[]; url: string };
-    // gh reports OPEN/CLOSED in caps; deck's map is lowercase.
     const state = parsed.state.toLowerCase();
     if (state !== 'open' && state !== 'closed') {
       throw new GitOpError('issue view', `unexpected state '${parsed.state}'`, result.stdout.trim());
@@ -116,8 +108,6 @@ export async function viewIssue(projectPath: string, number: number): Promise<Is
   }
 }
 
-// Lane-label refresh: replace the issue's lane labels with the card's lane.
-// Non-lane labels the issue carries are preserved.
 export async function setLaneLabel(projectPath: string, number: number, lane: Lane): Promise<void> {
   const view = await viewIssue(projectPath, number);
   const currentLanes = view.labels.filter((label): label is Lane =>
@@ -129,9 +119,6 @@ export async function setLaneLabel(projectPath: string, number: number, lane: La
   if (stale.length === 0 && !needsAdd) return;
   const args = ['edit', String(number), ...removeArgs];
   if (needsAdd) {
-    // Tolerate a repo without the label defined: create it, then add. A
-    // failed create propagates — pushing --add-label anyway would only
-    // produce a more confusing error downstream.
     const ensure = await runGh(projectPath, ['label', 'create', lane, '--force']);
     if (ensure === null) throw new GhUnavailableError();
     if (ensure.code !== 0) {
@@ -141,12 +128,6 @@ export async function setLaneLabel(projectPath: string, number: number, lane: La
   }
   await issueOp(projectPath, 'edit labels', args);
 }
-
-// --- E05 provider-intent lookup (DECK-ARCH-013) ------------------------------
-//
-// Injectable seam: every lookup takes an optional provider runner so tests
-// drive fake providers without network or new dependencies; the default rides
-// the same runGh resolver chain as every other gh call.
 
 export interface ProviderRunner {
   run(args: string[], timeoutMs?: number): Promise<{ code: number; stdout: string; stderr: string } | null>;
@@ -167,10 +148,6 @@ export interface IssueRef {
   url: string;
 }
 
-// Exhaustive bounded/paginated marker lookup: issues carry the deck marker in
-// their body, so search is by content, never by title guess. Pages of 100 up
-// to maxPages keeps the search bounded; delayed visibility is handled by the
-// ledger (zero matches stays uncertain), not by unbounded retries here.
 export async function searchIssuesByMarker(
   projectPath: string,
   marker: string,

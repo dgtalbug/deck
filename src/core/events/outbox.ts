@@ -4,8 +4,6 @@ import { desc } from 'drizzle-orm';
 import { events } from './schema.ts';
 import type { BoardEvent, BoardEventPayload, BoardEventType } from './types.ts';
 
-// Executor accepts either the db or a transaction callback parameter, so
-// emits share the caller's transaction (the outbox atomicity contract).
 export type Executor = SQLiteBunDatabase | Parameters<Parameters<SQLiteBunDatabase['transaction']>[0]>[0];
 
 export function emitEvent(

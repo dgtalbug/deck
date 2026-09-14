@@ -1,6 +1,3 @@
-// The CLI face of the revert door (hold law): `deck revert <done-card-id>`
-// materializes a NEW groomed revert-verb card from the archived merge;
-// anything else falls through to the normal verb starter.
 import type { ParsedArgs } from './args.ts';
 import { UsageError } from './args.ts';
 import { resolveProject } from './context.ts';

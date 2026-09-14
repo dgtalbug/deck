@@ -1,10 +1,6 @@
 import type { BoardDoc, GroomInput, Lane, UiCard } from './api.ts';
 import { LANES } from './api.ts';
 
-// Pure BoardDoc transforms shared by the store's optimistic mutations and
-// SSE delta application — no signals, no side effects (easy to test, and
-// keeps store.ts under the 400-line file cap).
-
 export function findCard(doc: BoardDoc, id: string): { lane: Lane; index: number } | undefined {
   for (const lane of LANES) {
     const index = doc.lanes[lane].findIndex((card) => card.id === id);
@@ -38,8 +34,6 @@ export function optimisticDelete(id: string, before: BoardDoc): BoardDoc {
   return withLane(before, found.lane, before.lanes[found.lane].filter((entry) => entry.id !== id));
 }
 
-// groom re-edit: verb + title swap immediately (full research/tasks detail
-// arrives with the response replace ≤ a refetch later)
 export function optimisticGroomEdit(id: string, input: GroomInput, before: BoardDoc): BoardDoc {
   const found = findCard(before, id);
   if (found === undefined) return before;

@@ -1,6 +1,3 @@
-// The shared start command every verb registers over (decision #8: the verb
-// is data). The start output doubles as the build's context-pack header:
-// card, branch, issue, and the deck next pointer.
 import type { ParsedArgs } from './args.ts';
 import { UsageError } from './args.ts';
 import { resolveProject } from './context.ts';

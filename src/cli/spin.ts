@@ -1,7 +1,3 @@
-// Wait feedback (Deck CLI Identity §5): one dim braille spinner line on
-// stderr, only past 120 ms of pending TTY work; erased with \r + ESC[2K
-// before real output. Non-TTY is totally silent; TERM=dumb gets a single
-// static line past 2 s. NO_COLOR does not disable it — it is not color.
 
 const FRAMES = '⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏';
 const SPIN_DELAY_MS = 120;
@@ -21,7 +17,7 @@ export function withSpinner<T>(
   verb: string,
   fn: () => Promise<T>,
 ): Promise<T> {
-  if (!opts.isatty) return fn(); // non-TTY: total silence
+  if (!opts.isatty) return fn(); 
 
   let frame = 0;
   let timer: ReturnType<typeof setTimeout> | undefined;

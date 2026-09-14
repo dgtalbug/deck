@@ -12,8 +12,6 @@ function nowIso(): string {
   return new Date().toISOString();
 }
 
-// The board only APPLIES verify outcomes; the converge loop itself is
-// engine-owned (epic Feasibility 6).
 export function applyVerifyResult(
   store: DocumentStore,
   id: string,
@@ -47,9 +45,6 @@ export function applyVerifyResult(
         tx.select({ title: tasks.title }).from(tasks).where(eq(tasks.cardId, id)).all().map((taskRow) => taskRow.title),
       );
       let idx = existing.length > 0 ? Math.max(...existing.map((taskRow) => taskRow.idx)) + 1 : 0;
-      // Identity-linked repair tasks dedupe by title: the same gap repeating
-      // across converge loops appends nothing (title carries the criterion id
-      // when the gap is an evidence gap).
       for (const title of newTasks) {
         if (existingTitles.has(title)) continue;
         existingTitles.add(title);
@@ -70,19 +65,12 @@ export function applyVerifyResult(
     }
     emitEvent(tx, 'card.moved', { id, lane: result === 'clean' ? 'done' : 'active', position });
     if (result === 'clean') {
-      // wikiPath fills in when the engine's archive step lands; the event
-      // contract carries it from day one.
       emitEvent(tx, 'card.done', { id, wikiPath: '' });
     }
   });
   return store.getCard(id);
 }
 
-// The private finalization core (E05 DECK-ARCH-014, design decision 6):
-// completion is written by delivery finalization ONLY — uniquely keyed by the
-// delivery attempt, all in one transaction (lane move, done event, delivery
-// record, cleanup intents). A concurrent or repeated finalization observes
-// the recorded outcome instead of emitting a second completion.
 export function completeFromDelivery(
   store: DocumentStore,
   id: string,
@@ -104,8 +92,6 @@ export function completeFromDelivery(
       });
     }
     if (row.lane === 'done') {
-      // Already completed (concurrent finalizer or retry): return the
-      // recorded outcome, never a duplicate event.
       return { card: store.getCard(id), delivered: false };
     }
     if (row.lane !== 'verify') {
@@ -121,8 +107,6 @@ export function completeFromDelivery(
     const deliveredSha = delivery.deliveredSha ?? delivery.mergeSha ?? delivery.headSha;
     emitEvent(tx, 'card.done', { id, wikiPath: '' });
     emitEvent(tx, 'card.moved', { id, lane: 'done', position });
-    // Retryable cleanup intents for the delivered identity — issue close,
-    // branch delete, changelog and eligible release (delivery-cleanup).
     const ts = nowIso();
     const kinds: Array<'issue-close' | 'branch-delete' | 'changelog' | 'release'> = [
       'issue-close',
@@ -153,7 +137,6 @@ export function completeFromDelivery(
   });
 }
 
-// runTx with a return value (drizzle transactions return void; this wraps).
 function runTxReturning<R>(db: Parameters<typeof runTx>[0], fn: (tx: Tx) => R): R {
   let result!: R;
   runTx(db, (tx) => {
@@ -162,13 +145,6 @@ function runTxReturning<R>(db: Parameters<typeof runTx>[0], fn: (tx: Tx) => R): 
   return result;
 }
 
-// The ONE explicit-result door core (transport-consistent verification):
-// CLI --result and the MCP task_sync tool both land here, so `clean` means
-// the same thing through every door. An ordinary verb's clean HOLDS in
-// verify — done is finalization's alone (the archive path is the only
-// applyVerifyResult('clean') caller). A tweak's clean completes per the
-// tweak's own explicit policy (no spec, no converge loop). Gaps flow through
-// applyVerifyResult for both kinds. Invalid input changes nothing.
 export function applyExplicitResult(
   store: DocumentStore,
   id: string,
@@ -189,8 +165,6 @@ export function applyExplicitResult(
   }
   if (card.lane === 'active') moveLane(store, id, 'verify', 'engine');
   if (result === 'clean' && isVerbItem(card)) {
-    // Hold: the card stays in verify; review + archive close it. No done
-    // event, no provider call — completion belongs to finalization only.
     return store.getCard(id);
   }
   return applyVerifyResult(store, id, result, newTasks);

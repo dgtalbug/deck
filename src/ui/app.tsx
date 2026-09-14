@@ -9,8 +9,6 @@ import { ThemeToggle } from './components/ThemeToggle.tsx';
 import { Home } from './slices/home/Home.tsx';
 import { Board } from './slices/board/Board.tsx';
 
-// The brand mark (brand artifact set §1): the house suit, always FILLED —
-// the only filled glyph on the surface; Lucide stays stroked. 16px minimum.
 export function Spade({ size = 16 }: { size?: number }): VNode {
   return (
     <svg
@@ -26,9 +24,6 @@ export function Spade({ size = 16 }: { size?: number }): VNode {
   );
 }
 
-// Topbar per Spade §4: title + crumb + the icon theme toggle (the project
-// pages carry a second one in the sidebar footer — same mode.ts backing).
-// The wordmark is plain foreground here — --grad is hero-only (identity law).
 function Topbar(): VNode {
   return (
     <header class="topbar">
@@ -46,9 +41,6 @@ function Topbar(): VNode {
   );
 }
 
-// Boot loader (brand artifact set §3 "spade draw"): on first load into the
-// workspace, the mark draws itself for 2 s before home renders. One-shot on
-// boot only — client-side navigation never re-splashes (less text, more work).
 const BOOT_MS = 2000;
 
 function BootSplash(): VNode {
@@ -84,8 +76,6 @@ export function App(): VNode {
   );
 }
 
-// Exported for tests: renders the shell into #app on demand (the module
-// self-mount path below can't re-run once the module is cached).
 export function mountApp(): void {
   const mount = document.getElementById('app');
   if (mount !== null) render(<App />, mount);
@@ -93,7 +83,6 @@ export function mountApp(): void {
 
 function main(): void {
   startRouter();
-  // Signals read inside components subscribe them — one render suffices.
   mountApp();
 }
 

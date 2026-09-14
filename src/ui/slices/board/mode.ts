@@ -1,6 +1,3 @@
-// Mode module (D-UI-008): the shell's inline no-flash script pins `data-mode`
-// before paint; this module owns toggling afterwards — attribute, persistence,
-// and the `spade:mode` CustomEvent that lazy chunks subscribe to on load.
 
 export type Mode = 'dark' | 'light';
 
@@ -15,7 +12,6 @@ export function setMode(mode: Mode): void {
   try {
     localStorage.setItem(STORAGE_KEY, mode);
   } catch {
-    // Private-mode storage failures must not break theming.
   }
   document.dispatchEvent(new CustomEvent<Mode>('spade:mode', { detail: mode }));
 }

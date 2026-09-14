@@ -1,16 +1,3 @@
-// index.ts: the pass-1 indexer. Walk the repo (ts/tsx/js first — languages
-// are data, more providers are additive), sha256 hash-skip unchanged files,
-// transactional per-file replace, then the finalize pass: workspace-wide
-// cross-file resolution → tier stamping → folder tree → fan-in → PageRank →
-// counts. Schema-version or workspace-identity mismatch triggers a full
-// rebuild (cheap and sane at deck's scale — dextree's rule too).
-//
-// E04 (engine/graph): freshness and publication are explicit. Every index
-// run computes an input fingerprint (membership + content + extractor +
-// resolution + schema versions); a generation is marked complete ONLY when
-// resolution and derived facts publish atomically against that fingerprint.
-// Heuristic edges are re-resolved from scratch against the complete candidate
-// set each publication, so incremental facts match a clean rebuild.
 import { createHash } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -21,8 +8,6 @@ import { pageRank } from './pagerank.ts';
 
 const IGNORED = new Set(['node_modules', '.git', '.deck', 'dist', 'build', 'out', 'coverage', '.turbo', '.next', '.cache', 'origin.git', 'agent', 'dist-ui']);
 
-// Bumped when extraction or resolution semantics change — either bump changes
-// the input fingerprint and forces re-derivation (the graph is disposable).
 export const EXTRACTOR_VERSION = 1;
 export const RESOLUTION_VERSION = 2;
 
@@ -66,9 +51,6 @@ interface ScannedInput {
   hash: string;
 }
 
-// Read every covered source ONCE — the same bytes are hashed, passed to
-// extraction, and (revalidated) at publication. A read failure here is an
-// explicit failure, never an empty file.
 export async function scanInputs(projectPath: string): Promise<ScannedInput[]> {
   const scanned: ScannedInput[] = [];
   for (const full of walkSources(projectPath)) {
@@ -84,8 +66,6 @@ export async function scanInputs(projectPath: string): Promise<ScannedInput[]> {
   return scanned.sort((a, b) => a.relativePath.localeCompare(b.relativePath));
 }
 
-// Deterministic identity of everything the graph derives from: membership,
-// content hashes, and the extraction/resolution/schema versions.
 export function computeInputFingerprint(inputs: ScannedInput[]): string {
   const hasher = createHash('sha256');
   hasher.update(`extractor:${EXTRACTOR_VERSION}\u0000resolution:${RESOLUTION_VERSION}\u0000schema:${GRAPH_SCHEMA_VERSION}\u0000`);
@@ -95,8 +75,6 @@ export function computeInputFingerprint(inputs: ScannedInput[]): string {
   return hasher.digest('hex');
 }
 
-// Fingerprint of the inputs CURRENTLY on disk — throws only if a file that
-// existed at scan time became unreadable; callers map that to `unchecked`.
 function currentFingerprint(projectPath: string): string {
   const inputs: ScannedInput[] = [];
   for (const full of walkSources(projectPath)) {
@@ -147,8 +125,6 @@ export interface IndexOutcome {
   rebuilt: boolean;
   nodes: number;
   edges: number;
-  // E04: true when every relevant input matched the complete generation and
-  // all derivation was skipped.
   noOp: boolean;
   generation: number;
 }
@@ -160,15 +136,10 @@ export async function indexGraph(projectPath: string, db: Database): Promise<Ind
     db.exec('DELETE FROM g_file; DELETE FROM g_symbol; DELETE FROM g_edge; DELETE FROM g_folder; DELETE FROM symbols_fts;');
   }
 
-  // Scan once: these exact bytes are hashed, extracted, and revalidated at
-  // publication — no mixed snapshot can be advertised current.
   const scanned = await scanInputs(projectPath);
   const fingerprint = computeInputFingerprint(scanned);
   const meta = readMeta(db);
 
-  // No-op derivation is refused unless the stored generation is COMPLETE and
-  // every relevant input (membership, hashes, extractor/resolution/schema)
-  // matches it.
   if (!rebuilt && meta !== null && meta.complete && meta.inputFingerprint === fingerprint) {
     return { indexed: 0, skipped: scanned.length, rebuilt: false, nodes: countSymbols(db), edges: countEdges(db), noOp: true, generation: meta.generation };
   }
@@ -182,14 +153,10 @@ export async function indexGraph(projectPath: string, db: Database): Promise<Ind
       skipped += 1;
       continue;
     }
-    // Extracts the already-read bytes; a parse/read failure throws and the
-    // prior complete generation stays intact (meta is untouched so far).
     await replaceFile(projectPath, db, input.relativePath, input.source, input.hash);
     indexed += 1;
   }
 
-  // Files deleted since the last index drop out here — membership via a path
-  // set, not a repeated array scan (E04 DECK-ARCH-025).
   const currentPaths = new Set(scanned.map((input) => input.relativePath));
   for (const row of db.query('SELECT relative_path FROM g_file').all() as Array<{ relative_path: string }>) {
     if (!currentPaths.has(row.relative_path)) {
@@ -201,13 +168,6 @@ export async function indexGraph(projectPath: string, db: Database): Promise<Ind
   return { indexed, skipped, rebuilt, nodes: countSymbols(db), edges: countEdges(db), noOp: false, generation };
 }
 
-// Publication (engine/graph "Only complete graph generations are published"):
-// resolution, derived facts, FTS state, and generation metadata commit in ONE
-// transaction. The publisher captured `baseGeneration` before extraction; if
-// another publisher committed since, we re-run against the newer base (the
-// facts on disk are already current-input) rather than overwrite it. Before
-// writing metadata the inputs are revalidated against the fingerprint that
-// was extracted — a mid-index source change rolls the whole publication back.
 export function publishFinalization(
   db: Database,
   projectPath: string,
@@ -222,8 +182,6 @@ export function publishFinalization(
   }
   const currentBase = readMeta(db)?.generation ?? 0;
   if (currentBase !== baseGeneration) {
-    // Stale base: the fact tables still describe the current inputs (same
-    // scan), so re-run against the newer base instead of overwriting it.
     return publishFinalization(db, projectPath, fingerprint, currentBase, attempt + 1);
   }
   try {
@@ -235,8 +193,6 @@ export function publishFinalization(
       resolveAllEdges(db);
       deriveFolders(db);
       deriveMetrics(db);
-      // Revalidate BEFORE metadata: the inputs on disk must still hash to the
-      // fingerprint that was extracted, or nothing is published.
       const now = currentFingerprint(projectPath);
       if (now !== fingerprint) {
         throw new StaleInputsError('covered sources changed while indexing — nothing published; run `deck graph index` again');
@@ -264,15 +220,8 @@ export function publishFinalization(
   }
 }
 
-// Full workspace re-resolution (E04 engine/graph "Incremental resolution
-// remains valid"): every heuristic edge is demoted to unresolved and then
-// resolved against the COMPLETE candidate set — rename, deletion, import
-// changes and duplicate targets are invalidated by construction, so
-// incremental facts equal a clean rebuild. callee_name and import metadata
-// survive for unresolved edges.
 function resolveAllEdges(db: Database): void {
   db.exec("UPDATE g_edge SET target_id = NULL, resolution = 'unresolved', confidence = 0.0 WHERE resolution = 'heuristic'");
-  // Workspace-wide symbol-name resolution for unresolved relation edges.
   const unresolved = db.query(
     "SELECT id, source_id, kind, meta FROM g_edge WHERE target_id IS NULL AND kind != 'IMPORTS' AND kind != 'RE_EXPORTS'",
   ).all() as Array<{ id: string; source_id: string; kind: string; meta: string }>;
@@ -287,8 +236,6 @@ function resolveAllEdges(db: Database): void {
       db.query("UPDATE g_edge SET target_id = ?, resolution = 'heuristic', confidence = 0.6 WHERE id = ?").run(target.id, edge.id);
     }
   }
-  // IMPORTS edges the eager fs resolution missed (aliases): workspace-wide
-  // suffix match on the raw specifier.
   const imports = db.query("SELECT id, meta FROM g_edge WHERE target_id IS NULL AND kind = 'IMPORTS'").all() as Array<{ id: string; meta: string }>;
   for (const edge of imports) {
     const meta = JSON.parse(edge.meta) as Record<string, string>;
@@ -302,7 +249,6 @@ function resolveAllEdges(db: Database): void {
   }
 }
 
-// Folder tree: wholesale re-derivation from file paths (dextree's rule).
 function deriveFolders(db: Database): void {
   db.exec('DELETE FROM g_folder');
   const folderIds = new Set<string>();
@@ -328,8 +274,6 @@ function deriveFolders(db: Database): void {
   }
 }
 
-// fan-in from resolved CALLS/REFERENCES; importance from PageRank over the
-// resolved directed graph (dextree's pinned numbers: α=0.85, tol 1e-6).
 function deriveMetrics(db: Database): void {
   db.exec("UPDATE g_symbol SET fan_in = (SELECT COUNT(*) FROM g_edge e WHERE e.target_id = g_symbol.id AND e.kind IN ('CALLS','REFERENCES'))");
   const nodes = (db.query('SELECT id FROM g_symbol').all() as Array<{ id: string }>).map((row) => row.id);
@@ -343,9 +287,6 @@ function deriveMetrics(db: Database): void {
 async function replaceFile(projectPath: string, db: Database, relativePath: string, source: string, hash: string): Promise<void> {
   const result = await extractFile(projectPath, relativePath, source);
   if (result === null) {
-    // The language is supported (walk filtered it) — null means the parse or
-    // language load failed. This is a failure, not an empty file: publishing
-    // it would look like a successful empty replacement.
     throw new ExtractionFailure(
       `extraction failed for ${relativePath} — the file is covered but could not be parsed; fix or exclude it before indexing`,
     );
@@ -370,8 +311,6 @@ async function replaceFile(projectPath: string, db: Database, relativePath: stri
 }
 
 function insertEdge(db: Database, id: string, sourceId: string, targetId: string | null, kind: string, meta: Record<string, string>): void {
-  // Structural: definitions and contains (exact by construction). Anything
-  // with a target got there by name match → heuristic; NULL stays unresolved.
   const resolution = kind === 'DEFINES' || kind === 'CONTAINS'
     ? 'structural'
     : targetId !== null

@@ -1,7 +1,3 @@
-// classify.ts (wire-graph slice): pure symbol classification — dextree's
-// pinned semantics. Never touches fs, network, or any enrichment pass: fixed
-// precedence over scoring keeps reindexes deterministic ("Pass-1 usefulness
-// is sacred").
 
 export type EntryKind = 'test' | 'handler' | 'runtime' | 'public-api' | 'unclassified';
 export type ArchLayer = 'presentation' | 'application' | 'domain' | 'infrastructure' | 'unknown' | 'test';
@@ -13,8 +9,6 @@ const RUNTIME_PATH_RX = /(?:^|\/)(?:main|bootstrap|server|cli|extension|app)\.[m
 const RUNTIME_NAMES = new Set(['main', 'bootstrap', 'start', 'activate', 'deactivate', 'run']);
 const PUBLIC_API_PATH_RX = /(?:^|\/)index\.[mc]?[jt]sx?$/;
 
-// test > handler > runtime > public-api — fixed order, deliberately not
-// scoring (dextree: keeps results from oscillating across reindexes).
 export function classifyEntryKind(relativePath: string, name: string, source: string): EntryKind {
   if (TEST_PATH_RX.test(relativePath)) return 'test';
   if (HANDLER_NAME_RX.test(name) || HANDLER_PATH_RX.test(relativePath)) return 'handler';
@@ -37,8 +31,6 @@ const LAYER_PATHS: Array<[RegExp, ArchLayer]> = [
   [/storage|repositor(?:y|ies)|db|database|persistence|network|http|client|adapter|gateway|migrations|io|fs/, 'infrastructure'],
 ];
 
-// presentation > application > domain > infrastructure — the outermost
-// matching path segment wins on overlap; tests are tests everywhere.
 export function classifyArchLayer(relativePath: string): ArchLayer {
   if (TEST_PATH_RX.test(relativePath)) return 'test';
   const segments = relativePath.split('/');

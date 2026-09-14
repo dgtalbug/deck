@@ -1,12 +1,3 @@
-// The archive door (E05 DECK-ARCH-014): preparation and policy-checked
-// finalization replace immediate archive merging. Preparation reviews, pushes
-// ONLY the owned feature branch, creates or reuses the spec-generated PR
-// through the provider-intent ledger, records the delivery attempt and leaves
-// the card in verify — an open PR is never completed work. Finalization
-// (delivery.ts) requires an observed merge under the persisted policy. Both
-// doors enforce current evidence, fail-closed review and E01 checkout
-// ownership before Git effects. The legacy --no-ff merge of the default
-// branch is gone by user-confirmed policy migration (2026-09-14).
 import { DeckError } from '../board/errors.ts';
 import { moveLane } from '../board/lanes.ts';
 import { getIssueMap, listQueue, newestSpecVersion } from '../board/specstore.ts';
@@ -77,18 +68,12 @@ export interface ArchiveOutcome {
   card: VerbItem;
   prUrl: string | null;
   issueNumber: number;
-  /** delivery is PENDING after preparation — an open PR is not done */
   delivery: { id: string; state: string; prNumber: number | null; reused: boolean };
-  /** kept for caller compatibility; tail work moved to delivery cleanup */
   tail: { changelog: string; release: string | null; warnings: string[] };
   warnings: string[];
   hookWarnings: HookWarning[];
 }
 
-// Minimal archive (preparation side): review gate → evidence gate → push the
-// owned branch → PR create/reuse via the intent ledger → delivery recorded
-// pending. The card stays in verify until explicit finalization observes a
-// valid merge (deck deliver).
 export async function archiveVerb(store: DocumentStore, id: string): Promise<ArchiveOutcome> {
   const card = store.getVerbItem(id);
   if (card.lane !== 'active' && card.lane !== 'verify') {
@@ -99,7 +84,6 @@ export async function archiveVerb(store: DocumentStore, id: string): Promise<Arc
   }
   const map = getIssueMap(store, id);
   if (map === undefined) {
-    // The start ran; the publish may simply still be queued (gh offline).
     if (listQueue(store).some((entry: { cardId: string }) => entry.cardId === id)) {
       throw new DeckError(
         `card ${id}'s issue publish is still queued (gh was offline at start) — run deck sync to flush it, then archive`,
@@ -114,17 +98,12 @@ export async function archiveVerb(store: DocumentStore, id: string): Promise<Arc
   }
   const policy = getPolicy(store, id);
   if (policy === undefined) {
-    // Explicit migration choice (DECK-ARCH-014): unfinished cards are never
-    // silently adopted into the new delivery law.
     throw new DeckError(
       `card ${id} has no enrolled delivery/evidence policy — enroll one (deck policy <id> --mode team|solo ...) before delivery`,
       { cardId: id },
     );
   }
 
-  // engine/ownership: preparation takes the checkout reservation before the
-  // review gate runs — a foreign owner (or an unreconciled crashed operation)
-  // refuses before any delivery effect is possible.
   const operation = reserveOperation(store, id, 'archive');
   try {
     return await prepareDelivery(store, id, card, map, version, policy.mode, operation);
@@ -132,8 +111,6 @@ export async function archiveVerb(store: DocumentStore, id: string): Promise<Arc
     try {
       compensateOperation(store, operation.id);
     } catch {
-      // The operation already reached a terminal state (delivered or
-      // reconciled elsewhere) — the original error carries the story.
     }
     throw error;
   }
@@ -151,13 +128,9 @@ async function prepareDelivery(
   const branch = branchFor(card, card.verb);
   const base = await defaultBranch(store.projectPath);
 
-  // The review gate blocks preparation while any finding stands — before any
-  // mutation, nothing to unwind. It also captures required-check evidence.
   const findings = await reviewGate(store, id);
   if (findings.length > 0) throw new ReviewBlockedError(id, findings);
 
-  // Evidence gate: every accepted criterion needs CURRENT machine/manual
-  // evidence (engine/evidence). Review just captured; stale records refuse.
   const evidence = await evaluateEligibility(store, id);
   if (!evidence.eligible) {
     throw new DeckError(
@@ -166,7 +139,6 @@ async function prepareDelivery(
     );
   }
 
-  // archive moment pre: blocks before the push/PR sequence begins.
   await runMomentPre(store, 'archive', {
     moment: 'archive',
     cardId: id,
@@ -179,9 +151,6 @@ async function prepareDelivery(
     timestamp: new Date().toISOString(),
   });
 
-  // Preparation requires a clean committed tree: review may have bound
-  // dirty-worktree evidence, but the PR carries committed bytes — evidence
-  // for the committed head is what the evaluation above just re-checked.
   await assertCleanTree(store.projectPath);
   const remote = await runGit(store.projectPath, ['remote']);
   if (mode === 'team' && remote.stdout.trim() === '') {
@@ -209,8 +178,6 @@ async function prepareDelivery(
     reused = resolved.reused;
   }
 
-  // Delivery attempt recorded pending: the PR (or solo local intent) is NOT
-  // completion. Solo finalization later integrates locally under guards.
   const delivery = recordDeliveryAttempt(store, {
     cardId: id,
     mode,
@@ -223,7 +190,6 @@ async function prepareDelivery(
     prUrl,
   });
 
-  // Card → verify (never done): completion is finalization's alone.
   if (card.lane === 'active') moveLane(store, id, 'verify', 'engine');
   completeOperation(store, operation.id);
 
@@ -252,9 +218,6 @@ async function prepareDelivery(
   };
 }
 
-// PR create-or-reuse over the intent ledger (DECK-ARCH-013): an unresolved
-// pr-create intent reconciles by marker BEFORE another create — a crash after
-// a successful create reuses the original PR instead of duplicating it.
 async function resolvePullRequest(
   store: DocumentStore,
   id: string,
@@ -264,8 +227,6 @@ async function resolvePullRequest(
   base: string,
 ): Promise<{ number: number; url: string; reused: boolean }> {
   const card = store.getVerbItem(id);
-  // Reuse an existing open PR carrying the marker (or reconcile an uncertain
-  // create) — marker search, never title guessing.
   const open = await searchPullRequestsByMarker(store.projectPath, marker, { state: 'open' });
   const pendingIntent = listCardOperations(store, id)
     .filter((op) => op.kind === 'pr-create' && ['claimed', 'uncertain', 'legacy-unobserved'].includes(op.state))
@@ -284,7 +245,6 @@ async function resolvePullRequest(
     );
   }
   if (pendingIntent !== undefined) {
-    // Zero visible matches for a dispatched create is NOT proof of absence.
     const row = reconcileOperation(store, pendingIntent.id, []);
     throw new DeckError(
       `PR creation for card ${id} is ${row.state} — ${row.nextAction ?? 'reconcile before retrying'}`,
@@ -332,6 +292,4 @@ async function resolvePullRequest(
   }
 }
 
-// Kept for cleanup reuse (delivery-cleanup closes the mapped issue through
-// the ledger); the old immediate archive merge path is gone.
 export { closeIssue };

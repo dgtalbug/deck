@@ -24,9 +24,7 @@ export interface BuildOptions {
   port?: number;
   hostname?: string;
   registry?: ProjectRegistry;
-  // Root owning public/ and dist/ for the UI shell; defaults to cwd.
   staticRoot?: string;
-  // Embedded asset source override (tests); defaults to the compiled-in map.
   embedded?: EmbeddedLookup;
 }
 
@@ -61,9 +59,6 @@ export function buildServer(options: BuildOptions = {}): Server<undefined> {
   });
 }
 
-// The banner block printed above the serving line at startup (identity §2):
-// the existing selection law picks the variant; facts carry the port this
-// server actually resolved. Injected env/size for tests; defaults are real.
 export function startupBanner(opts: {
   port: number;
   env?: Record<string, string | undefined>;
@@ -81,8 +76,6 @@ export function startupBanner(opts: {
   });
   const p = palette(level);
   if (kind === 'compact') {
-    // facts state the port this server bound (flag > config > env > default),
-    // not a re-derivation — a config port can never disagree with the banner.
     const facts = {
       boardUrl: `http://127.0.0.1:${opts.port}`,
       dataPath: defaultBannerFacts(env).dataPath,
@@ -92,8 +85,6 @@ export function startupBanner(opts: {
   return kind === 'box' ? bannerBox(DECK_VERSION, p) : bannerAscii(DECK_VERSION, p);
 }
 
-// Non-loopback bind = the board AND its git routes accept unauthenticated
-// writes from anyone who can reach the interface. Null on loopback.
 export function nonLoopbackWarning(host: string): string | null {
   if (['127.0.0.1', 'localhost', '::1'].includes(host)) return null;
   return (
@@ -108,14 +99,11 @@ export async function serveMain(): Promise<void> {
   const port = await resolvePort(args.port);
   try {
     const server = buildServer({ port, hostname: args.host ?? '127.0.0.1' });
-    // Non-loopback bind = the board AND its git routes accept unauthenticated
-    // writes from anyone who can reach the interface. Warn before listening.
     const warning = nonLoopbackWarning(server.hostname ?? '127.0.0.1');
     if (warning !== null) console.error(warning);
     console.log(startupBanner({ port: server.port ?? port }));
     console.log(`deck serving on http://${server.hostname}:${server.port}`);
   } catch (error) {
-    // Port collisions fail loudly with a suggestion — never a silent bump.
     console.error(
       `\ndeck: cannot listen on port ${port} — it is already in use.\n` +
         `Hint: another deck server may be running (try \`lsof -i :${port}\`), ` +

@@ -1,6 +1,3 @@
-// search.ts: FTS5 symbol search — deck's upgrade over dextree, which only has
-// exact fqn lookups. Deterministic order (rank desc, fqn asc); content lives
-// in the symbols_fts virtual table the indexer maintains.
 import type { Database } from 'bun:sqlite';
 
 export interface SearchHit {

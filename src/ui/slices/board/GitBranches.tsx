@@ -3,10 +3,6 @@ import type { VNode } from 'preact';
 import { GitBranch } from 'lucide-preact';
 import { ActionBtn, validBranchName, type GitActionCtx } from './gitShared.tsx';
 
-// Branches card: list with the current marker, per-row switch/delete guarded
-// exactly like core, and the create form (inline name validation, optional
-// base, switch-after-create).
-
 export function GitBranches({ ctx }: { ctx: GitActionCtx }): VNode {
   const { api, digest, busy, run, askConfirm, project } = ctx;
   const current = digest?.branch ?? '';

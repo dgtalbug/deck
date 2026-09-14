@@ -1,16 +1,8 @@
-// Agent-host harness (harness slice, P2 deck-born): the adapter registry
-// seeded from iris's host-path knowledge (copied data, cited source —
-// iris is never read at runtime), deterministic host detection, and the
-// pinned skill scaffold template. Deck's table supersedes iris's hardcoded
-// HOST_ADAPTERS as the registry of record.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import type { Database } from 'bun:sqlite';
 import { skillAssets } from './skill-assets.ts';
 
-// Copied verbatim (skillsDir/detect/displayName) from iris
-// src/lib/host-adapters.ts:22-73 (HOST_ADAPTERS, six hosts). The iris repo
-// is read-only inspiration; this constant is deck's seed of record.
 export interface HostSeed {
   id: string;
   displayName: string;
@@ -36,8 +28,6 @@ export interface AgentHost extends HostSeed {
   seededAt: string;
 }
 
-// Idempotent on every open: raw DDL (the user_verbs pattern) + INSERT OR
-// IGNORE from the pinned seed.
 export function ensureAgentHosts(db: Database): void {
   db.exec(
     'CREATE TABLE IF NOT EXISTS agent_hosts (' +
@@ -65,16 +55,10 @@ export function listAgentHosts(db: Database): AgentHost[] {
   );
 }
 
-// Pure existsSync over project-relative detect paths — any one signals the
-// host (the iris detectHosts pattern).
 export function detectHosts(projectPath: string, hosts: AgentHost[]): AgentHost[] {
   return hosts.filter((host) => host.detect.some((path) => existsSync(join(projectPath, path))));
 }
 
-// --- skill scaffold -----------------------------------------------------------
-
-// The pinned SKILL.md template — only <name> is substituted here; the
-// description and instructions stay placeholders for the author.
 export function skillTemplate(name: string): string {
   return [
     '---',
@@ -91,8 +75,6 @@ export function skillTemplate(name: string): string {
 
 export class SkillNameError extends Error {}
 
-// Scaffolds .agents/skills/<name>/SKILL.md; refuses invalid names and
-// existing skills (never rewrites). Returns the created path.
 export function scaffoldSkill(projectPath: string, name: string): string {
   if (!/^[a-z][a-z0-9-]*$/.test(name)) {
     throw new SkillNameError(
@@ -109,11 +91,6 @@ export function scaffoldSkill(projectPath: string, name: string): string {
   return path;
 }
 
-// --- managed blocks (wire-rules-yaml-gates, the iris pattern) -----------------
-// Deck-generated regions inside a managed file carry hash fences; upgrades
-// rewrite ONLY the fenced region and preserve user content outside it
-// byte-for-byte. Files without a fence keep the never-overwrite law.
-
 export function sha256Text(text: string): string {
   return new Bun.CryptoHasher('sha256').update(text).digest('hex').slice(0, 16);
 }
@@ -125,9 +102,6 @@ export function renderManaged(label: string, content: string): string {
 
 const END = '<!-- deck:managed:end -->';
 
-// Replaces the label's fenced region in `existing` with a fresh fence around
-// `content`. Null when the file carries no (or a malformed) fence for the
-// label — the caller then keeps the skip law. Bytes outside survive exactly.
 export function replaceManaged(existing: string, label: string, content: string): string | null {
   const startMarker = `<!-- deck:managed:start id=${label} `;
   const startIdx = existing.indexOf(startMarker);
@@ -137,15 +111,9 @@ export function replaceManaged(existing: string, label: string, content: string)
   return existing.slice(0, startIdx) + renderManaged(label, content) + existing.slice(endIdx + END.length);
 }
 
-// The shipped skill pack (agent-skill-pack): installSkillPack writes the
-// embedded deck-* SKILL.md files into every detected host's skillsDir,
-// wrapped in a managed fence. Fresh writes are fenced; a byte-identical
-// fenced file rewrites freely; a user-edited file is upgraded ONLY inside
-// its fence (outside bytes preserved); a fence-less edited file is NEVER
-// overwritten — the same law as scaffoldSkill.
 export interface SkillPackOutcome {
-  written: string[]; // "<host>/<skill>" entries (fresh installs + fenced upgrades)
-  skipped: string[]; // user-modified files without a fence, named, untouched
+  written: string[]; 
+  skipped: string[]; 
 }export function installSkillPack(
   projectPath: string,
   hosts: Array<{ id: string; skillsDir: string }>,
@@ -165,9 +133,7 @@ export interface SkillPackOutcome {
         continue;
       }
       const existing = readFileSync(file, 'utf8');
-      if (existing === expected) continue; // identical — nothing to write
-      // Legacy pristine install (pre-fence bytes): upgrade to the fenced form.
-      // Fence-less divergence is a lived-in file — never overwritten.
+      if (existing === expected) continue; 
       const upgraded =
         existing === content ? expected : replaceManaged(existing, rel, content);
       if (upgraded === null) {
@@ -181,37 +147,25 @@ export interface SkillPackOutcome {
   return outcome;
 }
 
-// --- drift classification + repair preview (E02 DECK-ARCH-020) ---------------
-
 export type SkillRegionStatus = 'missing' | 'current' | 'stale' | 'customized';
 
 export interface SkillFileStatus {
-  file: string; // "<host>/<skill>/SKILL.md"
+  file: string; 
   status: SkillRegionStatus;
 }
 
 export interface SkillPackStatus {
   files: SkillFileStatus[];
-  // Repair preview: exactly which managed files `deck setup` would change
-  // (missing → fresh write, stale → managed upgrade), named without any
-  // bytes being touched. Customized files are never repairable.
   repairable: string[];
   unrepairable: string[];
 }
 
-// Read-only classification of one installed managed file against its asset:
-// current (fence body matches the asset), stale (missing, legacy-pristine, or
-// a drifted fence body — all safe managed repairs), customized (fence-less
-// user content — never overwritten).
 function classifyInstalled(existing: string, content: string, label: string): SkillRegionStatus {
   const upgraded = replaceManaged(existing, label, content);
   if (upgraded === null) return existing === content ? 'stale' : 'customized';
   return upgraded === existing ? 'current' : 'stale';
 }
 
-// Doctor/setup preview: per detected host, every shipped skill classified.
-// Missing and stale are drift the safe repair command fixes; customized is
-// user content that survives both setup and repair.
 export function skillPackStatus(
   projectPath: string,
   hosts: readonly { id: string; skillsDir: string }[],

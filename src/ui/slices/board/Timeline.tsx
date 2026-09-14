@@ -3,12 +3,6 @@ import type { VNode } from 'preact';
 import { Clock, GitCommitHorizontal, GitPullRequest, RefreshCw, Target, Zap } from 'lucide-preact';
 import { boardApi, type BoardApi, type TimelineEntry, type TimelineView } from './api.ts';
 
-// Project timeline: epics, cards, merged PRs and commits as one newest-first
-// day-grouped feed (design: .meta/design/timeline-mockup.html). Per-view
-// request/response (git-page convention D6) — recomputed from current board
-// state on every open/refresh, so it never drifts. Kind filtering and day
-// collapse are component-local; load-more fetches a deeper ?limit= page.
-
 type KindFilter = 'all' | 'epic' | 'card' | 'pr' | 'commit';
 
 const FILTERS: readonly { id: KindFilter; label: string }[] = [
@@ -62,8 +56,6 @@ export interface DayGroup {
   entries: TimelineEntry[];
 }
 
-// Pure: slice a newest-first list into calendar-day groups (browser-local
-// day). Days with no entries after filtering are simply absent.
 export function groupedByDay(entries: TimelineEntry[]): DayGroup[] {
   const groups: DayGroup[] = [];
   for (const entry of entries) {
@@ -182,7 +174,6 @@ export function Timeline({ project, api = boardApi }: { project: string; api?: B
     () => groupedByDay(view?.entries.filter((entry) => filter === 'all' || entry.kind === filter) ?? []),
     [view, filter],
   );
-  // default: first (newest) day open, older days collapsed; explicit toggles win
   const dayOpen = (index: number, key: string): boolean => {
     if (collapsed.has(`open:${key}`)) return true;
     if (collapsed.has(`closed:${key}`)) return false;

@@ -15,14 +15,6 @@ import { GitPullRequests, GitRemote } from './GitRemote.tsx';
 import { GitHistory } from './GitTree.tsx';
 import type { GitActionCtx } from './gitShared.tsx';
 
-// Git page (v0.7.0 tabbed): one responsibility per tab — working tree,
-// branches, sync, collaborate, history — over a shared status header and a
-// shared sticky output block. Local component state only (design D6): git
-// facts are per-view request/response, never in the board signals store.
-// Guards mirror core's (D2) inside the section components; every action
-// surfaces git's captured output in a mono block that survives tab
-// switches (it is page-scoped, not tab-scoped).
-
 type TabId = 'working' | 'branches' | 'sync' | 'collaborate' | 'history';
 
 const TABS: readonly { id: TabId; label: string }[] = [
@@ -78,7 +70,6 @@ export function GitPage(props: { project: string; api?: BoardApi }): VNode {
     void refresh();
   }, [refresh]);
 
-  // One runner for every action: busy state, output block, post-op refresh.
   const run = useCallback(
     async (id: string, action: () => Promise<string>): Promise<void> => {
       setBusy((prev) => ({ ...prev, [id]: true }));
@@ -111,8 +102,6 @@ export function GitPage(props: { project: string; api?: BoardApi }): VNode {
   const repo = digest?.repo === true;
   const ghOn = digest?.gh?.available === true;
 
-  // Roving tabindex: ArrowLeft/ArrowRight move focus and select together
-  // (selection follows focus — the simplest correct tablist pattern).
   const onTablistKey = (event: KeyboardEvent): void => {
     const delta = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0;
     if (delta === 0) return;
@@ -124,7 +113,7 @@ export function GitPage(props: { project: string; api?: BoardApi }): VNode {
   };
 
   const panel = (id: TabId): VNode | null => {
-    if (id !== tab) return null; // one panel in the DOM — the active one
+    if (id !== tab) return null; 
     switch (id) {
       case 'working':
         return <GitChanges ctx={ctx} />;

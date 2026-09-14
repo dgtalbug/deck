@@ -1,10 +1,3 @@
-// Execution ownership (engine/ownership): card starts are reserved atomically
-// so two requests can never both act on one card, and each checkout has at
-// most one execution owner across start, review and archive. A reservation is
-// a row in `operations` (inspectable after a crash, unlike a mutex); every
-// completion, release and compensation is owner-conditional, so a stale
-// writer can never touch a state it no longer owns. Recovery is explicit —
-// no lease expiry, no timeout takeover (DECK-ARCH-003/004 exclusions).
 import { randomUUID } from 'node:crypto';
 import { realpathSync } from 'node:fs';
 import { and, eq, inArray, ne } from 'drizzle-orm';
@@ -16,15 +9,10 @@ import { runTx, type DocumentStore, type Tx } from '../board/store.ts';
 export type OperationKind = OperationRow['kind'];
 export type OperationState = OperationRow['state'];
 
-// States that fence a checkout or a card. Completed/compensated are history.
 export const UNSETTLED_STATES: OperationState[] = ['reserved', 'active', 'recovery-required'];
 
-// One token per process instance: every CLI invocation and server process
-// owns its operations; a sibling process's rows are foreign by definition.
 export const ownerToken = `${process.pid}-${randomUUID()}`;
 
-// Canonical checkout identity: symlink and copy aliases collapse to one
-// realpath, so ownership guards cannot be walked around by path spelling.
 export function canonicalCheckout(projectPath: string): string {
   return realpathSync(projectPath);
 }
@@ -35,9 +23,6 @@ export class OperationConflictError extends DeckError {
   }
 }
 
-// Raised when a writer's owner-conditional update matched zero rows: the
-// operation was reconciled or taken over elsewhere — future launches by the
-// stale owner are fenced (fail closed).
 export class StaleOperationError extends DeckError {
   constructor(operationId: string, cardId: string, action: string) {
     super(
@@ -67,8 +52,6 @@ function nowIso(): string {
   return new Date().toISOString();
 }
 
-// Unsettled operations on a checkout held by a DIFFERENT owner — the fence a
-// new reservation must respect. Same-owner rows are this process's own work.
 function foreignConflicts(tx: Tx, checkout: string, owner: string): OperationRow[] {
   return tx
     .select()
@@ -83,11 +66,6 @@ function foreignConflicts(tx: Tx, checkout: string, owner: string): OperationRow
     .all();
 }
 
-// The reservation transaction core (DECK-ARCH-003): card state, checkout
-// guard, WIP (counting reservations) and the reservation INSERT all happen in
-// one BEGIN IMMEDIATE transaction, before any awaited hook runs. Callers
-// re-derive typed 404s outside; the tx re-reads the row so the decision is
-// made on serialized state.
 export function reserveOperationInTx(
   tx: Tx,
   input: {
@@ -95,9 +73,7 @@ export function reserveOperationInTx(
     kind: OperationKind;
     owner: string;
     checkout: string;
-    // Serialized card-state re-validation (lane the card must currently sit in).
     expectLane?: string;
-    // WIP accounting for start reservations: active cards + reserved ops.
     wip?: { limit: number; activeCount: number; topCardId: string };
   },
 ): Operation {
@@ -166,8 +142,6 @@ export function reserveOperationInTx(
   };
 }
 
-// Standalone reservation for doors whose guarded section is their whole body
-// (review, archive) and for crash-point fixtures.
 export function reserveOperation(
   store: DocumentStore,
   cardId: string,
@@ -185,8 +159,6 @@ export function reserveOperation(
   return operation!;
 }
 
-// Owner-conditional transition: the UPDATE matches only when the operation is
-// still unsettled AND still ours. Zero rows → someone else recovered it.
 function transitionOperation(
   store: DocumentStore,
   operationId: string,
@@ -216,8 +188,6 @@ export function activateOperation(store: DocumentStore, operationId: string): Op
   return transitionOperation(store, operationId, ['reserved'], 'active', 'activation');
 }
 
-// Completion and compensation both end the reservation; both are
-// owner-conditional, so a loser request can never reset the winner's state.
 export function completeOperation(store: DocumentStore, operationId: string): Operation {
   return transitionOperation(store, operationId, ['reserved', 'active'], 'completed', 'completion');
 }
@@ -226,10 +196,6 @@ export function compensateOperation(store: DocumentStore, operationId: string): 
   return transitionOperation(store, operationId, ['reserved', 'active'], 'compensated', 'compensation');
 }
 
-// Explicit recovery (DECK-ARCH-004): the human reconciles an unsettled
-// operation — confirm keeps its effects (owner acknowledges), clean records
-// the cleanup decision. Neither guesses: no takeover, no timeout. The old
-// owner is fenced afterwards by the owner-conditional updates above.
 export function reconcileOperation(
   store: DocumentStore,
   operationId: string,

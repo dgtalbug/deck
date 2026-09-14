@@ -1,7 +1,3 @@
-// The CLI door over the board core (design D1/D3): one dispatch table, one
-// error path, one project-resolution rule. Every command is a core call plus
-// rendering — route↔core↔CLI parity. Exit codes (D4): DeckError/ZodError → 1,
-// usage/resolution → 64, unexpected → 2, doctor checks failed → 1.
 import { ZodError } from 'zod';
 import { DeckError } from '../core/board/errors.ts';
 import { tweak } from '../core/board/groom.ts';
@@ -52,8 +48,6 @@ import { withSpinner } from './spin.ts';
 import { cardSummary, renderBoard, renderProjects, renderTodo } from './render.ts';
 import { DECK_VERSION } from '../version.ts';
 
-// Command → core function (route↔core↔CLI parity; the parity test walks
-// this table alongside the route tables).
 export const parity = {
   'deck note': 'addNote',
   'deck board': 'boardView',
@@ -234,8 +228,6 @@ const commands: Record<string, Command> = {
     const store = await getStore(project.path);
     const explicit = flagString(args.flags, 'result');
     if (explicit === undefined) {
-      // Computed convergence (P1c): deck enumerates the gaps itself; gaps
-      // exit non-zero. Clean HOLDS in verify — review + archive close.
       const outcome = await runVerification(store, id);
       if (outcome.hookWarnings.length > 0) ctx.io.err(renderHookWarnings(outcome.hookWarnings).join('\n'));
       if (outcome.result === 'gaps') {
@@ -246,7 +238,6 @@ const commands: Record<string, Command> = {
       ctx.io.out(`clean — card ${id} holds in verify; deck review + deck archive close it`);
       return 0;
     }
-    // Explicit results land the card in verify; done is archive's alone.
     const card = applyExplicitResult(store, id, verifyBody.parse({ result: explicit }).result, flagStrings(args.flags, 'task'));
     if ('lane' in card && card.lane === 'verify') {
       return `${cardSummary(card)}\nclean — card ${id} holds in verify; deck review + deck archive close it`;
@@ -259,7 +250,6 @@ const commands: Record<string, Command> = {
   init: async (args, ctx) => {
     const result = await initProject(ctx.registry, ctx.cwd, flagString(args.flags, 'name'));
     const p = ctx.pal;
-    // identity §3 init template: spade pip, board URL in lime, quiet rest
     return [
       `${p.color('primary', '♠')} ${p.bold(`deck initialized — ${result.project.name}`)}`,
       '',
@@ -294,7 +284,6 @@ const commands: Record<string, Command> = {
   build: (args, ctx) => startCommand(args, ctx, 'build'),
   ci: (args, ctx) => startCommand(args, ctx, 'ci'),
   chore: (args, ctx) => startCommand(args, ctx, 'chore'),
-  // The revert verb doubles as the done-card door (hold law): see cli/revert.ts
   revert: revertCommand,
   archive: archiveCommand,
   deliver: deliverCommand,
@@ -338,12 +327,8 @@ export async function runCli(argv: string[], options: RunOptions = {}): Promise<
     io,
     pal: palette(detectLevel(Bun.env, Boolean(process.stdout.isTTY))),
   };
-  // Bare `-v` is the short form of `--version`; everywhere else a short
-  // single-dash token is a positional, so only this exact argv is remapped.
   const args = parseArgs(argv.length === 1 && argv[0] === '-v' ? ['--version'] : argv);
   if (args.command === undefined) {
-    // Flag-only invocation: --version reports and exits; anything else serves,
-    // exactly as before (spec: serve stays the default entry).
     if (args.flags['version'] !== undefined) {
       io.out(`deck v${DECK_VERSION}`);
       return 0;
@@ -353,8 +338,6 @@ export async function runCli(argv: string[], options: RunOptions = {}): Promise<
   }
   let handler: Command | undefined = commands[args.command];
   if (handler === undefined) {
-    // Registered user verbs (deck workflow) dispatch through the shared
-    // start command exactly as the built-ins do; anything else is usage.
     handler = await userVerbCommand(args, ctx);
     if (handler === undefined) {
       io.err(`deck: unknown command '${args.command}'\n\n${USAGE}`);

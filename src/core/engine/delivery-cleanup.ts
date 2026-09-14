@@ -1,9 +1,3 @@
-// Delivery cleanup (E05 DECK-ARCH-014, design decision 6): post-delivery
-// follow-ups are independently retryable and never undo the recorded
-// delivery. Each effect carries its own progress and identity — issue close
-// rides the provider-intent ledger, Git cleanup re-acquires E01 ownership and
-// preserves unrelated work, the changelog dedupes on the delivery marker, and
-// releases reconcile by tag identity over the RECORDED delivered SHA.
 import { and, eq, inArray } from 'drizzle-orm';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -68,9 +62,6 @@ function markTask(store: DocumentStore, id: string, state: 'done' | 'failed', er
     .run();
 }
 
-// Retry every unfinished follow-up for the card's latest delivered attempt.
-// Delivered work is never reopened — a failing step stays inspectable and
-// the remaining steps still run.
 export async function retryCleanup(store: DocumentStore, cardId: string): Promise<CleanupOutcome> {
   const delivery = newestDelivery(store, cardId);
   if (delivery === undefined || delivery.state !== 'delivered') {
@@ -87,8 +78,6 @@ export async function retryCleanup(store: DocumentStore, cardId: string): Promis
     return { deliveryId: delivery.id, results, warnings: ['no pending cleanup for the delivered attempt'] };
   }
 
-  // One checkout reservation covers the whole sweep — cleanup re-acquires
-  // E01 ownership before any Git effect, exactly like the delivery doors.
   const operation = reserveOperation(store, cardId, 'archive');
   try {
     for (const task of tasks) {
@@ -133,8 +122,6 @@ export async function retryCleanup(store: DocumentStore, cardId: string): Promis
             break;
           }
           case 'branch-delete': {
-            // -d only (git refuses unmerged); unrelated work is preserved —
-            // a dirty tree or a blocked switch leaves the task retryable.
             const branch = branchFor(card, card.verb);
             try {
               const current = await runGit(store.projectPath, ['rev-parse', '--abbrev-ref', 'HEAD'], 5000);
@@ -154,8 +141,6 @@ export async function retryCleanup(store: DocumentStore, cardId: string): Promis
             break;
           }
           case 'changelog': {
-            // One attributed entry per delivery, deduped by marker: retrying
-            // can never append a second entry for the same delivery.
             const marker = `<!-- deck-delivery:${delivery.id} -->`;
             const changelogPath = join(store.projectPath, 'CHANGELOG.md');
             const prior = existsSync(changelogPath) ? readFileSync(changelogPath, 'utf8') : '';
@@ -174,9 +159,6 @@ export async function retryCleanup(store: DocumentStore, cardId: string): Promis
             break;
           }
           case 'release': {
-            // Tag identity reconciliation: the version bump in the delivered
-            // revision names the tag; an existing remote release reconciles
-            // instead of duplicating.
             const bumped = await versionBumpedInDiff(store.projectPath, card, delivery.deliveredSha ?? undefined);
             if (bumped === null) {
               markTask(store, task.id, 'done', 'no version bump in the delivered revision — release not applicable');
@@ -217,7 +199,6 @@ export async function retryCleanup(store: DocumentStore, cardId: string): Promis
     try {
       compensateOperation(store, operation.id);
     } catch {
-      // Terminal elsewhere.
     }
     throw error;
   }

@@ -19,17 +19,8 @@ import {
   withLane,
 } from './docTransforms.ts';
 
-// One signals store per project board (D-UI-03): the GET /board document in
-// `board`, everything else derived; SSE deltas apply inside one batch() per
-// tick; mutations go optimistic → response replace → rollback + toast.
-// Zero domain logic — every rule the store enforces visually is enforced
-// authoritatively by the server.
-
 export const MANUAL_LANES: ReadonlySet<Lane> = new Set(['todo', 'groomed']);
 export const ENGINE_LANES: ReadonlySet<Lane> = new Set(['active', 'verify', 'done']);
-// The board document does not expose the server's configured WIP limit
-// (frozen API); 3 is the documented default and `atLimit` is confirmed
-// authoritatively via GET /next's wipBlockedBy.
 export const DEFAULT_WIP_LIMIT = 3;
 
 const EMPTY_BOARD: BoardDoc = {
@@ -55,7 +46,6 @@ export interface BoardStore {
   readonly filter: Signal<FilterState>;
   readonly next: Signal<NextDigest | null>;
   readonly wip: Signal<WipState>;
-  /** ids most recently moved by a REMOTE SSE delta (fade-slide cue); cleared shortly after */
   readonly remoteMoved: Signal<ReadonlySet<string>>;
   laneCards(lane: Lane): UiCard[];
   filtered(lane: Lane): UiCard[];
@@ -111,17 +101,8 @@ export function createBoardStore(project: string, api: BoardApi): BoardStore {
     return found === undefined ? undefined : board.value.lanes[found.lane][found.index];
   };
 
-  // HTTP is the i/o path of truth for user-initiated actions (D-UI-…):
-  // the mutation response replaces state wholesale via refetch. SSE deltas
-  // are notifications for changes originated ELSEWHERE — so while a mutation
-  // is in flight, its card's deltas are dropped (echo suppression). The
-  // response carries no rowid, so the guard is the in-flight window itself,
-  // time-boxed as a safety net: suppression ends the moment the response
-  // refetch has landed (or ECHO_WINDOW_MS passes, whichever first). A remote
-  // change to the same card inside that ≤~200ms window is covered by the
-  // response refetch that closes it.
   const ECHO_WINDOW_MS = 2000;
-  const echoSuppress = new Map<string, number>(); // cardId → expiry ts
+  const echoSuppress = new Map<string, number>(); 
   let mutationsInFlight = 0;
 
   const isSuppressed = (id: string): boolean => {
@@ -134,8 +115,6 @@ export function createBoardStore(project: string, api: BoardApi): BoardStore {
     return true;
   };
 
-  // Mutations: optimistic apply → response replace → rollback + toast on
-  // 400/409/404, always naming the card and the server's reason.
   async function mutate(
     id: string,
     optimistic: (before: BoardDoc) => BoardDoc,
@@ -147,12 +126,9 @@ export function createBoardStore(project: string, api: BoardApi): BoardStore {
     board.value = optimistic(before);
     try {
       await request();
-      await refetch(); // server truth replaces wholesale
+      await refetch(); 
       return true;
     } catch (error) {
-      // Roll back ONLY the affected card — restoring the whole `before`
-      // snapshot would wipe SSE deltas that landed on other cards while
-      // this mutation was in flight.
       const latest = board.value;
       const beforeLoc = findCard(before, id);
       const beforeCard = beforeLoc !== undefined ? before.lanes[beforeLoc.lane][beforeLoc.index] : undefined;
@@ -200,12 +176,7 @@ export function createBoardStore(project: string, api: BoardApi): BoardStore {
     }
   }
 
-  // SSE deltas — one batch() per tick. Structural fields (lane, position,
-  // blocked, tasks) apply from payloads; card.created/groomed/done lack the
-  // full row, so they schedule a trailing refetch to fill details. A per-
-  // subscription rowid watermark makes replays (reconnect, server resend)
-  // never re-apply, and applyEvent itself is idempotent for the same reason.
-  let watermark = 0; // highest SSE rowid seen — anything ≤ is a replay
+  let watermark = 0; 
   let refetchTimer: ReturnType<typeof setTimeout> | null = null;
   function scheduleRefetch(): void {
     if (refetchTimer !== null) return;
@@ -232,10 +203,9 @@ export function createBoardStore(project: string, api: BoardApi): BoardStore {
     let needsRefetch = false;
     batch(() => {
       for (const event of events) {
-        if (event.rowid <= watermark) continue; // replay of an already-seen event
+        if (event.rowid <= watermark) continue; 
         watermark = event.rowid;
         const id = typeof event.payload.id === 'string' ? event.payload.id : null;
-        // echo of an in-flight local mutation — the response refetch owns it
         if (id !== null && isSuppressed(id)) continue;
         const before = board.value;
         board.value = applyEvent(board.value, event);
@@ -247,9 +217,6 @@ export function createBoardStore(project: string, api: BoardApi): BoardStore {
         }
       }
     });
-    // card.created/groomed/done lack the full row → trailing refetch. While a
-    // local mutation is in flight its own refetch is imminent and covers the
-    // window, so these detail refetches are suppressed to avoid double-apply.
     needsRefetch =
       mutationsInFlight === 0 &&
       events.some(
@@ -281,7 +248,6 @@ export function createBoardStore(project: string, api: BoardApi): BoardStore {
         const found = findCard(doc, id);
         if (found === undefined) return doc;
         const position = typeof payload.position === 'number' ? payload.position : undefined;
-        // idempotent replay: same lane, same (or unspecified) position
         const current = doc.lanes[found.lane][found.index]!;
         if (found.lane === payload.lane && (position === undefined || current.position === position)) {
           return doc;
@@ -294,8 +260,6 @@ export function createBoardStore(project: string, api: BoardApi): BoardStore {
         const source = doc.lanes[found.lane].filter((entry) => entry.id !== id);
         const base = withLane(doc, found.lane, source);
         const target = [...base.lanes[payload.lane]];
-        // Positions are 1024-step floats, NOT ordinals — insert before the
-        // first neighbor with a larger position; unknown positions sort last.
         let insertAt = target.length;
         if (position !== undefined) {
           const neighbor = target.findIndex((entry) => (entry.position ?? Number.POSITIVE_INFINITY) > position);
@@ -331,14 +295,12 @@ export function createBoardStore(project: string, api: BoardApi): BoardStore {
         return withLane(doc, found.lane, lane.map((entry, i) => (i === found.index ? (rest as UiCard) : entry)));
       }
       case 'card.created': {
-        if (findCard(doc, id) !== undefined) return doc; // replay/echo — never duplicate
-        // stub inserted; trailing refetch fills title/type from the server
+        if (findCard(doc, id) !== undefined) return doc; 
         const stub: UiCard = { id, title: id };
         return withLane(doc, 'todo', [...doc.lanes.todo, stub]);
       }
       case 'card.done':
       case 'card.updated':
-        // payload carries { id, lane } only — the trailing refetch fills detail
         return doc;
       case 'card.deleted': {
         const found = findCard(doc, id);
@@ -382,8 +344,6 @@ export function createBoardStore(project: string, api: BoardApi): BoardStore {
     groom: (id, input) => mutate(id, (before) => before, () => api.groom(project, id, input)),
     block: (id, reason) => mutate(id, (before) => before, () => api.block(project, id, reason)),
     unblock: (id) => mutate(id, (before) => before, () => api.unblock(project, id)),
-    // tweak never enters active optimistically — the response is the only
-    // path that moves a card into an engine lane (spec: UI never-dos)
     tweak: (id) => mutate(id, (before) => before, () => api.tweak(project, id)),
     demote: (id) => mutate(id, (before) => before, () => api.demote(project, id)),
   };

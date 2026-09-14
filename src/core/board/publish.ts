@@ -1,12 +1,3 @@
-// Publish + reconcile + backfill (spec-store-issues core): one-way publish
-// with offline queue, the syncProject reconcile report (writes limited to
-// queue flush / map refresh / label refresh — drift needing judgment is
-// reported with its fix, never auto-applied), and the one-time idempotent
-// backfill of openspec main specs.
-// E05 (DECK-ARCH-013): publication runs through the provider-intent ledger —
-// intent recorded before the network call, claimed in a short transaction,
-// reconciled after uncertain outcomes. No retry discards unresolved intent
-// merely to drain the queue.
 import { and, eq } from 'drizzle-orm';
 import { cards, providerOperations, tasks } from './schema.ts';
 import { runTx, type DocumentStore } from './store.ts';
@@ -43,8 +34,6 @@ function nowIso(): string {
   return new Date().toISOString();
 }
 
-// Namespaced repository identity ('owner/name') from the origin remote; ''
-// when unresolvable — the ledger records it honestly either way.
 export async function repoOf(projectPath: string): Promise<string> {
   const remote = await runGit(projectPath, ['remote', 'get-url', 'origin'], 5000);
   if (remote.code !== 0) return '';
@@ -52,11 +41,6 @@ export async function repoOf(projectPath: string): Promise<string> {
   return match?.[1] ?? '';
 }
 
-// Reconcile any unresolved issue-create intent for the card before another
-// create. An intent currently CLAIMED by another worker is in flight — the
-// caller queues instead of touching the network. Otherwise: marker lookup,
-// one match → the mapped issue, zero/multiple → typed refusal naming the
-// operation and its next action.
 async function reconcilePendingIssueCreate(
   store: DocumentStore,
   cardId: string,
@@ -82,19 +66,12 @@ async function reconcilePendingIssueCreate(
   );
 }
 
-// --- publish ---------------------------------------------------------------
-
 export interface PublishOutcome {
   issueNumber: number | null;
   queued: boolean;
   url?: string;
 }
 
-// Pinned contract: publishSpec(cardId)→issueNumber. Renders the newest
-// version (materializing one if none exists), publishes one-way, and queues
-// — never blocks — when gh is down. Stage derives from the card's lane:
-// 'groomed' publishes/keeps a DRAFT issue (issues-at-groom); any engine lane
-// retargets an existing draft to active (body refresh + lane label + state).
 export async function publishSpec(store: DocumentStore, cardId: string): Promise<PublishOutcome> {
   const card = store.getVerbItem(cardId);
   const stage = card.lane === 'groomed' ? 'draft' : 'active';
@@ -105,12 +82,8 @@ export async function publishSpec(store: DocumentStore, cardId: string): Promise
   const marker = markerFor(projectId, cardId);
   try {
     if (map === undefined) {
-      // Crash-after-success safety (DECK-ARCH-013): an unresolved create
-      // intent reconciles to the original resource before any new create.
       const pending = await reconcilePendingIssueCreate(store, cardId);
       if (pending.inFlight) {
-        // Another worker owns the dispatch — queue and reconcile on a later
-        // flush instead of double-creating.
         enqueuePublish(store, cardId, version.checksum);
         return { issueNumber: null, queued: true };
       }
@@ -136,8 +109,6 @@ export async function publishSpec(store: DocumentStore, cardId: string): Promise
         claimed = claimIntent(store, intent.id, ownerToken);
       } catch (error) {
         if (error instanceof DeckError && /not claimable/.test(error.message)) {
-          // Another worker is dispatching this exact create — queue and
-          // reconcile on the next flush instead of double-creating.
           enqueuePublish(store, cardId, version.checksum);
           return { issueNumber: null, queued: true };
         }
@@ -159,7 +130,6 @@ export async function publishSpec(store: DocumentStore, cardId: string): Promise
         return { issueNumber: created.number, queued: false, url: created.url };
       } catch (error) {
         if (error instanceof GhUnavailableError) {
-          // gh never ran — release the claim; the queued entry retries later.
           await releaseIntent(store, intent.id, ownerToken);
           enqueuePublish(store, cardId, version.checksum);
           return { issueNumber: null, queued: true };
@@ -172,8 +142,6 @@ export async function publishSpec(store: DocumentStore, cardId: string): Promise
       }
     }
     if (map.state === 'draft' && stage === 'active') {
-      // Retarget: groom's draft becomes the build issue — refresh the body
-      // if the spec changed, move the lane label, flip the map state.
       if (map.checksum !== version.checksum) await editThroughLedger(store, cardId, map.issueNumber, version.checksum, version.markdown, marker, repo, projectId);
       await setLaneLabel(store.projectPath, map.issueNumber, card.lane);
       setIssueMap(store, { cardId, issueNumber: map.issueNumber, state: 'open', checksum: version.checksum });
@@ -193,9 +161,6 @@ export async function publishSpec(store: DocumentStore, cardId: string): Promise
   }
 }
 
-// Body refresh through the ledger: intent + short claim serialize per
-// resource so two flush handles cannot interleave writes, and an older
-// payload revision can never overwrite a newer intent.
 async function editThroughLedger(
   store: DocumentStore,
   cardId: string,
@@ -217,7 +182,7 @@ async function editThroughLedger(
   try {
     claimIntent(store, intent.id, ownerToken);
   } catch (error) {
-    if (error instanceof DeckError && /not claimable/.test(error.message)) return; // another worker owns it
+    if (error instanceof DeckError && /not claimable/.test(error.message)) return; 
     throw error;
   }
   try {
@@ -236,8 +201,6 @@ async function editThroughLedger(
   }
 }
 
-// Release a claim when the dispatch provably never started (gh unavailable
-// at call time): back to 'intented' so the next worker can claim cleanly.
 async function releaseIntent(store: DocumentStore, id: string, owner: string): Promise<void> {
   runTx(store.db, (tx) => {
     tx.update(providerOperations)
@@ -247,12 +210,8 @@ async function releaseIntent(store: DocumentStore, id: string, owner: string): P
   });
 }
 
-// The syncProject reconcile report lives in sync.ts; re-exported for the
-// existing publish.ts importers.
 export { syncProject } from './sync.ts';
 export type { DriftKind, DriftLine, ReconcileReport } from './sync.ts';
-
-// --- backfill ----------------------------------------------------------------
 
 export interface BackfillReport {
   imported: number;
@@ -266,10 +225,6 @@ function specTitle(path: string, markdown: string): string {
   return `spec: ${path}${h1 !== undefined && h1 !== '' ? ` — ${h1}` : ''}`;
 }
 
-// Placeholder groomed verb item per main spec with no owning card: blocked so
-// topOfQueue skips it — it exists for map integrity, not for building. The id
-// is deterministic per spec path so backfill runs are idempotent even before
-// the specPath lookup succeeds.
 function placeholderIdFor(path: string): string {
   return `spec-${checksumOf(path).slice(0, 12)}`;
 }
@@ -319,8 +274,6 @@ export async function backfillSpecs(store: DocumentStore): Promise<BackfillRepor
     try {
       const hadVersions = specs(store, placeholderIdFor(spec.path)).length > 0;
       const cardId = ensurePlaceholder(store, spec.path, spec.markdown);
-      // publishSpec renders the version from the on-disk spec.md inside the
-      // placeholder's specPath — one rendering path, checksum-idempotent.
       const outcome = await publishSpec(store, cardId);
       if (hadVersions) {
         report.skippedExisting += 1;

@@ -1,6 +1,3 @@
-// web-tree-sitter ships types its package.json exports don't resolve; the
-// ambient module recovers them (web-tree-sitter@0.25.0, pinned for the
-// dylink-capable loader).
 declare module 'web-tree-sitter' {
   export interface SyntaxNode {
     id: number;

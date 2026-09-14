@@ -1,8 +1,3 @@
-// extractor.ts: the one pass-1 extraction engine (dextree's law — "languages
-// are data; this engine never branches on a language name"). Parses a file
-// with the provider's grammar, runs the provider's tags query, and mints
-// symbols + edges. Unresolved edges keep the referenced NAME in metadata and
-// a NULL target — honesty about resolution is a pinned invariant.
 import { createHash } from 'node:crypto';
 import { existsSync, statSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
@@ -23,9 +18,9 @@ export interface ExtractedSymbol {
 
 export interface ExtractedEdge {
   id: string;
-  sourceId: string; // symbol id, or the file node id for IMPORTS
+  sourceId: string; 
   targetId: string | null;
-  kind: string; // CALLS | INHERITS | INSTANTIATES | IMPLEMENTS | REFERENCES | RE_EXPORTS | IMPORTS
+  kind: string; 
   meta: Record<string, string>;
 }
 
@@ -39,10 +34,6 @@ const languageCache = new Map<string, Promise<Language | null>>();
 const queryCache = new Map<string, Query>();
 let parser: Parser | null = null;
 
-// Lazy grammar loading: concurrent files share one Language promise.
-// The tree-sitter runtime wasm is imported as a file asset — Bun embeds it
-// in compiled binaries and resolves it on disk in dev, so locateFile works
-// in both worlds.
 import runtimeWasm from '../../../node_modules/web-tree-sitter/tree-sitter.wasm' with { type: 'file' };
 
 async function languageFor(provider: LanguageProvider): Promise<Language | null> {
@@ -83,10 +74,6 @@ const KIND_OF_DEFINITION: Record<string, string> = {
   'definition.variable': 'variable',
 };
 
-// Import specifier → repo-relative path. Relative imports probe the usual
-// extension ladder and index files; tsconfig-style alias prefixes expand via
-// the simple `<prefix>/* → src/*` convention; anything else stays unresolved
-// (the finalize pass tries a workspace-wide suffix match).
 export function resolveImportSpec(fromRelative: string, spec: string, root: string): string | null {
   let specPath: string | null = null;
   if (spec.startsWith('.')) {
@@ -102,7 +89,6 @@ export function resolveImportSpec(fromRelative: string, spec: string, root: stri
     try {
       if (statSync(join(root, candidate)).isFile()) return candidate;
     } catch {
-      // no such candidate
     }
   }
   return null;
@@ -110,7 +96,6 @@ export function resolveImportSpec(fromRelative: string, spec: string, root: stri
 
 const EXT_LADDER = ['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs'];
 
-// The per-file pass: one parse, one query, all symbols and edges.
 export async function extractFile(root: string, relativePath: string, source: string): Promise<ExtractResult | null> {
   const provider = providerFor(relativePath);
   if (provider === undefined) return null;
@@ -146,7 +131,6 @@ export async function extractFile(root: string, relativePath: string, source: st
         const name = nameNode.node.text;
         const startLine = node.startPosition.row + 1;
         const endLine = node.endPosition.row + 1;
-        // Methods are scoped by the smallest enclosing class; module items by the file.
         const owner = symbols
           .filter((s) => s.kind === 'class')
           .filter((s) => s.startLine <= startLine && node.endPosition.row + 1 <= s.endLine)
@@ -170,8 +154,6 @@ export async function extractFile(root: string, relativePath: string, source: st
       } else if (captureName.startsWith('reference.')) {
         const edgeKind = provider.relationCaptures[captureName];
         if (edgeKind === undefined) continue;
-        // The name capture (the callee identifier) is the edge's referenced
-        // name — the reference capture's own node is the whole expression.
         const name = match.captures.find((c) => c.name === 'name')?.node.text ?? node.text;
         const caller = smallestEnclosing(symbols, node);
         const at = node.startPosition.row + 1;
@@ -190,15 +172,12 @@ export async function extractFile(root: string, relativePath: string, source: st
     }
   }
 
-  // IMPORTS edges: file → file, target resolved eagerly when the specifier
-  // lands inside the workspace; otherwise NULL + import_path for finalize.
   collectImports(tree.rootNode, relativePath, root, edges, new Set<number>());
 
   const deduped: ExtractedSymbol[] = symbols.map(({ node, ...rest }) => {
     void node;
     return rest;
   });
-  // Same name@line captured twice (variable + function shapes) — richer kind wins.
   const byKey = new Map<string, ExtractedSymbol>();
   for (const symbol of deduped) {
     const key = `${symbol.fqn}@${symbol.startLine}`;
@@ -220,8 +199,6 @@ function smallestEnclosing(symbols: Array<{ id: string; startLine: number; endLi
     .sort((a, b) => (a.endLine - a.startLine) - (b.endLine - b.startLine))[0];
 }
 
-// import_statement / export_statement source specifiers via a walk (the tags
-// query's reexport capture handles `export … from`; plain imports walk here).
 function collectImports(
   node: SyntaxNode,
   relativePath: string,

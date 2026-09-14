@@ -1,9 +1,3 @@
-// FLIP reorder animation (D-UI-005, zero new deps): the drag-drop caller
-// snapshots card rects BEFORE the store applies the intent, then after the
-// response lands plays invert-transform + transition back to zero. Only
-// user-initiated moves animate this way — remote SSE moves get the lighter
-// .is-remote-in fade-slide cue instead. DOM-less test runtimes have zero
-// rects, so every step degrades to a no-op.
 
 export type FlipSnapshot = Map<string, { top: number; left: number }>;
 
@@ -39,7 +33,6 @@ export function playFlip(root: HTMLElement | null, before: FlipSnapshot): void {
         if (dx === 0 && dy === 0) continue;
         el.style.transform = `translate(${dx}px, ${dy}px)`;
         el.style.transition = 'none';
-        // force layout so the invert transform is the animation start point
         void el.offsetHeight;
         el.style.transition = 'transform 200ms cubic-bezier(0.2, 0, 0, 1)';
         el.style.transform = '';

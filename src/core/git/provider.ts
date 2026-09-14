@@ -1,7 +1,3 @@
-// Provider-facing git surface (E05): guarded local integration and fresh PR
-// observation/search — the seams delivery.ts and archive.ts read. Split from
-// ops.ts (400-line law); helpers come from ops.ts, ops.ts re-exports the
-// public names so callers keep their imports.
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -10,8 +6,6 @@ import { runGh } from './gh.ts';
 import { GhUnavailableError, GitOpError } from './errors.ts';
 import { assertCleanTree, branchExists, currentBranch, output, validateBranchName } from './ops.ts';
 
-// --- guarded local integration (E05 DECK-ARCH-014, solo delivery) ------------
-
 export interface LocalIntegration {
   mergedSha: string;
   base: string;
@@ -19,11 +13,6 @@ export interface LocalIntegration {
   output: string;
 }
 
-// Explicit solo/local integration: fast-forward-safe merge of the owned
-// feature branch into the local default branch under clean-tree and checkout
-// guards. NO push, NO provider call — solo completion claims local delivery
-// only. A failed merge auto-aborts (never a repo mid-merge) and unrelated
-// work is preserved (nothing is ever forced).
 export async function integrateLocally(
   projectPath: string,
   branch: string,
@@ -48,7 +37,7 @@ export async function integrateLocally(
     branch,
   ]);
   if (merge.code !== 0) {
-    await runGit(projectPath, ['merge', '--abort']); // restore base, preserve the branch
+    await runGit(projectPath, ['merge', '--abort']); 
     await output(projectPath, ['switch', branch]);
     throw new GitOpError('local integration', 'conflict — merge aborted, base restored', `${merge.stdout}${merge.stderr}`.trim());
   }
@@ -82,12 +71,6 @@ export async function editPullRequestBody(
   }
 }
 
-// --- E05 provider-intent lookup and observed state (DECK-ARCH-013/014) -------
-//
-// Injectable seam as in issues.ts: the trailing `provider` parameter lets
-// tests inject a fake provider; the default rides runGh. No new provider
-// dependencies.
-
 export interface PrRef {
   number: number;
   title: string;
@@ -100,7 +83,6 @@ export interface PrRef {
 
 export interface ProviderCheck {
   name: string | null;
-  // CheckRun conclusion/status or StatusContext state, lower-cased.
   state: string;
 }
 
@@ -114,7 +96,6 @@ export interface PullRequestObservation {
   baseRefName: string;
   mergeCommit: { oid: string } | null;
   checks: ProviderCheck[];
-  // 'approved' | 'review_required' | … (lower-cased), null when no reviews.
   reviewDecision: string | null;
 }
 
@@ -177,7 +158,6 @@ export async function viewPullRequest(
   }
 }
 
-// Bounded paginated marker lookup over open+recently-closed PRs.
 export async function searchPullRequestsByMarker(
   projectPath: string,
   marker: string,

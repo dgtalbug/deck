@@ -7,9 +7,6 @@ import { attempt } from './http.ts';
 
 export const parity = { 'GET /:project/events': 'readSince' };
 
-// One tailer per project, alive only while subscribers exist. The 250ms poll
-// doubles as the keepalive heartbeat; server.timeout(req, 0) is mandatory
-// because Bun.serve kills idle streams after 10s.
 const POLL_MS = 250;
 
 interface Tailer {
@@ -51,8 +48,6 @@ function subscribe(store: DocumentStore): ReadableStream<Uint8Array> {
   }
   const current = tailer;
 
-  // `cancel` must remove only THIS stream's send fn — clearing the set would
-  // silently kill every other subscriber of the project (second-tab bug).
   let detach: (() => void) | null = null;
   return new ReadableStream<Uint8Array>({
     start(controller) {

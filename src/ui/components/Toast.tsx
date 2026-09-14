@@ -1,9 +1,6 @@
 import { signal } from '@preact/signals';
 import { TriangleAlert, X } from 'lucide-preact';
 
-// Toast store (rule 11: one signal, everything else derived). Rollback and
-// rejection paths push here naming the card and the server's reason.
-
 export interface ToastEntry {
   id: number;
   kind: 'error' | 'info';

@@ -1,7 +1,3 @@
-// Short slug ids: bare title slug, readable in .deck/specs/<shape>/<verb>-<id>/
-// directory names. Uniqueness is collision-numbered Jira-style — the bare
-// slug wins, and only a same-slug second card gets -2, -3, ... (the
-// random-suffix ids this replaced live on in pre-existing cards).
 export function newCardId(title: string, taken?: (id: string) => boolean): string {
   const slug = title
     .toLowerCase()

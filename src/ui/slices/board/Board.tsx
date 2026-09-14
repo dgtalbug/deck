@@ -22,10 +22,6 @@ import { RenameDialog } from './RenameDialog.tsx';
 import { DeleteConfirm } from './DeleteConfirm.tsx';
 import { ToastHost } from '../../components/Toast.tsx';
 
-// Board view: one signals store per project, SSE deltas applied in batches,
-// kanban + todo over the same document. Every mutation is optimistic →
-// response replace → rollback; engine lanes change only via server data.
-
 export interface BoardProps {
   project: string;
   api?: BoardApi;
@@ -40,14 +36,10 @@ export function Board({ project, api = boardApi, subscribe = subscribeBoardEvent
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [regroomId, setRegroomId] = useState<string | null>(null);
   const [nextOpen, setNextOpen] = useState(false);
-  // Lane pinning (design D3): while a drag is active, SSE deltas re-render
-  // other lanes; the dragged lane shows its drag-start snapshot until drop.
   const pinnedLane = signal<{ lane: string; cards: UiCard[] } | null>(null);
   const dragCallbacks: DragCallbacks = {
     onIntent: (intent) => {
       pinnedLane.value = null;
-      // FLIP (D-UI-005): snapshot pre-drop rects, animate the user-initiated
-      // reorder back from the inverted position once the response lands.
       const flip = captureFlip(containerRef.current);
       const applied =
         intent.kind === 'move'
@@ -70,7 +62,7 @@ export function Board({ project, api = boardApi, subscribe = subscribeBoardEvent
       onEvents: (events) => store.applyEvents(events),
       onOpen: () => {
         store.setOnline(true);
-        void store.refetch(); // close the no-resume gap on every (re)connect
+        void store.refetch(); 
       },
       onError: () => store.setOnline(false),
     });
@@ -99,7 +91,7 @@ export function Board({ project, api = boardApi, subscribe = subscribeBoardEvent
     onDemote: (id) => void store.demote(id),
     onNext: () => setNextOpen(true),
     onEditTitle: (id) => {
-      setParam('card', null); // editors replace the detail dialog, not stack
+      setParam('card', null); 
       setRenamingId(id);
     },
     onEditGroom: (id) => {
@@ -114,8 +106,6 @@ export function Board({ project, api = boardApi, subscribe = subscribeBoardEvent
 
   const view = route.value.view;
   const detailCard = route.value.card !== null ? store.cardById(route.value.card) : undefined;
-  // Epic navigation: a detail route that names an epic opens the epic tree
-  // instead of a card detail (epics are not lane cards).
   const detailEpicId =
     detailCard === undefined && route.value.card !== null &&
     (store.board.value.epics ?? []).some((epic) => epic.id === route.value.card)
@@ -140,8 +130,6 @@ export function Board({ project, api = boardApi, subscribe = subscribeBoardEvent
   const deleteCard = deletingId !== null ? store.cardById(deletingId) : undefined;
   const regroomCard = regroomId !== null ? store.cardById(regroomId) : undefined;
 
-  // kanban↔todo↔git toggle rides the View Transition API when available
-  // (D-UI-005); the plain swap is the fallback.
   const switchView = (next: 'kanban' | 'todo' | 'git' | 'timeline') => {
     const go = () => setParam('view', next === 'kanban' ? null : next);
     if (typeof document !== 'undefined' && typeof document.startViewTransition === 'function') {
@@ -162,16 +150,8 @@ export function Board({ project, api = boardApi, subscribe = subscribeBoardEvent
     pinned !== null && pinned.lane === lane ? pinned.cards : store.filtered(lane);
   const flashIds = store.remoteMoved.value;
 
-  // ONE note-capture affordance: the ghost card at the top of the todo lane
-  // (kanban) / inbox group (todo view) — same card visual language as the
-  // notes it creates. `N` focuses it from anywhere outside a field. Hidden on
-  // the git view along with the filter bar (spec: git view is git-only).
   const capture = <NoteCapture onAdd={(title) => store.addNote(title)} />;
 
-  // The project bar (top-bar merge, v0.7.0): the old sidebar's navigation
-  // lives in the header row now — segmented view switcher + deck next — so
-  // the board keeps the full viewport width for its five lanes. Workspace
-  // identity (home link, crumb, theme) stays in the global topbar.
   const viewSwitch = (mode: 'kanban' | 'todo' | 'git' | 'timeline', label: string): VNode => (
     <button
       type="button"
@@ -232,8 +212,6 @@ export function Board({ project, api = boardApi, subscribe = subscribeBoardEvent
       ) : view === 'timeline' ? (
         <Timeline project={project} api={api} />
       ) : view === 'kanban' && !store.loaded.value ? (
-        // board skeleton (brand §4): real chrome — sidebar, lane heads,
-        // semantic top-borders — only the card data shimmers
         <div class="board" role="status" aria-label="loading board">
           {LANE_ORDER.map((lane, index) => (
             <LaneSkeleton key={lane} lane={lane} bones={[3, 2, 1, 2, 1][index] ?? 2} />

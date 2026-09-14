@@ -1,15 +1,10 @@
-// Hand-rolled arg parsing (design D2): commands, `--flag value`,
-// `--flag=value`, boolean flags, `--` passthrough. No commander/yargs —
-// stack law, zero new deps.
 
 export type FlagValue = string | true | string[];
 
 export interface ParsedArgs {
-  // First non-flag token, when present.
   command?: string;
   positionals: string[];
   flags: Record<string, FlagValue>;
-  // Everything after `--`, verbatim.
   passthrough: string[];
 }
 
@@ -57,14 +52,12 @@ export function parseArgs(argv: string[]): ParsedArgs {
       setFlag(parsed.flags, name, next);
       i += 1;
     } else {
-      // No consumable value: boolean flag.
       setFlag(parsed.flags, name, true);
     }
   }
   return parsed;
 }
 
-// Repeated flags accumulate into arrays (e.g. `verify --task a --task b`).
 function setFlag(flags: Record<string, FlagValue>, name: string, value: string | true): void {
   const existing = flags[name];
   if (existing === undefined) {
@@ -76,7 +69,6 @@ function setFlag(flags: Record<string, FlagValue>, name: string, value: string |
   flags[name] = arr;
 }
 
-// Convenience readers used by the dispatch table.
 export function flagString(flags: Record<string, FlagValue>, name: string): string | undefined {
   const value = flags[name];
   if (value === undefined || value === true) return undefined;

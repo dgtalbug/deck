@@ -1,10 +1,3 @@
-// The moment grid (add-engine-event-hooks): seven engine moments — note,
-// groom, feat, task, verify, review, archive — each with a pre phase (before
-// the moment's card-state change commits; a declared hook may block) and a
-// post phase (after; a declared failure is recorded on the card, never
-// reverting). Declared hooks come from deck.rules.yaml `hooks:`; the legacy
-// convention directory keeps its pinned law inside the mapped moment's post
-// phase — post-only, never gating.
 import { join } from 'node:path';
 import { z } from 'zod';
 import { DeckError } from '../board/errors.ts';
@@ -12,22 +5,15 @@ import { loadRules } from '../board/rules.ts';
 import type { DocumentStore } from '../board/store.ts';
 import { hookNames, hooksDir, concat, HOOK_TIMEOUT_MS, HookEvent, type HookWarning } from './hooks.ts';
 
-// The moment grid (add-engine-event-hooks): the seven engine verbs, each with
-// a pre phase (before the moment's card-state change commits) and a post phase
-// (after). `task` is its own moment — many fire per lane.
 export const MOMENTS = ['note', 'groom', 'feat', 'task', 'verify', 'review', 'archive'] as const;
 export type Moment = (typeof MOMENTS)[number];
 
-// Convention events keep firing at their pinned boundaries, now expressed as
-// the mapped moment's post phase.
 const CONVENTION_FOR_MOMENT: Partial<Record<Moment, HookEvent>> = {
   feat: HookEvent.VerbStart,
   verify: HookEvent.VerifyResult,
   archive: HookEvent.Archive,
 };
 
-// Declared entries in deck.rules.yaml `hooks:` — slice 1 reserved the key
-// untyped; malformed entries are skipped (never executed, never fatal).
 const declaredHookSchema = z.object({
   on: z.enum(MOMENTS),
   pre: z.string().min(1).optional(),
@@ -47,22 +33,20 @@ export function declaredHooks(projectPath: string): DeclaredHook[] {
   return out;
 }
 
-// --- the moment grid (add-engine-event-hooks) ---------------------------------
-
 export interface MomentPayload {
   moment: Moment;
   cardId: string;
-  lane: string; // pre: pre-transition lane; post: post-transition lane
+  lane: string; 
   verb?: string;
   branch?: string | null;
   issueNumber?: number | null;
   result?: 'clean' | 'gaps' | null;
-  card: unknown; // the full card document — declared hooks read it on stdin
+  card: unknown; 
   timestamp: string;
 }
 
 export interface MomentHook {
-  id: string; // `hooks[<index>]` for declared, `<event>/<name>` for convention
+  id: string; 
   source: 'declared' | 'convention';
   cmd: string;
   timeout: number;
@@ -82,8 +66,6 @@ function planDeclared(moment: Moment, phase: 'pre' | 'post', projectPath: string
     }));
 }
 
-// A pre phase runs declared hooks only — the convention directory stays
-// post-only and never-gating (its pinned law is untouched).
 export function planMomentHooks(
   projectPath: string,
   moment: Moment,
@@ -100,8 +82,6 @@ export function planMomentHooks(
   ];
 }
 
-// Shared env: identity for every hook; the pinned DECK_HOOK_EVENT stays on
-// convention hooks exactly as before (append-only law).
 function hookEnv(hook: MomentHook, payload: MomentPayload, projectPath: string): Record<string, string | undefined> {
   const base: Record<string, string> = {
     DECK_EVENT: payload.moment,
@@ -115,9 +95,6 @@ function hookEnv(hook: MomentHook, payload: MomentPayload, projectPath: string):
   return { ...process.env, ...base };
 }
 
-// Declared hooks read the full card document on stdin; convention hooks keep
-// the pinned HookPayload envelope (existing fields never renamed — the card
-// is deliberately NOT merged into it).
 function hookInput(hook: MomentHook, payload: MomentPayload, cardJson: string): string {
   if (hook.source === 'declared') return cardJson;
   const event = CONVENTION_FOR_MOMENT[payload.moment];
@@ -134,9 +111,6 @@ function hookInput(hook: MomentHook, payload: MomentPayload, cardJson: string): 
   });
 }
 
-// A declared pre hook exiting non-zero (or timing out) blocks the moment
-// before any card state changes; the refusal names the moment, the hook, and
-// the hook's stderr. Convention hooks are never in a pre plan.
 export class PreHookBlockedError extends DeckError {
   constructor(
     moment: Moment,
@@ -151,16 +125,12 @@ export class PreHookBlockedError extends DeckError {
   }
 }
 
-// --- sync exec (the note/groom/task moments fire inside sync core fns) --------
-
 function tail(text: string): string {
   return text.trim().split('\n').slice(-3).join(' | ').slice(0, 200);
 }
 
 function execSyncHook(hook: MomentHook, payload: MomentPayload, projectPath: string): { code: number; stderr: string } {
   const cardJson = JSON.stringify(payload.card ?? null);
-  // Hook commands are shell command strings authored in rules.yaml
-  // (`./guard.sh`, `deck rules check`) — sh -c is the contract, cwd-scoped.
   const proc = Bun.spawnSync(['sh', '-c', hook.cmd], {
     cwd: projectPath,
     env: hookEnv(hook, payload, projectPath),
@@ -172,7 +142,6 @@ function execSyncHook(hook: MomentHook, payload: MomentPayload, projectPath: str
   return { code: proc.exitCode ?? -1, stderr: proc.stderr.toString() };
 }
 
-// Sync pre: throws on the first blocking hook. Returns nothing on success.
 export function runMomentPreSync(store: DocumentStore, moment: Moment, payload: MomentPayload): void {
   for (const hook of planMomentHooks(store.projectPath, moment, 'pre')) {
     const { code, stderr } = execSyncHook(hook, payload, store.projectPath);
@@ -181,8 +150,6 @@ export function runMomentPreSync(store: DocumentStore, moment: Moment, payload: 
     }
   }
 }
-
-// --- persistent hook-failure records (declared post failures land on the card)
 
 function ensureHookFailures(db: ReturnType<DocumentStore['raw']>): void {
   db.exec(
@@ -225,8 +192,6 @@ export function listHookFailures(store: DocumentStore, cardId: string): Array<{ 
   }));
 }
 
-// The sync-moment wrapper used inside core functions: pre, mutation, post —
-// one call site per moment instead of three.
 export function withMomentSync<T>(
   store: DocumentStore,
   moment: Moment,
@@ -242,9 +207,6 @@ export function withMomentSync<T>(
   return result;
 }
 
-// Sync post: declared hooks first (a failure is recorded on the card and
-// stops the chain — engine state never reverts), then convention hooks
-// (failures warn and continue, their pinned never-gating law unchanged).
 export function runMomentPostSync(store: DocumentStore, moment: Moment, payload: MomentPayload): HookWarning[] {
   const warnings: HookWarning[] = [];
   for (const hook of planMomentHooks(store.projectPath, moment, 'post')) {
@@ -254,15 +216,13 @@ export function runMomentPostSync(store: DocumentStore, moment: Moment, payload:
       warnings.push(warning);
       if (hook.source === 'declared') {
         recordHookFailure(store, payload.cardId, `${moment}.post ${hook.id}`, code, stderr);
-        break; // the chain stops at the first declared failure
+        break; 
       }
       continue;
     }
   }
   return warnings;
 }
-
-// --- async exec (feat/verify/review/archive fire inside async fns) -------------
 
 async function execAsyncHook(hook: MomentHook, payload: MomentPayload, projectPath: string): Promise<{ code: number; stderr: string }> {
   let proc: Bun.Subprocess<'pipe', 'ignore', 'pipe'>;
@@ -299,13 +259,11 @@ async function execAsyncHook(hook: MomentHook, payload: MomentPayload, projectPa
   try {
     await reader.cancel();
   } catch {
-    // already closed
   }
   if (timedOut) return { code: -2, stderr: new TextDecoder().decode(concat(chunks)) };
   return { code: code ?? -1, stderr: new TextDecoder().decode(concat(chunks)) };
 }
 
-// Async pre: the blocking twin of runMomentPreSync.
 export async function runMomentPre(store: DocumentStore, moment: Moment, payload: MomentPayload): Promise<void> {
   for (const hook of planMomentHooks(store.projectPath, moment, 'pre')) {
     const { code, stderr } = await execAsyncHook(hook, payload, store.projectPath);
@@ -315,8 +273,6 @@ export async function runMomentPre(store: DocumentStore, moment: Moment, payload
   }
 }
 
-// Async post: declared (record + stop) then convention (warn + continue) —
-// the same semantics as the sync runner, for the async moments.
 export async function runMomentPost(store: DocumentStore, moment: Moment, payload: MomentPayload): Promise<HookWarning[]> {
   const warnings: HookWarning[] = [];
   for (const hook of planMomentHooks(store.projectPath, moment, 'post')) {

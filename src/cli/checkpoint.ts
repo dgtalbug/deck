@@ -1,12 +1,3 @@
-// `deck checkpoint` (E02 DECK-ARCH-010 + review follow-up 7.3): the local
-// CLI read/write door over the shared checkpoint core. Documented syntax
-// (also in USAGE and README):
-//   deck checkpoint <card-id>
-//   deck checkpoint <card-id> add "<text>" [--kind decision|gotcha|remaining|blocker]
-//                    [--id <entry-id>] [--expect-rev <n>] [--basis <sha16>]
-// Card identity is validated against the board; payload bounds and revision
-// compare-and-swap live in the core (checkpoint.ts), so CLI, runbooks and
-// future doors share one conflict law.
 import { UsageError, type ParsedArgs } from './args.ts';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -25,8 +16,6 @@ import { isVerbItem } from '../core/board/types.ts';
 export async function checkpointCommand(store: DocumentStore, args: ParsedArgs): Promise<string> {
   const cardId = args.positionals[0];
   if (cardId === undefined) throw new UsageError('usage: deck checkpoint <card-id> [add "<text>" --kind <kind>]');
-  // Card identity: the checkpoint door refuses unknown cards instead of
-  // creating orphan session files.
   const card = store.getCard(cardId);
   const sub = args.positionals[1];
   if (sub === undefined) {
@@ -66,8 +55,6 @@ export async function checkpointCommand(store: DocumentStore, args: ParsedArgs):
   const basis = typeof basisFlag === 'string'
     ? basisFlag
     : checkpointBasis(isVerbItem(card) ? currentScopeRevision(store.db, cardId) : 0, sourceRevision);
-  // CheckpointConflictError passes through: a conflict is a real failure the
-  // caller must see, not a usage mistake.
   const state = writeCheckpoint(store.projectPath, cardId, {
     text,
     kind,

@@ -1,7 +1,5 @@
 import type { ProjectSummary } from '../board/api.ts';
 
-// Home slice client — GET / is the registry list; `base` is injectable for
-// tests (Bun fetch has no relative-URL base).
 export async function fetchProjects(base = ''): Promise<ProjectSummary[]> {
   const response = await fetch(`${base}/`);
   if (!response.ok) {

@@ -23,11 +23,6 @@ import { VerbIcon } from './verbIcon.tsx';
 import { SpecView } from './specView.tsx';
 import type { EpicTreeStory, UiCard } from './api.ts';
 
-// Card detail dialog: tasks (read-only — the checklist lives in the spec,
-// the engine syncs it), sanitized spec, research output, blocked reason,
-// and the human actions. Engine-lane transitions never happen here — tweak
-// enters active only through its server response.
-
 type Tab = 'tasks' | 'spec' | 'research';
 
 export interface DetailActions {
@@ -57,8 +52,6 @@ function TaskRow({ title, done, addedByVerify }: { title: string; done: boolean;
   );
 }
 
-// Loading skeleton (brand §4): real dialog chrome, bones for the data —
-// title line, meta chip row, body lines at ragged widths.
 export function CardDetailSkeleton(): VNode {
   return (
     <Dialog open onClose={() => undefined} label="card detail loading">
@@ -81,7 +74,6 @@ export function CardDetail(props: {
   card: UiCard;
   actions: DetailActions;
   specMarkdown: string;
-  /** the story's epic, when attached — clickable back to the epic tree */
   epic?: { id: string; title: string } | undefined;
   onOpenEpic?: (id: string) => void;
 }): VNode {
@@ -92,7 +84,6 @@ export function CardDetail(props: {
   const [copied, setCopied] = useState(false);
   const kind = cardKind(card);
   const progress = progressParts(card);
-  // notes in the board document carry no lane field — undefined means todo
   const lane = card.lane ?? 'todo';
   const manualLane = lane === 'todo' || lane === 'groomed';
 
@@ -100,7 +91,6 @@ export function CardDetail(props: {
     try {
       await navigator.clipboard.writeText(card.id);
     } catch {
-      // clipboard may be denied — the toast-less fallback is fine
     }
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
@@ -326,9 +316,6 @@ export function CardDetail(props: {
   );
 }
 
-// Epic navigation (architect-intake-navigation): the epic's child stories
-// as clickable rows — the Jira-style drill-down. Presented by Board (which
-// owns the detail route and the fetch); this component stays presentational.
 export function EpicDetail(props: {
   tree: { epic: { id: string; title: string }; stories: EpicTreeStory[] };
   onOpenStory(id: string): void;

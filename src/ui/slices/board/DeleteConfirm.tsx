@@ -3,9 +3,6 @@ import { Trash2 } from 'lucide-preact';
 import { Dialog, DialogHead } from '../../components/Dialog.tsx';
 import type { UiCard } from './api.ts';
 
-// Delete confirmation (DELETE /cards/:id, 204): names the card, states the
-// irreversibility, cancel is inert. Hard delete — no undo, no archive.
-
 export function DeleteConfirm(props: {
   card: UiCard;
   onConfirm(): void;

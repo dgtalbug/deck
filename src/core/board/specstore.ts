@@ -1,10 +1,3 @@
-// Spec store core (spec-store-issues): rendered-markdown versions with
-// checksums per card, the card↔issue map, and the offline publish queue.
-// The db is truth; GitHub is publication (epic law 3). Pinned contracts:
-//   publishSpec(cardId)→issueNumber   (issues.ts carries the gh side)
-//   specs(cardId)→SpecVersion[]
-// The map/queue helpers here are the transactional primitives those and
-// syncProject compose.
 import { createHash } from 'node:crypto';
 import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
@@ -47,11 +40,6 @@ export function checksumOf(markdown: string): string {
   return createHash('sha256').update(markdown, 'utf8').digest('hex');
 }
 
-// The "rendered view" of the persisted GroomProposal (decision #2): the
-// story-first spec.md (Story / Research / Requirements / Blast radius) plus
-// this card's own pinned git conventions and the live checklist — the same
-// document becomes the published issue body, so GitHub carries everything
-// the groom collected (mermaid fences included; GitHub renders them).
 function gitBlock(card: VerbItem, commitPrefix: string): string {
   return [
     '## Git',
@@ -69,12 +57,8 @@ export function renderCardSpec(store: DocumentStore, card: VerbItem): string {
   const raw = existsSync(join(specDir, 'spec.md'))
     ? readFileSync(join(specDir, 'spec.md'), 'utf8')
     : '';
-  // Legacy dedupe: pre-template-law spec.md files open with their own
-  // '# title' h1 — this render owns the header, so a leading h1 line drops.
   const spec = raw.startsWith('# ') ? raw.slice(raw.indexOf('\n') + 1) : raw;
   const checklist = card.tasks.map((task) => `- [${task.done ? 'x' : ' '}] ${task.title}`).join('\n');
-  // Provider-intent marker (DECK-ARCH-013): stable across payload revisions —
-  // reconciliation finds the card's issue/PR by this line, never by title.
   const marker = `<!-- ${markerFor(canonicalProjectId(store), card.id)} -->`;
   return [
     `# ${card.verb}: ${card.title}`,
@@ -91,8 +75,6 @@ export function renderCardSpec(store: DocumentStore, card: VerbItem): string {
   ].join('\n');
 }
 
-// Append a version iff the checksum differs from the newest — content
-// identity is the checksum, identical renders never version (spec law).
 export function recordSpecVersion(store: DocumentStore, cardId: string, markdown: string): SpecVersion {
   const checksum = checksumOf(markdown);
   let out!: SpecVersion;
@@ -122,7 +104,6 @@ export function renderSpecVersion(store: DocumentStore, cardId: string): SpecVer
   return recordSpecVersion(store, cardId, renderCardSpec(store, card));
 }
 
-// Pinned read: versions newest-first (contract name: specs(cardId)).
 export function specs(store: DocumentStore, cardId: string): SpecVersion[] {
   const rows = store.db
     .select()
@@ -142,8 +123,6 @@ export function getIssueMap(store: DocumentStore, cardId: string): IssueMapEntry
   return row === undefined ? undefined : { ...row };
 }
 
-// Publish-side compensation (startVerb): a failed branch start must leave
-// no standing map row. The remote issue itself stays — reported as drift.
 export function deleteIssueMap(store: DocumentStore, cardId: string): void {
   runTx(store.db, (tx) => {
     tx.delete(issueMap).where(eq(issueMap.cardId, cardId)).run();
@@ -194,8 +173,6 @@ export function queueDepthFor(store: DocumentStore, cardId: string): number {
   return store.db.select().from(publishQueue).where(eq(publishQueue.cardId, cardId)).all().length;
 }
 
-// Main specs under openspec/specs/** — the backfill source (one file per
-// capability, preserved relative path).
 export function listMainSpecs(projectPath: string): { path: string; markdown: string }[] {
   const root = join(projectPath, 'openspec', 'specs');
   if (!existsSync(root)) return [];
