@@ -205,7 +205,9 @@ export interface BoardEvent {
     | 'card.unblocked'
     | 'card.done'
     | 'card.updated'
-    | 'card.deleted';
+    | 'card.deleted'
+    | 'task.patched'
+    | 'task.assigned';
   payload: Record<string, unknown>;
 }
 

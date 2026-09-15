@@ -128,7 +128,7 @@ export function Board({ project, api = boardApi, subscribe = subscribeBoardEvent
     return () => {
       alive = false;
     };
-  }, [route.value.card, detailCard, detailEpicId, store.loaded.value, project, api]);
+  }, [route.value.card, detailCard, detailEpicId, store.loaded.value, store.boardVersion.value, project, api]);
   useEffect(() => {
     if (detailEpicId === null || api.fetchEpicTree === undefined) {
       setEpicTree(null);

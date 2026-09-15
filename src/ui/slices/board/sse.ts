@@ -57,6 +57,7 @@ function connectEvents(url: string, source: EsLike, handlers: SseHandlers, wasOp
   const types: BoardEvent['type'][] = [
     'card.created', 'card.groomed', 'card.moved', 'card.tasks.updated',
     'card.blocked', 'card.unblocked', 'card.done', 'card.updated', 'card.deleted',
+    'task.patched', 'task.assigned',
   ];
   const emitCoalesced = coalescingEmitter(handlers.onEvents);
   const refetchAuthoritatively = () => {

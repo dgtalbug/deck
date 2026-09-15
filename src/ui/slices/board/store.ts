@@ -42,6 +42,7 @@ export interface BoardStore {
   readonly project: string;
   readonly board: Signal<BoardDoc>;
   readonly loaded: Signal<boolean>;
+  readonly boardVersion: Signal<number>;
   readonly online: Signal<boolean>;
   readonly filter: Signal<FilterState>;
   readonly next: Signal<NextDigest | null>;
@@ -71,6 +72,7 @@ export interface BoardStore {
 export function createBoardStore(project: string, api: BoardApi): BoardStore {
   const board = signal<BoardDoc>(EMPTY_BOARD);
   const loaded = signal(false);
+  const boardVersion = signal(0);
   const online = signal(true);
   const filter = signal<FilterState>({ search: '', chip: 'all' });
   const next = signal<NextDigest | null>(null);
@@ -162,6 +164,7 @@ export function createBoardStore(project: string, api: BoardApi): BoardStore {
     try {
       board.value = await api.fetchBoard(project);
       loaded.value = true;
+      boardVersion.value += 1;
     } catch (error) {
       pushToast('error', 'Board unavailable', error instanceof Error ? error.message : String(error));
     }
@@ -200,15 +203,16 @@ export function createBoardStore(project: string, api: BoardApi): BoardStore {
 
   function applyEvents(events: BoardEvent[]): void {
     const cued: string[] = [];
-    let needsRefetch = false;
+    let taskRefetch = false;
     batch(() => {
       for (const event of events) {
-        if (event.rowid <= watermark) continue; 
+        if (event.rowid <= watermark) continue;
         watermark = event.rowid;
         const id = typeof event.payload.id === 'string' ? event.payload.id : null;
         if (id !== null && isSuppressed(id)) continue;
         const before = board.value;
         board.value = applyEvent(board.value, event);
+        if (event.type === 'task.patched' && board.value === before) taskRefetch = true;
         if (
           event.type === 'card.moved' && board.value !== before && id !== null &&
           typeof event.payload.lane === 'string'
@@ -217,15 +221,17 @@ export function createBoardStore(project: string, api: BoardApi): BoardStore {
         }
       }
     });
-    needsRefetch =
+    const needsRefetch =
       mutationsInFlight === 0 &&
-      events.some(
-        (event) =>
-          event.type === 'card.created' ||
-          event.type === 'card.groomed' ||
-          event.type === 'card.done' ||
-          event.type === 'card.updated',
-      );
+      (taskRefetch ||
+        events.some(
+          (event) =>
+            event.type === 'card.created' ||
+            event.type === 'card.groomed' ||
+            event.type === 'card.done' ||
+            event.type === 'card.updated' ||
+            event.type === 'task.assigned',
+        ));
     if (needsRefetch) scheduleRefetch();
     cueRemoteMove(cued);
   }
@@ -238,6 +244,8 @@ export function createBoardStore(project: string, api: BoardApi): BoardStore {
       reason?: string;
       tasks?: { title: string; done: boolean }[];
       progress?: string;
+      taskId?: string;
+      done?: boolean;
     };
     const id = typeof payload.id === 'string' ? payload.id : null;
     if (id === null) return doc;
@@ -299,6 +307,19 @@ export function createBoardStore(project: string, api: BoardApi): BoardStore {
         const stub: UiCard = { id, title: id };
         return withLane(doc, 'todo', [...doc.lanes.todo, stub]);
       }
+      case 'task.patched': {
+        const found = findCard(doc, id);
+        if (found === undefined) return doc;
+        const lane = doc.lanes[found.lane];
+        const tasks = lane[found.index]!.tasks;
+        const taskId = typeof payload.taskId === 'string' ? payload.taskId : null;
+        if (tasks === undefined || taskId === null || !tasks.some((task) => task.id === taskId)) return doc;
+        const nextTasks = tasks.map((task) => (task.id === taskId ? { ...task, done: payload.done === true } : task));
+        const done = nextTasks.filter((task) => task.done).length;
+        const updated: UiCard = { ...lane[found.index]!, tasks: nextTasks, progress: `${done}/${nextTasks.length}` };
+        return withLane(doc, found.lane, lane.map((entry, i) => (i === found.index ? updated : entry)));
+      }
+      case 'task.assigned':
       case 'card.done':
       case 'card.updated':
         return doc;
@@ -316,6 +337,7 @@ export function createBoardStore(project: string, api: BoardApi): BoardStore {
     project,
     board,
     loaded,
+    boardVersion,
     online,
     filter,
     next,
