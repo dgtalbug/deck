@@ -77,6 +77,60 @@ describe('subscribeBoardEvents (fetch-stream fallback)', () => {
     }
   });
 
+  test('cooperative task events (task.assigned / task.patched) pass the UI event filter', async () => {
+    const events: unknown[][] = [];
+    let sub: SseSubscription | undefined;
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = ((input: string | URL | Request, init?: RequestInit) =>
+      originalFetch(String(input).startsWith('/') ? `${baseUrl}${input}` : input, init)) as typeof fetch;
+    const api = async (path: string, init?: RequestInit): Promise<unknown> =>
+      (await originalFetch(`${baseUrl}${path}`, init)).json();
+    try {
+      const note = (await api('/sseproj/notes', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ title: 'sse task card' }),
+      })) as { id: string };
+      await api(`/sseproj/cards/${note.id}/groom`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          proposedVerb: 'feat',
+          refinedTitle: 'sse task card',
+          research: { codebaseFindings: [] },
+          specDeltas: [],
+          tasks: ['first task', 'second task'],
+          openQuestions: [],
+        }),
+      });
+      const board = (await api('/sseproj/board')) as { lanes: { groomed: { id: string; tasks: { id: string }[] }[] } };
+      const card = board.lanes.groomed.find((entry) => entry.id === note.id)!;
+      const taskId = card.tasks[0]!.id;
+
+      sub = subscribeBoardEvents('sseproj', { onEvents: (batch) => events.push(batch), onOpen: () => {}, onError: () => {} });
+      await new Promise((resolve) => setTimeout(resolve, 700));
+
+      const assignment = (await api(`/sseproj/cards/${note.id}/tasks/${taskId}/assign`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ owner: 'agent', by: 'test' }),
+      })) as { revision: number };
+      await api(`/sseproj/cards/${note.id}/tasks/${taskId}`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ expectedRevision: assignment.revision, owner: 'agent', commandId: 'sse-test-cmd-1', done: true }),
+      });
+      await new Promise((resolve) => setTimeout(resolve, 700));
+
+      const flat = events.flat() as { type: string }[];
+      expect(flat.some((event) => event.type === 'task.assigned')).toBe(true);
+      expect(flat.some((event) => event.type === 'task.patched')).toBe(true);
+    } finally {
+      sub?.stop();
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   test('stop() aborts the stream', async () => {
     const originalFetch = globalThis.fetch;
     globalThis.fetch = ((input: string | URL | Request, init?: RequestInit) =>
