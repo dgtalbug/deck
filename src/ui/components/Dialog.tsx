@@ -15,6 +15,9 @@ const FOCUSABLE =
 export function Dialog({ open, label, onClose, children }: DialogProps): VNode | null {
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const restoreFocus = useRef<HTMLElement | null>(null);
+  // When the opener is gone at close time (list refetch, chained dialogs),
+  // focus lands on the stable board container instead of falling off to body.
+  const restoreFallback = useRef<HTMLElement | null>(null);
 
   if (!open) return null;
 
@@ -61,6 +64,7 @@ export function Dialog({ open, label, onClose, children }: DialogProps): VNode |
             dialogRef.current = el;
             if (restoreFocus.current === null) {
               restoreFocus.current = document.activeElement as HTMLElement | null;
+              restoreFallback.current = el.closest<HTMLElement>('.board, .todo-view, section');
               queueMicrotask(() => el.focus());
             }
             return;
@@ -68,8 +72,19 @@ export function Dialog({ open, label, onClose, children }: DialogProps): VNode |
           dialogRef.current = null;
           queueMicrotask(() => {
             if (dialogRef.current !== null) return;
-            restoreFocus.current?.focus?.();
+            const opener = restoreFocus.current;
             restoreFocus.current = null;
+            if (opener !== null && opener.isConnected) {
+              opener.focus?.();
+              return;
+            }
+            const fallback = restoreFallback.current;
+            restoreFallback.current = null;
+            if (fallback !== null && fallback.isConnected) {
+              // programmatic-focus only: never joins the tab order
+              fallback.setAttribute('tabindex', '-1');
+              fallback.focus();
+            }
           });
         }}
         onKeyDown={onKeyDown}

@@ -91,11 +91,17 @@ describe('keyboard walkthrough (task 9.1)', () => {
     expect(labeled.length).toBe(0); // every control is labeled or has text
     const search = host.querySelector('input[type="search"]') as unknown as HTMLInputElement;
     expect(search.getAttribute('aria-label')).toContain('filter');
-    const cards = [...host.querySelectorAll('.kcard[role="button"]')];
+    // cards are layout boxes — the open affordance is a real focusable button
+    // (.kcard[data-id] excludes the note-capture ghost, which is an input box)
+    const cards = [...host.querySelectorAll('.kcard[data-id]')];
     expect(cards.length).toBeGreaterThan(0);
     for (const card of cards) {
-      expect(card.getAttribute('tabindex')).toBe('0');
-      expect(card.getAttribute('aria-label')).not.toBeNull();
+      expect(card.getAttribute('role')).toBeNull(); // no button-like container
+      const open = card.querySelector('.kcard-open') as unknown as HTMLElement;
+      expect(open).not.toBeNull();
+      expect(open.tagName).toBe('BUTTON');
+      expect(open.tabIndex).toBe(0);
+      expect(open.getAttribute('aria-label')).not.toBeNull();
     }
     // blocked reason is reachable text, not hover-only
     expect(host.querySelector('[data-id="n2"]')!.textContent).toContain('waiting');

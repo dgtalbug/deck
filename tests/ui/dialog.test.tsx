@@ -99,3 +99,45 @@ describe('Dialog focus stability across re-renders', () => {
     expect(typed.value).toBe('abc');
   });
 });
+
+describe('Dialog focus restore fallback', () => {
+  // when the opener is gone at close time (list refetch swapped the card,
+  // chained dialogs), focus falls back to the stable board container — not
+  // off the cliff to body.
+  function DetachingHarness(): VNode {
+    const [open, setOpen] = useState(false);
+    const [openerAlive, setOpenerAlive] = useState(true);
+    return (
+      <section>
+        {openerAlive ? <button id="opener" onClick={() => setOpen(true)}>open</button> : null}
+        <button id="detach" onClick={() => setOpenerAlive(false)}>remove opener</button>
+        <Dialog open={open} label="detach dialog" onClose={() => setOpen(false)}>
+          <button id="inner">inner</button>
+        </Dialog>
+      </section>
+    );
+  }
+
+  test('opener removed mid-dialog: close lands focus on the stable container', async () => {
+    const win = installDom();
+    const container = win.document.createElement('div');
+    win.document.body.appendChild(container);
+    render(<DetachingHarness />, container);
+    const opener = win.document.querySelector('#opener') as unknown as Hdom;
+    const section = win.document.querySelector('section') as unknown as Hdom;
+    opener.focus();
+    opener.click();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(win.document.querySelector('.scrim')).not.toBeNull();
+
+    (win.document.querySelector('#detach') as unknown as Hdom).click();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(win.document.querySelector('#opener')).toBeNull(); // opener is gone
+
+    press(win, win.document.activeElement as unknown as Hdom, 'Escape');
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(win.document.querySelector('.scrim')).toBeNull();
+    expect(win.document.activeElement).toBe(section); // stable fallback, not body
+    expect(section.getAttribute('tabindex')).toBe('-1'); // programmatic-focus only
+  });
+});

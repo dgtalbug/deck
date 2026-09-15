@@ -21,7 +21,7 @@ import { Banners } from './Banners.tsx';
 import { NextPanel } from './NextPanel.tsx';
 import { RenameDialog } from './RenameDialog.tsx';
 import { DeleteConfirm } from './DeleteConfirm.tsx';
-import { ToastHost } from '../../components/Toast.tsx';
+import { ToastHost, pushToast } from '../../components/Toast.tsx';
 
 export interface BoardProps {
   project: string;
@@ -70,12 +70,27 @@ export function Board({ project, api = boardApi, subscribe = subscribeBoardEvent
     return () => subscription?.stop();
   }, [store, project, subscribe]);
 
+  // ToastHost is a role="status" live region — announcing the outcome here
+  // completes the keyboard move/reorder contract (refusals are announced by
+  // the store's rollback toast).
+  const announce = (id: string, detail: string): void => {
+    pushToast('info', store.cardById(id)?.title ?? id, detail);
+  };
+
   const actions = {
     onOpen: (id: string) => setParam('card', id),
     onGroom: (id: string) => setGroomingId(id),
     onTweak: (id: string) => void store.tweak(id),
-    onMove: (id: string, to: 'todo' | 'groomed') => void store.move(id, to),
-    onKeyboardReorder: (id: string, afterId: string | undefined) => void store.reorder(id, afterId),
+    onMove: (id: string, to: 'todo' | 'groomed') => {
+      void store.move(id, to).then((ok) => {
+        if (ok) announce(id, `moved to ${to}`);
+      });
+    },
+    onKeyboardReorder: (id: string, afterId: string | undefined) =>
+      store.reorder(id, afterId).then((ok) => {
+        if (ok) announce(id, afterId === undefined ? 'reordered to the top of the lane' : 'reordered');
+        return ok;
+      }),
     onEditTitle: (id: string) => setRenamingId(id),
     onEditGroom: (id: string) => setRegroomId(id),
     onDelete: (id: string) => setDeletingId(id),
@@ -106,10 +121,20 @@ export function Board({ project, api = boardApi, subscribe = subscribeBoardEvent
   };
 
   const view = route.value.view;
+  // Parent display data for child cards: one lookup from the board's epic
+  // rollups, shared by lanes, the todo view, and open detail dialogs.
+  const epicById = useMemo(
+    () => new Map((store.board.value.epics ?? []).map((row) => [row.id, row] as const)),
+    [store.board.value],
+  );
   const detailCard = route.value.card !== null ? store.cardById(route.value.card) : undefined;
+  // Epic entities open the epic tree (child story rollup), not a flat card
+  // detail; rollup matching also covers epics absent from the live lanes.
   const detailEpicId =
-    detailCard === undefined && route.value.card !== null &&
-    (store.board.value.epics ?? []).some((epic) => epic.id === route.value.card)
+    route.value.card !== null &&
+    api.fetchEpicTree !== undefined &&
+    (detailCard?.type === 'epic' ||
+      (detailCard === undefined && (store.board.value.epics ?? []).some((epic) => epic.id === route.value.card)))
       ? route.value.card
       : null;
   const [historyDetail, setHistoryDetail] = useState<UiCard | null | undefined>(undefined);
@@ -254,11 +279,12 @@ export function Board({ project, api = boardApi, subscribe = subscribeBoardEvent
               lead={lane === 'todo' ? capture : undefined}
               flashIds={flashIds}
               emptyHint={lane === 'todo' ? 'inbox zero — capture a note above' : 'engine moves cards here via deck next'}
+              epics={epicById}
             />
           ))}
         </div>
       ) : (
-        <TodoView store={{ filtered: store.filtered }} actions={actions} lead={capture} />
+        <TodoView store={{ filtered: store.filtered, epics: epicById }} actions={actions} lead={capture} />
       )}
 
       {view !== 'git' ? (
@@ -301,7 +327,7 @@ export function Board({ project, api = boardApi, subscribe = subscribeBoardEvent
           specMarkdown={visibleDetailCard.specPath !== undefined ? `spec: ${visibleDetailCard.specPath}` : '# no spec yet'}
           {...(visibleDetailCard.epicId !== undefined
             ? {
-                epic: (store.board.value.epics ?? []).find((row) => row.id === visibleDetailCard.epicId),
+                epic: epicById.get(visibleDetailCard.epicId),
                 onOpenEpic: (id: string) => setParam('card', id),
               }
             : {})}

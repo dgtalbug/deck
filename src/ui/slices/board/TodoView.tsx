@@ -1,11 +1,17 @@
 import type { VNode } from 'preact';
-import { Hammer, Inbox, ListOrdered, Lock, StickyNote, TriangleAlert, Zap } from 'lucide-preact';
+import { Hammer, Inbox, ListOrdered, Lock, StickyNote, Target, TriangleAlert, Zap } from 'lucide-preact';
 import type { Lane, UiCard } from './api.ts';
-import { cardKind, type CardActions } from './Card.tsx';
+import { cardKind, type CardActions, type ParentEpic } from './Card.tsx';
 import { VerbIcon } from './verbIcon.tsx';
 import { Menu } from '../../components/Menu.tsx';
 
-function Row(props: { card: UiCard; position: number | null; engine: boolean; actions: CardActions }): VNode {
+function Row(props: {
+  card: UiCard;
+  position: number | null;
+  engine: boolean;
+  actions: CardActions;
+  parentEpic?: ParentEpic | undefined;
+}): VNode {
   const { card, actions } = props;
   const kind = cardKind(card);
   const lane = card.lane ?? 'todo';
@@ -25,19 +31,16 @@ function Row(props: { card: UiCard; position: number | null; engine: boolean; ac
     <div
       class={`todo-row${card.blocked !== undefined ? ' is-blocked' : ''}`}
       data-id={card.id}
-      role="button"
-      tabindex={0}
-      aria-label={card.title}
-      onClick={() => actions.onOpen(card.id)}
-      onKeyDown={(event) => {
-        if (event.key === 'Enter' || event.key === ' ') {
-          event.preventDefault();
-          actions.onOpen(card.id);
-        }
-      }}
     >
       <span class="todo-pos">{props.position ?? <Lock size={12} style="color:var(--soft)" />}</span>
-      <span class="todo-title">{card.title}</span>
+      <button
+        type="button"
+        class="todo-open"
+        aria-label={`open ${card.title}`}
+        onClick={() => actions.onOpen(card.id)}
+      >
+        <span class="todo-title">{card.title}</span>
+      </button>
       {kind === 'verb' ? (
         <span class="verb-chip">
           <VerbIcon verb={card.verb} /> {card.verb}
@@ -52,6 +55,25 @@ function Row(props: { card: UiCard; position: number | null; engine: boolean; ac
         <span class="type-tweak">
           <Zap size={11} /> tweak
         </span>
+      ) : null}
+      {kind === 'epic' ? (
+        <span class="type-epic">
+          <Target size={11} /> epic
+        </span>
+      ) : null}
+      {card.epicId !== undefined ? (
+        props.parentEpic !== undefined ? (
+          <span class="type-epic parent-epic" title={`parent epic: ${props.parentEpic.title}`}>
+            <Target size={11} /> {props.parentEpic.title}
+          </span>
+        ) : (
+          <span
+            class="type-epic parent-epic"
+            title={`story of epic ${card.epicId} — the parent is not in the current board payload`}
+          >
+            <Target size={11} /> parent epic unavailable
+          </span>
+        )
       ) : null}
       {card.progress !== undefined ? <span class="todo-progress mono">{card.progress}</span> : null}
       {card.blocked !== undefined ? (
@@ -117,12 +139,14 @@ function Row(props: { card: UiCard; position: number | null; engine: boolean; ac
 }
 
 export function TodoView(props: {
-  store: { filtered: (lane: Lane) => UiCard[] };
+  store: { filtered: (lane: Lane) => UiCard[]; epics?: ReadonlyMap<string, ParentEpic> };
   actions: CardActions;
   lead?: VNode;
 }): VNode {
   const { store } = props;
   const manual = (lane: 'groomed' | 'todo'): UiCard[] => store.filtered(lane);
+  const parentOf = (card: UiCard): ParentEpic | undefined =>
+    card.epicId !== undefined ? store.epics?.get(card.epicId) : undefined;
   return (
     <div class="todo-view">
       <div class="todo-group">
@@ -131,7 +155,14 @@ export function TodoView(props: {
           up next — groomed queue (drag on the board to prioritize)
         </div>
         {manual('groomed').map((card, index) => (
-          <Row key={card.id} card={card} position={index + 1} engine={false} actions={props.actions} />
+          <Row
+            key={card.id}
+            card={card}
+            position={index + 1}
+            engine={false}
+            actions={props.actions}
+            parentEpic={parentOf(card)}
+          />
         ))}
         {manual('groomed').length === 0 ? <div class="lane-empty">nothing queued — groom a note</div> : null}
       </div>
@@ -142,7 +173,14 @@ export function TodoView(props: {
         </div>
         {props.lead}
         {manual('todo').map((card, index) => (
-          <Row key={card.id} card={card} position={index + 1} engine={false} actions={props.actions} />
+          <Row
+            key={card.id}
+            card={card}
+            position={index + 1}
+            engine={false}
+            actions={props.actions}
+            parentEpic={parentOf(card)}
+          />
         ))}
         {manual('todo').length === 0 && props.lead === undefined ? <div class="lane-empty">inbox zero</div> : null}
       </div>
@@ -153,7 +191,7 @@ export function TodoView(props: {
             {lane} — engine-owned
           </div>
           {store.filtered(lane).map((card) => (
-            <Row key={card.id} card={card} position={null} engine actions={props.actions} />
+            <Row key={card.id} card={card} position={null} engine actions={props.actions} parentEpic={parentOf(card)} />
           ))}
           {store.filtered(lane).length === 0 ? <div class="lane-empty">empty</div> : null}
         </div>

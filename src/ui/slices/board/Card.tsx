@@ -10,7 +10,7 @@ export interface CardActions {
   onGroom(id: string): void;
   onTweak(id: string): void;
   onMove(id: string, to: 'todo' | 'groomed'): void;
-  onKeyboardReorder(id: string, afterId: string | undefined): void;
+  onKeyboardReorder(id: string, afterId: string | undefined): Promise<boolean>;
   onEditTitle(id: string): void;
   onEditGroom(id: string): void;
   onDelete(id: string): void;
@@ -20,10 +20,17 @@ export interface CardActions {
 
 const ENGINE_LANES: ReadonlySet<string> = new Set(['active', 'verify', 'done']);
 
-export function cardKind(card: UiCard): 'note' | 'verb' | 'tweak' {
+export function cardKind(card: UiCard): 'note' | 'verb' | 'tweak' | 'epic' {
+  if (card.type === 'epic') return 'epic';
   if (card.verb !== undefined) return 'verb';
   if (card.requirement !== undefined) return 'tweak';
   return 'note';
+}
+
+/** Parent display data resolved from the board's epic rollups. */
+export interface ParentEpic {
+  id: string;
+  title: string;
 }
 
 export function progressParts(card: UiCard): { done: number; total: number } | null {
@@ -39,25 +46,45 @@ export interface CardDndProps {
   laneCards: UiCard[];
 }
 
-export function Card({ card, actions, dnd, flash }: { card: UiCard; actions: CardActions; dnd?: CardDndProps; flash?: boolean }): VNode {
+export function Card({
+  card,
+  actions,
+  dnd,
+  flash,
+  parentEpic,
+}: {
+  card: UiCard;
+  actions: CardActions;
+  dnd?: CardDndProps;
+  flash?: boolean;
+  parentEpic?: ParentEpic | undefined;
+}): VNode {
   const kind = cardKind(card);
   const progress = progressParts(card);
   const complete = progress !== null && progress.total > 0 && progress.done === progress.total;
 
   const onKeyDown = (event: KeyboardEvent) => {
-    if (event.altKey && (event.key === 'ArrowUp' || event.key === 'ArrowDown')) {
-      if (dnd === undefined) return;
-      event.preventDefault();
+    if (!event.altKey || (event.key !== 'ArrowUp' && event.key !== 'ArrowDown')) return;
+    if (dnd === undefined) return;
+    event.preventDefault();
+    const cardEl = (event.currentTarget as HTMLElement).closest<HTMLElement>('.kcard');
+    void Promise.resolve(
       actions.onKeyboardReorder(
         card.id,
         keyboardAfterId(dnd.laneCards, card.id, event.key === 'ArrowUp' ? 'up' : 'down'),
-      );
-      return;
-    }
-    if (event.key === 'Enter' || event.key === ' ') {
-      event.preventDefault();
-      actions.onOpen(card.id);
-    }
+      ),
+    ).then((moved) => {
+      if (moved === false) return; // refusal/rollback is announced by the store toast
+      // The reorder re-render moves the keyed card node and focus falls to
+      // body — put it back on the open control once the move settles.
+      setTimeout(() => {
+        const current =
+          cardEl !== null && cardEl.isConnected
+            ? cardEl
+            : document.querySelector<HTMLElement>(`.kcard[data-id="${card.id}"]`);
+        current?.querySelector<HTMLElement>('.kcard-open')?.focus();
+      }, 0);
+    });
   };
 
   const manualLane = dnd !== undefined && (dnd.lane === 'todo' || dnd.lane === 'groomed');
@@ -82,12 +109,7 @@ export function Card({ card, actions, dnd, flash }: { card: UiCard; actions: Car
   return (
     <div
       class={`kcard${card.blocked !== undefined ? ' is-blocked' : ''}${flash === true ? ' is-remote-in' : ''}`}
-      role="button"
-      tabindex={0}
       data-id={card.id}
-      aria-label={`${card.title}${card.blocked !== undefined ? `, blocked: ${card.blocked.reason}` : ''}`}
-      onKeyDown={onKeyDown}
-      onClick={() => actions.onOpen(card.id)}
       ref={(element) => {
         const html = element as HTMLElement | null;
         if (html === null || dnd === undefined || cardRegistered(html)) return;
@@ -96,12 +118,21 @@ export function Card({ card, actions, dnd, flash }: { card: UiCard; actions: Car
         registerCardDrop(html, dnd.lane as 'todo' | 'groomed', dnd.callbacks);
       }}
     >
-      <div class="kcard-title">
-        <span class="grip">
-          <GripVertical size={13} />
+      <button
+        type="button"
+        class="kcard-open"
+        aria-label={`open ${card.title}${card.blocked !== undefined ? `, blocked: ${card.blocked.reason}` : ''}`}
+        title={dnd === undefined ? undefined : 'Alt+ArrowUp / Alt+ArrowDown reorders within the lane'}
+        onClick={() => actions.onOpen(card.id)}
+        onKeyDown={onKeyDown}
+      >
+        <span class="kcard-title">
+          <span class="grip">
+            <GripVertical size={13} />
+          </span>
+          {card.title}
         </span>
-        {card.title}
-      </div>
+      </button>
       <div class="kcard-meta">
         {kind === 'verb' ? (
           <span class="verb-chip">
@@ -118,10 +149,24 @@ export function Card({ card, actions, dnd, flash }: { card: UiCard; actions: Car
             <Zap size={12} /> tweak
           </span>
         ) : null}
-        {card.epicId !== undefined ? (
-          <span class="type-epic" title={`story of epic ${card.epicId}`}>
+        {kind === 'epic' ? (
+          <span class="type-epic">
             <Target size={12} /> epic
           </span>
+        ) : null}
+        {card.epicId !== undefined ? (
+          parentEpic !== undefined ? (
+            <span class="type-epic parent-epic" title={`parent epic: ${parentEpic.title}`}>
+              <Target size={12} /> {parentEpic.title}
+            </span>
+          ) : (
+            <span
+              class="type-epic parent-epic"
+              title={`story of epic ${card.epicId} — the parent is not in the current board payload`}
+            >
+              <Target size={12} /> parent epic unavailable
+            </span>
+          )
         ) : null}
         {progress !== null ? <span class="kcard-progress frac">{card.progress}</span> : null}
         {card.blocked !== undefined ? (

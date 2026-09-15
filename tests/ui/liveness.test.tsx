@@ -147,7 +147,7 @@ describe('WIP meter and deck next (task 8.1)', () => {
     expect(wip.textContent).toContain('at limit'); // the state is named, not just "3/3"
 
     // open deck next from the groomed card detail
-    const card = host.querySelector('[data-id="g1"]') as unknown as HTMLElement;
+    const card = host.querySelector('[data-id="g1"] .kcard-open') as unknown as HTMLElement;
     card.click();
     await new Promise((resolve) => setTimeout(resolve, 60));
     const nextButton = [...host.querySelectorAll('button')].find((button) => button.textContent?.includes('deck next')) as unknown as HTMLElement;

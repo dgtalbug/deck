@@ -34,6 +34,8 @@ export interface UiCard {
   blocked?: BlockedView;
   requirement?: string;
   epicId?: string;
+  /** Present on planning cards; the board payload marks epics with `'epic'`. */
+  type?: 'epic';
   unmetDeps?: Array<{ id: string; lane: string; title: string }>;
   reviewNeeded?: boolean;
   createdAt?: string;
