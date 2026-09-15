@@ -28,6 +28,10 @@ import type { EpicTreeStory, UiCard } from './api.ts';
 
 type Tab = 'tasks' | 'spec' | 'research';
 
+const TAB_ORDER: readonly Tab[] = ['tasks', 'spec', 'research'];
+const tabId = (name: Tab): string => `detail-tab-${name}`;
+const TAB_PANEL_ID = 'detail-tabpanel';
+
 export interface DetailActions {
   onClose(): void;
   onMoveToTodo(id: string): void;
@@ -99,6 +103,25 @@ export function CardDetail(props: {
     setTimeout(() => setCopied(false), 1500);
   };
 
+  // Standard tablist roving behavior: Arrow/Home/End move both selection and
+  // focus to the target tab.
+  const onTablistKeyDown = (event: KeyboardEvent) => {
+    const index = TAB_ORDER.indexOf(tab);
+    let next: number;
+    if (event.key === 'ArrowRight') next = (index + 1) % TAB_ORDER.length;
+    else if (event.key === 'ArrowLeft') next = (index - 1 + TAB_ORDER.length) % TAB_ORDER.length;
+    else if (event.key === 'Home') next = 0;
+    else if (event.key === 'End') next = TAB_ORDER.length - 1;
+    else return;
+    event.preventDefault();
+    const target = TAB_ORDER[next]!;
+    setTab(target);
+    // the tab button for the new selection renders on the next paint
+    setTimeout(() => {
+      document.getElementById(tabId(target))?.focus();
+    }, 0);
+  };
+
   return (
     <Dialog open onClose={actions.onClose} label={`card detail: ${card.title}`}>
       <DialogHead
@@ -112,6 +135,7 @@ export function CardDetail(props: {
             ) : null}
             {kind === 'tweak' ? <span class="type-tweak"><Zap size={11} /> tweak</span> : null}
             {kind === 'note' ? <span class="type-note">note</span> : null}
+            {kind === 'epic' ? <span class="type-epic"><Target size={12} /> epic</span> : null}
             {props.epic !== undefined ? (
               <button
                 class="type-epic"
@@ -132,7 +156,7 @@ export function CardDetail(props: {
       />
 
       <div class="tabs" style="margin-top:14px">
-        <div class="tablist" role="tablist" aria-label="card detail sections">
+        <div class="tablist" role="tablist" aria-label="card detail sections" onKeyDown={onTablistKeyDown}>
           {(
             [
               ['tasks', <ListChecks size={13} />, `Tasks${progress !== null ? ` ${card.progress}` : ''}`],
@@ -142,16 +166,20 @@ export function CardDetail(props: {
           ).map(([name, icon, label]) => (
             <button
               key={name}
+              type="button"
               class="tab"
               role="tab"
+              id={tabId(name as Tab)}
+              aria-controls={TAB_PANEL_ID}
               aria-selected={tab === name}
+              tabindex={tab === name ? 0 : -1}
               onClick={() => setTab(name as Tab)}
             >
               {icon} {label}
             </button>
           ))}
         </div>
-        <div class="tabpanel" role="tabpanel">
+        <div class="tabpanel" role="tabpanel" id={TAB_PANEL_ID} aria-labelledby={tabId(tab)}>
           {tab === 'tasks' ? (
             <div>
               {progress !== null ? (

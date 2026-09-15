@@ -593,6 +593,13 @@ summary code {
 .tabs .tab:hover {
   color: var(--foreground);
 }
+/* all:unset above outranks the global :focus-visible ring — tabs (card
+   detail, git) need their own visible keyboard ring in both modes */
+.tabs .tab:focus-visible {
+  outline: 2px solid var(--primary-vivid);
+  outline-offset: -2px;
+  border-radius: 6px 6px 0 0;
+}
 .tabs .tab[aria-selected='true'] {
   color: var(--primary-vivid);
   border-bottom-color: var(--primary);
@@ -1328,16 +1335,31 @@ kbd {
   margin-top: 4px;
 }
 .todo-row:hover,
-.todo-row:focus-visible {
+.todo-row:focus-within {
   border-color: var(--border-2);
 }
 .todo-row.is-blocked {
   opacity: 0.6;
   border-color: color-mix(in srgb, var(--warning) 45%, transparent);
 }
-.todo-row .todo-title {
+/* the open control is a real button — reset UA chrome, keep row visuals */
+.todo-row .todo-open {
+  all: unset;
+  display: block;
   flex: 1;
   min-width: 0;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  border-radius: 4px;
+}
+/* all:unset above outranks the global :focus-visible ring — pin it back */
+.todo-row .todo-open:focus-visible {
+  outline: 2px solid var(--primary-vivid);
+  outline-offset: 2px;
+}
+.todo-row .todo-title {
+  display: block;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

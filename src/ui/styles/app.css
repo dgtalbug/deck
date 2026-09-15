@@ -55,7 +55,7 @@
   margin-right: 4px;
 }
 .kcard:hover .grip,
-.kcard:focus-visible .grip {
+.kcard:focus-within .grip {
   opacity: 1;
 }
 .kcard .menu-btn {
@@ -75,8 +75,20 @@
   width: 14px;
   height: 14px;
 }
-.kcard[role='button'] {
+/* the open control is a real button — reset UA chrome, keep card visuals */
+.kcard-open {
+  all: unset;
+  display: block;
+  width: 100%;
   cursor: pointer;
+  font: inherit;
+  color: inherit;
+  border-radius: var(--radius-sm);
+}
+/* all:unset above outranks the global :focus-visible ring — pin it back */
+.kcard-open:focus-visible {
+  outline: 2px solid var(--primary-vivid);
+  outline-offset: -2px;
 }
 .lane-empty {
   border: 1.5px dashed var(--border-2);
@@ -489,6 +501,13 @@ button.wip.is-over {
 .view-switch-btn:hover {
   color: var(--foreground);
   background: var(--chip);
+}
+/* all:unset above erases the global :focus-visible ring — restore a visible
+   keyboard ring (token-driven, so it reads in light and dark alike) */
+.view-switch-btn:focus-visible {
+  outline: 2px solid var(--primary-vivid);
+  outline-offset: -2px; /* the pill row clips overflow — keep the ring inside */
+  color: var(--foreground);
 }
 .view-switch-btn[aria-current='page'] {
   color: var(--foreground);

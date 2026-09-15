@@ -180,6 +180,87 @@ describe('restricted drag (task 7.1/7.2)', () => {
   });
 });
 
+describe('keyboard movement contract', () => {
+  // Engine-lane (active/verify/done) movement is refused by construction:
+  // menus expose only todo↔groomed, Alt+Arrow only reorders within a lane,
+  // and engine-lane cards carry no action menu at all.
+  const DOC_WITH_ACTIVE: BoardDoc = {
+    lanes: {
+      todo: [
+        { id: 'n1', title: 'first note' },
+        { id: 'n2', title: 'second note' },
+        { id: 'k1', title: 'tweak me', requirement: 'one line' },
+      ],
+      groomed: [{ id: 'v1', title: 'queued verb', lane: 'groomed', verb: 'feat' }],
+      active: [{ id: 'a1', title: 'building now', lane: 'active', verb: 'feat' }],
+      verify: [],
+      done: [],
+    },
+  };
+
+  async function until(ready: () => boolean, ticks = 10): Promise<void> {
+    for (let i = 0; i < ticks && !ready(); i++) {
+      await new Promise((resolve) => setTimeout(resolve, 30));
+    }
+  }
+
+  test('no keyboard path offers an engine-lane move; Escape returns focus to the trigger', async () => {
+    const { host, intents } = await mount(DOC_WITH_ACTIVE);
+    const focused = () => win.document.activeElement as unknown as HTMLElement;
+    for (const id of ['n1', 'v1']) {
+      const card = host.querySelector(`[data-id="${id}"]`)!;
+      const menuButton = card.querySelector('.menu-btn') as unknown as HTMLElement;
+      menuButton.click();
+      await until(() => host.querySelector('.menu-item') !== null);
+      const items = [...host.querySelectorAll('.menu-item')].map((el) => el.textContent ?? '');
+      expect(items.length).toBeGreaterThan(0);
+      for (const item of items) {
+        expect(item).not.toMatch(/active|verify|done/); // manual lanes only
+      }
+      // keyboard close contract: Escape from the focused item restores the trigger
+      const firstItem = host.querySelector('.menu-item') as unknown as HTMLElement;
+      await until(() => focused() === firstItem);
+      expect(focused()).toBe(firstItem); // open focuses the first item
+      firstItem.dispatchEvent(
+        new win.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }) as unknown as Event,
+      );
+      await until(() => host.querySelector('.menu-pop') === null);
+      expect(focused()).toBe(menuButton);
+    }
+    // engine-lane cards have no action menu — nothing to move them with
+    const activeCard = host.querySelector('[data-id="a1"]')!;
+    expect(activeCard.querySelector('.menu-btn')).toBeNull();
+    expect(intents).toEqual([]); // nothing was sent by any of the above
+  });
+
+  test('Alt+Arrow only ever reorders — never a lane move — and focus survives the reorder', async () => {
+    // Narrow-board functional contract (happy-dom has no layout engine): the
+    // keyboard reorder works from the focused open control, and focus returns
+    // to it after the reorder re-render (preact moves the keyed card node).
+    const { host, intents } = await mount(DOC_WITH_ACTIVE);
+    const open = host.querySelector('[data-id="k1"] .kcard-open') as unknown as HTMLElement;
+    open.focus();
+    expect(win.document.activeElement as unknown as HTMLElement).toBe(open);
+    open.dispatchEvent(
+      new win.KeyboardEvent('keydown', { key: 'ArrowUp', altKey: true, bubbles: true, cancelable: true }) as unknown as Event,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    open.dispatchEvent(
+      new win.KeyboardEvent('keydown', { key: 'ArrowDown', altKey: true, bubbles: true, cancelable: true }) as unknown as Event,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    expect(intents.length).toBe(2);
+    for (const intent of intents) {
+      expect(intent.startsWith('reorder:')).toBe(true); // never a lane move
+    }
+    // focus was on the moved card's open control when the key went down —
+    // it must still be there after both reorder re-renders, not on body
+    const focused = win.document.activeElement as unknown as HTMLElement;
+    expect(focused.classList.contains('kcard-open')).toBe(true);
+    expect(focused.closest('.kcard')?.getAttribute('data-id')).toBe('k1');
+  });
+});
+
 describe('keyboard parity (task 7.3)', () => {
   test('full move via the card action menu, no pointer drag', async () => {
     const { host, intents } = await mount();
@@ -210,12 +291,12 @@ describe('keyboard parity (task 7.3)', () => {
 
   test('Alt+ArrowUp/Down reorder through keyboardAfterId midpoints', async () => {
     const { host, intents } = await mount();
-    const card = host.querySelector('[data-id="k1"]') as unknown as HTMLElement;
-    card.focus();
-    card.dispatchEvent(new win.KeyboardEvent('keydown', { key: 'ArrowUp', altKey: true, bubbles: true, cancelable: true }) as unknown as Event);
+    const open = host.querySelector('[data-id="k1"] .kcard-open') as unknown as HTMLElement;
+    open.focus();
+    open.dispatchEvent(new win.KeyboardEvent('keydown', { key: 'ArrowUp', altKey: true, bubbles: true, cancelable: true }) as unknown as Event);
     await new Promise((resolve) => setTimeout(resolve, 40));
     expect(intents).toEqual(['reorder:k1 after n1']);
-    card.dispatchEvent(new win.KeyboardEvent('keydown', { key: 'ArrowDown', altKey: true, bubbles: true, cancelable: true }) as unknown as Event);
+    open.dispatchEvent(new win.KeyboardEvent('keydown', { key: 'ArrowDown', altKey: true, bubbles: true, cancelable: true }) as unknown as Event);
     await new Promise((resolve) => setTimeout(resolve, 40));
     expect(intents).toEqual(['reorder:k1 after n1', 'reorder:k1 after top']);
   });

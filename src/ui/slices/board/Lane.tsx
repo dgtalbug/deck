@@ -9,7 +9,7 @@ import {
   ShieldCheck,
 } from 'lucide-preact';
 import { LANES, type Lane as LaneName, type UiCard } from './api.ts';
-import { Card, type CardActions, type CardDndProps } from './Card.tsx';
+import { Card, type CardActions, type CardDndProps, type ParentEpic } from './Card.tsx';
 import { bodyRegistered, markBodyRegistered, registerLaneDrop, type DragCallbacks } from './dnd.ts';
 
 const LANE_META: Record<LaneName, { label: string; icon: () => VNode; engine: boolean }> = {
@@ -91,6 +91,7 @@ export function Lane(props: {
   lead?: VNode | undefined;
   flashIds?: ReadonlySet<string> | undefined;
   dnd?: { callbacks: DragCallbacks };
+  epics?: ReadonlyMap<string, ParentEpic>;
 }): VNode {
   const meta = LANE_META[props.lane];
   return (
@@ -124,6 +125,7 @@ export function Lane(props: {
             card={card}
             actions={props.actions}
             flash={props.flashIds?.has(card.id) === true}
+            parentEpic={card.epicId !== undefined ? props.epics?.get(card.epicId) : undefined}
             {...(props.dnd === undefined
               ? {}
               : { dnd: { lane: props.lane, callbacks: props.dnd.callbacks, laneCards: props.cards } satisfies CardDndProps })}

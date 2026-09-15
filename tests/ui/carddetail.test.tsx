@@ -89,6 +89,72 @@ describe('CardDetail (task 6.4)', () => {
   });
 });
 
+describe('CardDetail tabs (task 3.2/4.3)', () => {
+  function tabsOf(win: ReturnType<typeof installDom>): HTMLElement[] {
+    return [...win.document.querySelectorAll('[role="tablist"] [role="tab"]')] as unknown as HTMLElement[];
+  }
+
+  function press(win: ReturnType<typeof installDom>, el: HTMLElement, key: string): void {
+    el.dispatchEvent(new win.KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }) as unknown as Event);
+  }
+
+  test('tabs and panel carry stable id/aria associations with roving tabindex', async () => {
+    const { win } = await renderDetail(VERB_CARD);
+    const tabs = tabsOf(win);
+    expect(tabs.map((tab) => tab.getAttribute('id'))).toEqual(['detail-tab-tasks', 'detail-tab-spec', 'detail-tab-research']);
+    for (const tab of tabs) {
+      expect(tab.getAttribute('aria-controls')).toBe('detail-tabpanel');
+    }
+    expect(tabs[0]!.getAttribute('aria-selected')).toBe('true');
+    expect(tabs[0]!.getAttribute('tabindex')).toBe('0');
+    expect(tabs[1]!.getAttribute('aria-selected')).toBe('false');
+    expect(tabs[1]!.getAttribute('tabindex')).toBe('-1');
+    expect(tabs[2]!.getAttribute('tabindex')).toBe('-1');
+    const panel = win.document.querySelector('#detail-tabpanel')!;
+    expect(panel.getAttribute('role')).toBe('tabpanel');
+    expect(panel.getAttribute('aria-labelledby')).toBe('detail-tab-tasks');
+    expect(panel.textContent).toContain('1/2 tasks'); // selected panel content
+  });
+
+  test('ArrowRight/ArrowLeft move focus and selection, wrapping at the ends', async () => {
+    const { win } = await renderDetail(VERB_CARD);
+    const tabs = tabsOf(win);
+    tabs[0]!.focus();
+    expect(win.document.activeElement as unknown as HTMLElement).toBe(tabs[0]!);
+
+    press(win, tabs[0]!, 'ArrowRight');
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    expect(win.document.activeElement?.id).toBe('detail-tab-spec');
+    expect(tabs[1]!.getAttribute('aria-selected')).toBe('true');
+    const panel = win.document.querySelector('#detail-tabpanel')!;
+    expect(panel.getAttribute('aria-labelledby')).toBe('detail-tab-spec');
+    expect(panel.textContent).toContain(VERB_CARD.specPath!); // panel follows selection
+
+    press(win, win.document.activeElement as unknown as HTMLElement, 'ArrowLeft');
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    expect(win.document.activeElement?.id).toBe('detail-tab-tasks');
+
+    // wrap: ArrowLeft from the first tab lands on the last
+    press(win, win.document.activeElement as unknown as HTMLElement, 'ArrowLeft');
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    expect(win.document.activeElement?.id).toBe('detail-tab-research');
+  });
+
+  test('Home/End jump to the first/last tab', async () => {
+    const { win } = await renderDetail(VERB_CARD);
+    const tabs = tabsOf(win);
+    tabs[0]!.focus();
+    press(win, tabs[0]!, 'End');
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    expect(win.document.activeElement?.id).toBe('detail-tab-research');
+    expect(tabs[2]!.getAttribute('aria-selected')).toBe('true');
+    press(win, win.document.activeElement as unknown as HTMLElement, 'Home');
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    expect(win.document.activeElement?.id).toBe('detail-tab-tasks');
+    expect(win.document.querySelector('#detail-tabpanel')?.getAttribute('aria-labelledby')).toBe('detail-tab-tasks');
+  });
+});
+
 describe('GroomForm (task 6.5)', () => {
   test('accept converts with exactly the GroomProposal fields; open questions gate', async () => {
     const win = installDom();
