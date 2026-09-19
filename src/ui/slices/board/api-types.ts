@@ -1,0 +1,280 @@
+import type { EvidenceBundle } from '../../../core/board/evidence-bundle-schema.ts';
+
+export const LANES = ['todo', 'groomed', 'active', 'verify', 'done'] as const;
+export type Lane = (typeof LANES)[number];
+
+export const VERBS = [
+  'feat', 'fix', 'docs', 'style', 'refactor', 'perf', 'test', 'build', 'ci', 'chore', 'revert',
+] as const;
+export type Verb = (typeof VERBS)[number] | (string & {});
+
+export interface TaskView {
+  id?: string;
+  title: string;
+  done: boolean;
+  addedByVerify?: boolean;
+}
+
+export interface BlockedView {
+  reason: string;
+  at: string;
+}
+
+export interface UiCard {
+  id: string;
+  title: string;
+  lane?: Lane;
+  position?: number;
+  verb?: Verb;
+  specPath?: string;
+  tasks?: TaskView[];
+  progress?: string;
+  research?: { codebaseFindings: string[]; rca?: string; blastRadius?: string[]; story?: string };
+  blocked?: BlockedView;
+  requirement?: string;
+  epicId?: string;
+  /** Present on planning cards; the board payload marks epics with `'epic'`. */
+  type?: 'epic';
+  unmetDeps?: Array<{ id: string; lane: string; title: string }>;
+  reviewNeeded?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface EpicRollupView {
+  id: string;
+  title: string;
+  stories: number;
+  done: number;
+}
+
+export interface BoardDoc {
+  lanes: Record<Lane, UiCard[]>;
+  epics?: EpicRollupView[];
+}
+
+export interface ProjectSummary {
+  name: string;
+  path: string;
+  createdAt: string;
+  activeCount: number;
+  doneCount: number;
+  lastActivity: string;
+}
+
+export interface NextDigest {
+  cardId: string;
+  title: string;
+  verb?: Verb;
+  context: string;
+  wipBlockedBy?: string;
+  empty?: boolean;
+}
+
+export interface GitDigest {
+  repo: boolean;
+  branch?: string;
+  head?: string;
+  dirtyCount?: number;
+  ahead?: number;
+  behind?: number;
+  recent: { sha: string; subject: string }[];
+  origin?: string;
+  branches?: string[];
+  stashCount?: number;
+  gh?: { available: boolean; account?: string };
+  graph?: string;
+  tags?: string[];
+}
+
+export interface PullRequest {
+  number: number;
+  title: string;
+  headRefName: string;
+  url: string;
+  isDraft: boolean;
+}
+
+export interface GitOpResult {
+  output: string;
+}
+
+export interface TimelineEntry {
+  at: string;
+  kind: 'epic' | 'card' | 'pr' | 'commit';
+  title: string;
+  cardId?: string | undefined;
+  epicId?: string | undefined;
+  lane?: string | undefined;
+  verb?: string | undefined;
+  progress?: string | undefined;
+  issueNumber?: number | null | undefined;
+  url?: string | undefined;
+  shortSha?: string | undefined;
+}
+export interface TimelineView {
+  view: 'timeline';
+  entries: TimelineEntry[];
+  sources: { pulls: 'ok' | 'unavailable'; commits: 'ok' | 'unavailable' };
+  pulls: 'ok' | 'unavailable';
+}
+export interface EpicTreeStory {
+  id: string;
+  title: string;
+  lane: string;
+  verb?: string | undefined;
+  tasks: { done: number; total: number };
+}
+export interface EpicTree {
+  epic: { id: string; title: string; createdAt: string; type: 'epic' };
+  stories: EpicTreeStory[];
+}
+
+export type EvidenceBundleView = EvidenceBundle;
+
+export interface CapabilityStatementView {
+  capabilityId: string;
+  statementId: string;
+  text: string;
+  digest: string;
+  state: 'current' | 'removed';
+  sourceCardId: string;
+  sourceCriterionId: string;
+  sourceScopeRevision: number;
+  evidenceId: string;
+  deliveryId: string;
+  sourceDrift: 'none' | 'changed' | 'unknown';
+}
+
+export interface CapabilityPreviewView {
+  id: string;
+  batchId: string;
+  preview: {
+    changes: Array<{
+      op: 'add' | 'modify' | 'remove';
+      deltaId: string;
+      capabilityId: string;
+      statementId: string;
+      before: string | null;
+      after: string | null;
+    }>;
+    conflicts: Array<{ deltaId: string; reason: string }>;
+    statements: Array<{
+      capabilityId: string;
+      statementId: string;
+      text: string;
+      state: 'current' | 'removed';
+    }>;
+  };
+  resolution: { acceptedBy: string; rationale: string } | null;
+}
+
+export interface SpecTypeView {
+  id: string;
+  displayName: string;
+  icon: string;
+  sections: { id: string; label: string; alwaysRequired?: boolean; requiredAboveRadius?: number }[];
+  groomFields: string[];
+  taskLaw: string;
+  gitConvention: { commitPrefix?: string };
+  hardRule: string | null;
+}
+
+export interface GroomInput {
+  proposedVerb: Verb;
+  refinedTitle: string;
+  research: {
+    codebaseFindings: string[];
+    rca?: string;
+    blastRadius?: string[];
+    story?: string;
+    sections?: Record<string, string>;
+  };
+  specDeltas: { op: 'ADDED' | 'MODIFIED' | 'REMOVED'; requirement: string; text: string }[];
+  tasks: string[];
+  openQuestions: string[];
+}
+
+export interface BoardEvent {
+  rowid: number;
+  type:
+    | 'card.created'
+    | 'card.groomed'
+    | 'card.moved'
+    | 'card.tasks.updated'
+    | 'card.blocked'
+    | 'card.unblocked'
+    | 'card.done'
+    | 'card.updated'
+    | 'card.deleted'
+    | 'task.patched'
+    | 'task.assigned';
+  payload: Record<string, unknown>;
+}
+
+export interface SummaryItem {
+  id: string;
+  type: 'note' | 'verb' | 'tweak' | 'epic';
+  title: string;
+  truncated: boolean;
+  lane: string;
+  position: number;
+  verb: string | null;
+  epicId: string | null;
+  blocked: boolean;
+  taskCounts: { done: number; total: number } | null;
+  historyAt: string | null;
+}
+
+export interface SummaryPageResult {
+  view: 'live' | 'history';
+  items: SummaryItem[];
+  total: number;
+  page_count: number;
+  cursor: string | null;
+  stale: boolean;
+  revision: number;
+  oversize: boolean;
+  overflow: { records: number; tasks: number; overflow: string | null } | null;
+}
+
+export type BoardApi = {
+  listProjects: () => Promise<{ projects: ProjectSummary[] }>;
+  fetchBoard: (project: string) => Promise<BoardDoc>;
+  fetchTodo: (project: string) => Promise<{ view: 'todo'; cards: UiCard[] }>;
+  fetchNext: (project: string) => Promise<NextDigest>;
+  fetchTypes?: (project: string) => Promise<SpecTypeView[]>;
+
+  fetchEpicTree?: (project: string, epicId: string) => Promise<EpicTree>;
+  fetchEvidenceBundle?: (project: string, epicId: string) => Promise<EvidenceBundleView>;
+  fetchCapabilities?: (project: string) => Promise<{ statements: CapabilityStatementView[] }>;
+  fetchCapabilityPreview?: (project: string, previewId: string) => Promise<CapabilityPreviewView>;
+  fetchGit: (project: string) => Promise<GitDigest>;
+  fetchTimeline?: (project: string, limit?: number) => Promise<TimelineView>;
+  fetchHistorySummary?: (project: string, limit: number, cursor?: string) => Promise<SummaryPageResult>;
+  fetchCardDetail?: (project: string, id: string) => Promise<UiCard>;
+  updateCard: (project: string, id: string, title: string) => Promise<UiCard>;
+  deleteCard: (project: string, id: string) => Promise<void>;
+  updateGroom: (project: string, id: string, input: GroomInput) => Promise<UiCard>;
+  addNote: (project: string, title: string) => Promise<UiCard>;
+  groom: (project: string, id: string, input: GroomInput) => Promise<UiCard>;
+  move: (project: string, id: string, to: Lane) => Promise<UiCard>;
+  reorder: (project: string, id: string, afterId?: string) => Promise<UiCard>;
+  block: (project: string, id: string, reason?: string) => Promise<UiCard>;
+  unblock: (project: string, id: string) => Promise<UiCard>;
+  tweak: (project: string, id: string) => Promise<UiCard>;
+  demote: (project: string, id: string) => Promise<UiCard>;
+  createBranch: (project: string, name: string, opts?: { base?: string; checkout?: boolean }) => Promise<GitOpResult>;
+  switchBranch: (project: string, name: string) => Promise<GitOpResult>;
+  mergeBranch: (project: string, from: string) => Promise<GitOpResult>;
+  commitAll: (project: string, message?: string) => Promise<GitOpResult>;
+  undoLastCommit: (project: string) => Promise<GitOpResult>;
+  stashPush: (project: string, message?: string) => Promise<GitOpResult>;
+  stashPop: (project: string) => Promise<GitOpResult>;
+  deleteBranch: (project: string, name: string) => Promise<GitOpResult>;
+  fetchRemote: (project: string) => Promise<GitOpResult>;
+  pullRemote: (project: string) => Promise<GitOpResult>;
+  pushRemote: (project: string) => Promise<GitOpResult>;
+  fetchPulls: (project: string) => Promise<PullRequest[]>;
+  createPullRequest: (project: string, input: { title: string; base?: string; draft?: boolean; body?: string }) => Promise<{ url: string }>;
+};

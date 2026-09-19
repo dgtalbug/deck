@@ -2,11 +2,12 @@ import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import type { VNode } from 'preact';
 import { ArrowRightLeft, RadioTower } from 'lucide-preact';
 import { signal } from '@preact/signals';
-import { boardApi, type BoardApi, type EpicTree, type GroomInput, type UiCard } from './api.ts';
+import { boardApi, type BoardApi, type GroomInput, type UiCard } from './api.ts';
 import { registerDragMonitor, type DragCallbacks } from './dnd.ts';
 import { captureFlip, playFlip } from './flip.ts';
 import { createBoardStore } from './store.ts';
 import { subscribeBoardEvents, type SseSubscription } from './sse.ts';
+import { useDetailState } from './detail-state.ts';
 import { route, setParam } from '../../router.ts';
 import { Lane, LANE_ORDER, LaneSkeleton } from './Lane.tsx';
 import { FilterBar } from './FilterBar.tsx';
@@ -121,53 +122,8 @@ export function Board({ project, api = boardApi, subscribe = subscribeBoardEvent
   };
 
   const view = route.value.view;
-  // Parent display data for child cards: one lookup from the board's epic
-  // rollups, shared by lanes, the todo view, and open detail dialogs.
-  const epicById = useMemo(
-    () => new Map((store.board.value.epics ?? []).map((row) => [row.id, row] as const)),
-    [store.board.value],
-  );
-  const detailCard = route.value.card !== null ? store.cardById(route.value.card) : undefined;
-  // Epic entities open the epic tree (child story rollup), not a flat card
-  // detail; rollup matching also covers epics absent from the live lanes.
-  const detailEpicId =
-    route.value.card !== null &&
-    api.fetchEpicTree !== undefined &&
-    (detailCard?.type === 'epic' ||
-      (detailCard === undefined && (store.board.value.epics ?? []).some((epic) => epic.id === route.value.card)))
-      ? route.value.card
-      : null;
-  const [historyDetail, setHistoryDetail] = useState<UiCard | null | undefined>(undefined);
-  const [epicTree, setEpicTree] = useState<EpicTree | null>(null);
-  useEffect(() => {
-    const id = route.value.card;
-    if (id === null || detailCard !== undefined || detailEpicId !== null || !store.loaded.value || api.fetchCardDetail === undefined) {
-      setHistoryDetail(undefined);
-      return;
-    }
-    let alive = true;
-    setHistoryDetail(null);
-    api.fetchCardDetail(project, id)
-      .then((card) => alive && setHistoryDetail(card))
-      .catch(() => alive && setHistoryDetail(undefined));
-    return () => {
-      alive = false;
-    };
-  }, [route.value.card, detailCard, detailEpicId, store.loaded.value, store.boardVersion.value, project, api]);
-  useEffect(() => {
-    if (detailEpicId === null || api.fetchEpicTree === undefined) {
-      setEpicTree(null);
-      return;
-    }
-    let alive = true;
-    api.fetchEpicTree(project, detailEpicId)
-      .then((tree) => alive && setEpicTree(tree))
-      .catch(() => alive && setEpicTree(null));
-    return () => {
-      alive = false;
-    };
-  }, [detailEpicId, project]);
-  const visibleDetailCard = detailCard ?? historyDetail ?? undefined;
+  const { epicById, detailCard, detailEpicId, historyDetail, epicTree, visibleDetailCard } =
+    useDetailState(project, api, store);
   const groomNote = groomingId !== null ? store.cardById(groomingId) : undefined;
   const renameCard = renamingId !== null ? store.cardById(renamingId) : undefined;
   const deleteCard = deletingId !== null ? store.cardById(deletingId) : undefined;
