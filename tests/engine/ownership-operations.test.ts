@@ -142,10 +142,12 @@ describe('writer-version fence', () => {
   test('legacy active work surfaces as recovery-required and fences until reconciled', async () => {
     const active = groomed('legacy active probe');
     moveLane(store, active, 'active', 'engine');
-    // Simulate the pre-ledger board: wipe the ledger and the one-time sweep
-    // marker, then reopen — the upgrade sweep must fence the active card.
+    // Simulate the pre-ledger board: wipe the ledger, the one-time sweep
+    // marker and its migration record, then reopen — the migration's upgrade
+    // sweep must fence the active card.
     store.raw().exec('DELETE FROM operations');
     store.raw().exec("DELETE FROM deck_meta WHERE key = 'legacy_ownership_swept'");
+    store.raw().exec("DELETE FROM migration_runs WHERE migration = '20260919120000_control_plane_baseline'");
     store.raw().close();
     store = await openStore(dir);
     const unsettled = listUnsettledOperations(store);
@@ -241,7 +243,7 @@ describe('cross-process races and recovery', () => {
     expect(store.getVerbItem(id).lane).toBe('groomed'); // public transition not yet made
   });
 
-  test('crash after reservation surfaces recovery-required; reconcile releases and fences', async () => {
+  test('crash after reservation leaves the row untouched; reconcile releases and fences', async () => {
     const crashed = groomed('crashed start probe');
     mkdirWorker();
     const script = join(dir, 'workers', 'crash.ts');
@@ -256,11 +258,12 @@ process.exit(9); // crash between reservation and completion
     );
     const proc = Bun.spawn(['bun', 'run', script], { stdout: 'pipe', stderr: 'pipe' });
     await proc.exited;
-    // Reopen: the foreign reserved row is uncertain → recovery-required.
+    // Reopen: an open never revokes an owner implicitly — the crashed
+    // worker's reserved row survives untouched and stays visibly unsettled.
     store = await openStore(dir);
     const unsettled = listUnsettledOperations(store);
     expect(unsettled).toHaveLength(1);
-    expect(unsettled[0]).toMatchObject({ cardId: crashed, state: 'recovery-required' });
+    expect(unsettled[0]).toMatchObject({ cardId: crashed, state: 'reserved' });
     // Unreconciled: a fresh start of another card refuses (uncertain checkout).
     const other = groomed('post crash contender');
     expect(() => reserveOperation(store, other, 'start')).toThrow(OperationConflictError);
