@@ -1,9 +1,10 @@
 import { UsageError } from './args.ts';
 import { resolveProject } from './context.ts';
 import { openGraph, GRAPH_SCHEMA_VERSION, readMeta } from '../core/graph/schema.ts';
-import { graphStatus } from '../core/graph/index.ts';
+import { graphStatus, gitOrigin } from '../core/graph/index.ts';
 import { indexGraph } from '../core/graph/index.ts';
-import { impact, why, findSymbol } from '../core/graph/queries.ts';
+import { impact, why, findSymbol, normalizeKinds } from '../core/graph/queries.ts';
+import { assertFreshEnough, buildEnvelope, GraphInputError } from '../core/graph/envelope.ts';
 import { searchSymbols } from '../core/graph/search.ts';
 import { runLens, LENS_IDS, type LensId } from '../core/graph/lenses.ts';
 import { flagString, flagStrings, type ParsedArgs } from './args.ts';
@@ -38,14 +39,14 @@ export async function graphCommand(args: ParsedArgs, ctx: RunContext): Promise<s
       return `ready — schema v${GRAPH_SCHEMA_VERSION} · ${meta.fileCount} files · ${meta.nodeCount} symbols · ${meta.edgeCount} edges (last index ${meta.lastIndex})`;
     }
     case 'impact':
-      return seedQuery(args, project.path, ctx, json, (db, seedId) =>
+      return seedQuery(args, project.path, json, (db, seedId) =>
         impact(db, seedId, {
           direction: (args.flags['in'] !== undefined ? 'in' : args.flags['out'] !== undefined ? 'out' : 'both') as 'in' | 'out' | 'both',
-          kinds: flagStrings(args.flags, 'kinds').flatMap((value) => value.split(',').map((kind) => kind.trim().toUpperCase())),
+          kinds: kindsFlag(args),
           maxDepth: num(args.flags['depth']) ?? 2,
         }));
     case 'why':
-      return seedQuery(args, project.path, ctx, json, (db, seedId) => why(db, seedId));
+      return seedQuery(args, project.path, json, (db, seedId) => why(db, seedId));
     case 'search': {
       const db = openGraph(project.path);
       const text = args.positionals.slice(1).join(' ');
@@ -98,28 +99,79 @@ function num(value: string | true | string[] | undefined): number | undefined {
   return typeof value === 'string' && /^\d+$/.test(value) ? Number(value) : undefined;
 }
 
+// --kinds absent means the documented defaults; an explicit empty or unknown
+// value is a usage error before any effect.
+function kindsFlag(args: ParsedArgs): string[] | undefined {
+  const raw = flagStrings(args.flags, 'kinds');
+  if (raw.length === 0 && args.flags['kinds'] === undefined) return undefined;
+  const kinds = raw.flatMap((value) => value.split(',').map((kind) => kind.trim().toUpperCase())).filter((kind) => kind.length > 0);
+  try {
+    return normalizeKinds(kinds);
+  } catch (error) {
+    if (error instanceof GraphInputError) throw new UsageError(`deck graph impact: ${error.message}`);
+    throw error;
+  }
+}
+
 async function seedQuery(
   args: ParsedArgs,
   projectPath: string,
-  _ctx: RunContext,
   json: boolean,
   run: (db: import('bun:sqlite').Database, seedId: string) => ReturnType<typeof impact>,
 ): Promise<string | number> {
   const seed = args.positionals[1];
   if (seed === undefined || seed.length === 0) throw new UsageError('usage: deck graph impact|why <symbol>');
   const db = openGraph(projectPath);
+  const status = graphStatus(projectPath, db);
+  const staleOk = args.flags['stale-ok'] !== undefined;
+  try {
+    assertFreshEnough(status, { allowStale: staleOk });
+  } catch (error) {
+    if (error instanceof Error && error.name === 'StaleGraphError') {
+      throw new UsageError(`deck graph: ${error.message}`);
+    }
+    throw error;
+  }
   const matches = findSymbol(db, seed);
   if (matches.length === 0) return `no symbol '${seed}' in the graph — deck graph index first?`;
+  const generationBefore = readMeta(db)?.generation ?? 0;
   const results = matches.map((match) => ({ match, result: run(db, match.id) }));
-  if (json) return JSON.stringify(results.map(({ match, result }) => ({ seedFqn: match.fqn, ...result })));
+  if (json) {
+    return JSON.stringify(
+      results.map(({ match, result }) =>
+        buildEnvelope(db, {
+          projectPath,
+          origin: gitOrigin(projectPath),
+          status,
+          query: { seedFqn: match.fqn, direction: result.direction, kinds: result.kinds },
+          truncated: result.truncated,
+          staleInspection: staleOk && status.state !== 'ready',
+          generationBefore,
+          result,
+        }),
+      ),
+      null,
+      0,
+    );
+  }
+  // One-release human formatting adapter: same facts, readable shape, and
+  // freshness/uncertainty qualifications always visible.
   const lines: string[] = [];
+  if (status.state !== 'ready') {
+    lines.push(`stale inspection (${status.state}${status.reason !== undefined ? ` — ${status.reason}` : ''}) — not current planning evidence`);
+  }
   for (const { match, result } of results) {
     lines.push(`${match.fqn} — ${result.nodes.length} node(s) within depth ${result.nodes.at(-1)?.depth ?? 0}${result.truncated ? ' (TRUNCATED)' : ''}`);
     for (const node of result.nodes.filter((candidate) => candidate.depth > 0).slice(0, 30)) {
       lines.push(`  d${node.depth}  ${node.detail}  (fan-in ${node.fanIn ?? '?'})`);
     }
-    const unresolved = result.edges.filter((edge) => edge.resolution === 'unresolved').length;
-    if (unresolved > 0) lines.push(`  ${unresolved} unresolved edge(s) in the neighborhood — heuristic tiers apply to the rest`);
+    const { structural, heuristic, ambiguous, unresolved } = result.uncertainty;
+    const tierParts = [`structural ${structural}`, `heuristic ${heuristic}`, `ambiguous ${ambiguous}`, `unresolved ${unresolved}`];
+    lines.push(`  edges at seed: ${tierParts.join(' · ')}`);
+    if (result.uncertainty.candidatesTruncated) lines.push('  candidate list truncated — ambiguity beyond the shown candidates exists');
+    const unresolvedNames = result.uncertainty.unresolvedNames.slice(0, 10);
+    if (unresolvedNames.length > 0) lines.push(`  unresolved callees: ${unresolvedNames.join(', ')}`);
   }
   return lines.join('\n');
 }
+

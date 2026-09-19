@@ -159,3 +159,24 @@ describe('E04 bounded neighborhood queries', () => {
     void graphStatus;
   });
 });
+
+describe('kind filter honesty', () => {
+  test('omitted kinds select the documented defaults — a known caller appears without --kinds', () => {
+    // Negative control for the old false-empty default: an omitted filter
+    // must behave exactly like the default set, core and CLI alike.
+    const save = findSymbol(db, 'save')[0]!;
+    const omitted = impact(db, save.id, { direction: 'in' });
+    const explicitDefaults = impact(db, save.id, {
+      direction: 'in',
+      kinds: ['CALLS', 'IMPORTS', 'INHERITS', 'INSTANTIATES', 'IMPLEMENTS', 'REFERENCES', 'CONTAINS', 'DEFINES'],
+    });
+    expect(omitted.kinds).toEqual(explicitDefaults.kinds);
+    expect(omitted.nodes.map((n) => n.detail)).toContain('src/service.ts:handle');
+  });
+
+  test('explicit empty or unknown kinds refuse as typed input errors', () => {
+    const save = findSymbol(db, 'save')[0]!;
+    expect(() => impact(db, save.id, { kinds: [] })).toThrow(/kinds filter is empty/);
+    expect(() => impact(db, save.id, { kinds: ['CALLS', 'TELEPORT'] })).toThrow(/unknown edge kind\(s\) TELEPORT/);
+  });
+});

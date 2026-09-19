@@ -9,7 +9,7 @@ import { pageRank } from './pagerank.ts';
 const IGNORED = new Set(['node_modules', '.git', '.deck', 'dist', 'build', 'out', 'coverage', '.turbo', '.next', '.cache', 'origin.git', 'agent', 'dist-ui']);
 
 export const EXTRACTOR_VERSION = 1;
-export const RESOLUTION_VERSION = 2;
+export const RESOLUTION_VERSION = 3;
 
 export class ExtractionFailure extends Error {}
 export class StaleInputsError extends Error {}
@@ -75,7 +75,7 @@ export function computeInputFingerprint(inputs: ScannedInput[]): string {
   return hasher.digest('hex');
 }
 
-function currentFingerprint(projectPath: string): string {
+export function currentFingerprint(projectPath: string): string {
   const inputs: ScannedInput[] = [];
   for (const full of walkSources(projectPath)) {
     const relativePath = relativeOf(projectPath, full);
@@ -226,14 +226,29 @@ function resolveAllEdges(db: Database): void {
     "SELECT id, source_id, kind, meta FROM g_edge WHERE target_id IS NULL AND kind != 'IMPORTS' AND kind != 'RE_EXPORTS'",
   ).all() as Array<{ id: string; source_id: string; kind: string; meta: string }>;
   for (const edge of unresolved) {
-    const meta = JSON.parse(edge.meta) as Record<string, string>;
+    const meta = JSON.parse(edge.meta) as Record<string, unknown>;
     const name = meta['callee_name'];
-    if (name === undefined) continue;
-    const target = db.query(
-      "SELECT id FROM g_symbol WHERE name = ? AND kind IN ('function','method','class','interface') ORDER BY fqn LIMIT 1",
-    ).get(name) as { id: string } | null;
-    if (target !== null) {
-      db.query("UPDATE g_edge SET target_id = ?, resolution = 'heuristic', confidence = 0.6 WHERE id = ?").run(target.id, edge.id);
+    if (name === undefined || typeof name !== 'string') continue;
+    const candidates = db.query(
+      "SELECT id, fqn FROM g_symbol WHERE name = ? AND kind IN ('function','method','class','interface') ORDER BY fqn",
+    ).all(name) as Array<{ id: string; fqn: string }>;
+    if (candidates.length === 1) {
+      db.query("UPDATE g_edge SET target_id = ?, resolution = 'heuristic', confidence = 0.6 WHERE id = ?").run(candidates[0]!.id, edge.id);
+      continue;
+    }
+    if (candidates.length > 1) {
+      // Ambiguity stays unresolved: candidates are retained (bounded) in the
+      // edge metadata instead of silently selecting the first name match.
+      const bounded = candidates.slice(0, 5);
+      const next = {
+        ...meta,
+        ambiguous: true,
+        candidateCount: candidates.length,
+        candidates: JSON.stringify(bounded.map((candidate) => candidate.fqn)),
+      };
+      db.query(
+        "UPDATE g_edge SET target_id = NULL, resolution = 'unresolved', confidence = 0.0, meta = ? WHERE id = ?",
+      ).run(JSON.stringify(next), edge.id);
     }
   }
   const imports = db.query("SELECT id, meta FROM g_edge WHERE target_id IS NULL AND kind = 'IMPORTS'").all() as Array<{ id: string; meta: string }>;

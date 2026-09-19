@@ -4,7 +4,8 @@ import type { DocumentStore } from './store.ts';
 import { readSourceBaseline, compareSourceBaseline } from './source-baselines.ts';
 import { readFileSync } from 'node:fs';
 import { retrieveReferences, type CorpusFile } from './context-retrieval.ts';
-import { openGraph, readMeta, GRAPH_SCHEMA_VERSION } from '../graph/schema.ts';
+import { openGraph, readMeta } from '../graph/schema.ts';
+import { graphStatus } from '../graph/index.ts';
 import { findSymbol, impact } from '../graph/queries.ts';
 
 export type AdvisoryStrategy = 'baseline' | 'graph';
@@ -38,15 +39,19 @@ function tierFor(confidence: number, resolution: string): string {
   return 'heuristic';
 }
 
+// One freshness policy for every consumer: the shared graphStatus check
+// (schema, workspace origin, completeness, and current source fingerprint).
 function graphFreshness(store: DocumentStore, cardId: string): 'ok' | 'graph-missing' | 'graph-stale' {
   const graphPath = join(store.projectPath, '.deck', 'graph.sqlite');
   if (!existsSync(graphPath)) return 'graph-missing';
   const graph = openGraph(store.projectPath);
   try {
+    const status = graphStatus(store.projectPath, graph);
+    if (status.state === 'absent') return 'graph-missing';
+    if (status.state !== 'ready') return 'graph-stale';
     const meta = readMeta(graph);
-    if (meta === null || meta.schemaVersion !== GRAPH_SCHEMA_VERSION || !meta.complete || meta.generation === 0) return 'graph-stale';
     const baseline = readSourceBaseline(store.db, cardId)[0];
-    if (baseline?.graphGeneration !== null && baseline?.graphGeneration !== undefined && baseline.graphGeneration > meta.generation) return 'graph-stale';
+    if (baseline?.graphGeneration !== null && baseline?.graphGeneration !== undefined && meta !== null && baseline.graphGeneration > meta.generation) return 'graph-stale';
     return 'ok';
   } finally {
     graph.close();
