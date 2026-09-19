@@ -112,14 +112,14 @@ describe('updateGroom', () => {
     const store = await setup();
     const note = store.addNote('groom target');
     const item = convertToVerbItem(store, proposal({ noteId: note.id }));
+    // progress sync addresses the accepted plan ids — the engine list is a
+    // progress projection, not an id-replacement door
     store.syncTasks(
       item.id,
-      [
-        { id: 't1', title: 'implement lanes', done: true },
-        { id: 't2', title: 'wire sse', done: false },
-      ],
+      item.tasks.map((task, index) => ({ ...task, done: index === 0 })),
       'engine',
     );
+    const [t1, t2] = item.tasks.map((task) => task.id);
 
     // E03 DECK-ARCH-011: task edits are identity-bearing operations — keep
     // t1, rename t2 in place, add one. Done-state survives by id, not title.
@@ -132,8 +132,8 @@ describe('updateGroom', () => {
         tasks: ['implement lanes', 'wire sse better', 'add tests'],
       }),
       taskOps: [
-        { op: 'keep', id: 't1' },
-        { op: 'rename', id: 't2', title: 'wire sse better' },
+        { op: 'keep', id: t1! },
+        { op: 'rename', id: t2!, title: 'wire sse better' },
         { op: 'add', title: 'add tests' },
       ],
     });
@@ -142,8 +142,8 @@ describe('updateGroom', () => {
     expect(revised.verb).toBe('fix');
     expect(revised.research.blastRadius).toEqual(['src/ui']);
     expect(revised.tasks.map((task) => [task.id, task.title, task.done])).toEqual([
-      ['t1', 'implement lanes', true], // surviving id keeps its done-state
-      ['t2', 'wire sse better', false], // renamed in place — same identity
+      [t1, 'implement lanes', true], // surviving id keeps its done-state
+      [t2, 'wire sse better', false], // renamed in place — same identity
       [expect.any(String), 'add tests', false], // added → new id
     ]);
     // specPath never changes, even on a verb change

@@ -30,6 +30,7 @@ import * as capabilityProjection from '../../src/core/board/capability-projectio
 import * as graphIndex from '../../src/core/graph/index.ts';
 import * as planning from '../../src/core/board/planning.ts';
 import * as taskPatches from '../../src/core/board/task-patches.ts';
+import * as scopeInspect from '../../src/core/board/scope-inspect.ts';
 import * as engineHandoffs from '../../src/core/engine/handoffs.ts';
 import * as projectsWorkspaces from '../../src/core/projects/workspaces.ts';
 import * as sourceBaselines from '../../src/core/board/source-baselines.ts';
@@ -54,6 +55,7 @@ import { parity as capabilitiesParity } from '../../src/server/routes/capabiliti
 const functions: Record<string, unknown> = {
   ...sourceBaselines,
   ...taskPatches,
+  ...scopeInspect,
   ...engineHandoffs,
   ...projectsWorkspaces,
   ...crud,

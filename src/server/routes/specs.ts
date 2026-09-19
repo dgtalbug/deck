@@ -1,5 +1,6 @@
 import { backfillSpecs, publishSpec, syncProject } from '../../core/board/publish.ts';
 import { specs } from '../../core/board/specstore.ts';
+import { scopeAuditView, scopeShow } from '../../core/board/scope-inspect.ts';
 import { NotFoundError } from '../../core/board/errors.ts';
 import type { ProjectRegistry } from '../../core/projects/registry.ts';
 import { projectStore } from '../stores.ts';
@@ -10,11 +11,25 @@ export const parity = {
   'GET /:project/cards/:id/specs': 'specs',
   'POST /:project/sync': 'syncProject',
   'POST /:project/backfill-specs': 'backfillSpecs',
+  'GET /:project/scope': 'scopeShow',
 };
 
 export function specsRoutes(registry: ProjectRegistry): RouteTable {
   const store = (project: string) => projectStore(registry, project);
   return {
+    '/:project/scope': {
+      GET: (req) =>
+        attempt(async () => {
+          const target = await store(req.params.project!);
+          const view = new URL(req.url).searchParams.get('view') ?? 'show';
+          if (view === 'audit') return Response.json(scopeAuditView(target));
+          const cardId = new URL(req.url).searchParams.get('card');
+          if (cardId === null || cardId.length === 0) {
+            throw new NotFoundError('card', 'missing ?card=<id> (or ?view=audit)');
+          }
+          return Response.json(scopeShow(target, cardId));
+        }),
+    },
     '/:project/cards/:id/publish': {
       POST: (req) =>
         attempt(async () => {

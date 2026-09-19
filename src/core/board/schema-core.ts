@@ -48,6 +48,9 @@ export const specs = sqliteTable(
     markdown: text('markdown').notNull(),
     checksum: text('checksum').notNull(),
     createdAt: text('created_at').notNull(),
+    // Accepted revision this render projects; NULL marks legacy unclassified
+    // renders produced before accepted revisions existed.
+    scopeRevision: integer('scope_revision'),
   },
   (table) => [primaryKey({ columns: [table.cardId, table.version] })],
 );
@@ -58,6 +61,9 @@ export const issueMap = sqliteTable('issue_map', {
   state: text('state', { enum: ['draft', 'open', 'closed'] }).$type<'draft' | 'open' | 'closed'>().notNull(),
   checksum: text('checksum').notNull(),
   updatedAt: text('updated_at').notNull(),
+  // Accepted revision the published body projected; NULL when the published
+  // checksum no longer matches any accepted render.
+  scopeRevision: integer('scope_revision'),
 });
 
 export const publishQueue = sqliteTable('publish_queue', {
@@ -98,14 +104,20 @@ export type PublishQueueRow = typeof publishQueue.$inferSelect;
 export type UserVerbRow = typeof userVerbs.$inferSelect;
 export type OperationRow = typeof operations.$inferSelect;
 
-export const taskState = sqliteTable('task_state', {
-  taskId: text('task_id').primaryKey(),
-  cardId: text('card_id').notNull(),
-  revision: integer('revision').notNull().default(1),
-  owner: text('owner'),
-  assignedAt: text('assigned_at'),
-  updatedAt: text('updated_at').notNull(),
-});
+// Task progress is addressed by composite (card_id, task_id): two stories may
+// share a task id suffix or title without colliding.
+export const taskState = sqliteTable(
+  'task_state',
+  {
+    taskId: text('task_id').notNull(),
+    cardId: text('card_id').notNull(),
+    revision: integer('revision').notNull().default(1),
+    owner: text('owner'),
+    assignedAt: text('assigned_at'),
+    updatedAt: text('updated_at').notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.cardId, table.taskId] })],
+);
 
 export const taskPatches = sqliteTable('task_patches', {
   commandId: text('command_id').primaryKey(),

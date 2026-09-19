@@ -113,7 +113,13 @@ export async function syncProject(store: DocumentStore): Promise<ReconcileReport
           cardId: row.cardId,
           issueNumber: row.issueNumber,
           kind: 'checksum',
-          detail: 'spec version is newer than what was published',
+          detail:
+            `spec render is newer than what was published` +
+            (row.scopeRevision !== null && newest.scopeRevision !== null && row.scopeRevision !== newest.scopeRevision
+              ? ` (published accepted rev ${row.scopeRevision}, current render accepted rev ${newest.scopeRevision})`
+              : row.scopeRevision === null && newest.scopeRevision !== null
+                ? ` (published projection predates accepted rev ${newest.scopeRevision})`
+                : ''),
           fix: `publish the card again (POST /cards/${row.cardId}/publish)`,
         });
       }

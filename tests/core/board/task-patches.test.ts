@@ -10,6 +10,7 @@ import {
   TaskOwnerMismatchError,
 } from '../../../src/core/board/task-patches.ts';
 import { NotFoundError, StaleWriterError } from '../../../src/core/board/errors.ts';
+import { updateGroom } from '../../../src/core/board/crud.ts';
 import type { DocumentStore } from '../../../src/core/board/store.ts';
 import { tmpProject } from '../../helpers.ts';
 
@@ -92,8 +93,18 @@ describe('targeted task patches', () => {
   test('patch to removed task refuses', () => {
     const { cardId, taskIds } = groomTasks('removed task', ['a', 'b']);
     assignTask(store, { cardId, taskId: taskIds[0]!, owner: 'agent-a', by: 'human' });
-    const item = store.getVerbItem(cardId);
-    store.syncTasks(cardId, item.tasks.filter((task) => task.id !== taskIds[0]!), 'engine');
+    // removal is a scope operation now — the engine list cannot drop accepted
+    // plan items, so the task leaves through an explicit edit
+    updateGroom(store, cardId, {
+      noteId: cardId,
+      proposedVerb: 'feat',
+      refinedTitle: 'removed task',
+      research: { codebaseFindings: ['x'] },
+      specDeltas: [{ op: 'ADDED', requirement: 'req', text: 'text' }],
+      tasks: ['b'],
+      openQuestions: [],
+      taskOps: [{ op: 'remove', id: taskIds[0]! }, { op: 'keep', id: taskIds[1]! }],
+    });
     expect(() =>
       applyTaskPatch(store, { cardId, taskId: taskIds[0]!, expectedRevision: 2, owner: 'agent-a', commandId: 'c6', done: true }),
     ).toThrow(NotFoundError);

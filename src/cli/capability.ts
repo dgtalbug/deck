@@ -10,10 +10,12 @@ import {
   previewCapabilityProjection,
   readCapabilityPreview,
 } from '../core/board/capability-projection.ts';
+import { scopeClassification, snapshotAt } from '../core/board/accepted-scope.ts';
 import { getStore } from '../core/projects/stores.ts';
 import { resolveProject } from './context.ts';
 import { flagString, UsageError, type ParsedArgs } from './args.ts';
 import type { RunContext } from './main.ts';
+import type { DocumentStore } from '../core/board/store.ts';
 
 const sourceSchema = z.object({
   cardId: z.string(),
@@ -38,6 +40,46 @@ const deltaPreviewFileSchema = z.object({
   sources: z.array(sourceSchema).min(1),
   eligibility: z.array(eligibilitySchema).min(1),
 }).strict();
+
+// Capability deltas may only cite exact accepted Deck-native revisions. The
+// file's declared sources are cross-checked against the board: the card must
+// hold an accepted revision, the cited revision row must exist, and the
+// criterion identity must be a classified criterion of that snapshot. File
+// text never overrides board truth.
+function verifySourcesAgainstBoard(store: DocumentStore, declared: CapabilityDeltaSource[]): CapabilityDeltaSource[] {
+  return declared.map((source) => {
+    const classification = scopeClassification(store.db, source.cardId);
+    if (classification !== 'accepted') {
+      throw new DeckError(
+        `capability source card ${source.cardId} has ${classification} scope identity — ` +
+          `projection accepts only accepted Deck-native source revisions`,
+        { cardId: source.cardId, classification },
+      );
+    }
+    const snapshot = snapshotAt(store.db, source.cardId, source.scopeRevision);
+    if (snapshot === null) {
+      throw new DeckError(
+        `capability source cites revision ${source.scopeRevision} of ${source.cardId} — no accepted revision row exists at that number`,
+        { cardId: source.cardId, scopeRevision: source.scopeRevision },
+      );
+    }
+    const criterion = snapshot.criteria.find((item) => item.id === source.criterionId);
+    if (criterion === undefined) {
+      throw new DeckError(
+        `criterion '${source.criterionId}' is not part of accepted revision ${source.scopeRevision} of ${source.cardId}`,
+        { cardId: source.cardId, criterionId: source.criterionId, scopeRevision: source.scopeRevision },
+      );
+    }
+    if (criterion.id === 'unclassified' || criterion.state !== 'active') {
+      throw new DeckError(
+        `criterion '${source.criterionId}' of ${source.cardId} is ${criterion.id === 'unclassified' ? 'unclassified' : criterion.state} — ` +
+          `legacy identity cannot feed capability projection`,
+        { cardId: source.cardId, criterionId: source.criterionId },
+      );
+    }
+    return { ...source, criterionText: criterion.title };
+  });
+}
 
 function required(value: string | undefined, usage: string): string {
   if (value === undefined || value.length === 0) throw new UsageError(`usage: deck ${usage}`);
@@ -78,7 +120,8 @@ export async function capabilityCommand(args: ParsedArgs, ctx: RunContext): Prom
   if (subcommand === 'preview') {
     const path = required(args.positionals[1], 'capability preview <delta-file>');
     const input = readPreviewFile(path);
-    const deltas = validateCapabilityDeltas({ batchId: input.batchId, deltas: input.deltas }, input.sources).deltas;
+    const sources = verifySourcesAgainstBoard(store, input.sources);
+    const deltas = validateCapabilityDeltas({ batchId: input.batchId, deltas: input.deltas }, sources).deltas;
     const preview = previewCapabilityProjection(currentCapabilityStatements(store), deltas, input.eligibility);
     const stored = persistCapabilityPreview(store, input.batchId, preview);
     return JSON.stringify({

@@ -8,6 +8,8 @@ commands:
   reorder <id> [--after <id2>]      move a card within its lane
   block <id> [reason] / unblock <id>
   next [--ready]                     resume-first next digest; --ready peeks the queue, read-only
+  scope show <id> | scope audit      accepted scope identity, quarantine diagnostics, projection drift
+                                      [--json on both subcommands]
                                       [--context-advisories baseline|graph] EXPERIMENTAL opt-in retrieval
                                       advisory (default off; failed its promotion pilot — not a shipped feature)
   baseline capture <card-id> <path>…  EXPERIMENTAL: snapshot selected sources (exact working-tree bytes, local only)

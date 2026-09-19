@@ -29,6 +29,7 @@ import { handoffCommand, taskCommand } from './collab.ts';
 import { workspaceCommand } from './workspace.ts';
 import { graphCommand } from './graph.ts';
 import { overrideCommand, rulesCommand } from './rules.ts';
+import { scopeCommand } from './scope.ts';
 import {
   backfillCommand,
   epicCommand,
@@ -151,6 +152,7 @@ export const commands: Record<string, Command> = {
     );
   },
   groom: groomCommand,
+  scope: scopeCommand,
   move: async (args, ctx) => {
     const id = requiredId(args, 'move <id> --to <lane>');
     const body = moveBody.parse({ to: flagString(args.flags, 'to') });

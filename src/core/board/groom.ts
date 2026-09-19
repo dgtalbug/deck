@@ -1,5 +1,6 @@
 import { eq } from 'drizzle-orm';
 import { mkdirSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { DeckError, NotFoundError } from './errors.ts';
 import { newTaskId } from './ids.ts';
@@ -12,11 +13,38 @@ import { emitEvent } from '../events/outbox.ts';
 import { assertUnderWip } from './lanes.ts';
 import { recordSpecVersion, renderCardSpec, enqueuePublish } from './specstore.ts';
 import { runMomentPostSync, runMomentPreSync } from '../engine/moments.ts';
-import { applyCriterionOps, recordScopeRevision } from './scope.ts';
+import { recordAcceptedRevision, deterministicRequirementIds, type AcceptedScopeSnapshot } from './accepted-scope.ts';
 import { seedTaskState } from './task-patches.ts';
 
 function nowIso(): string {
   return new Date().toISOString();
+}
+
+// Accepted scope of a first groom: requirements and criteria derive from the
+// spec deltas (criteria are the deduped requirement titles, matching the
+// pre-accepted-scope identity scheme), the plan is the fresh task list.
+function initialScopeSnapshot(
+  proposal: GroomProposal,
+  taskRows: Array<{ id: string; title: string }>,
+): AcceptedScopeSnapshot {
+  const cardId = proposal.noteId;
+  const criterionId = (title: string): string =>
+    `c-${createHash('sha256').update(`${cardId}\n${title}`).digest('hex').slice(0, 8)}`;
+  const activeTitles = [...new Set(proposal.specDeltas.map((delta) => delta.requirement.trim()).filter(Boolean))];
+  const requirementTitles = proposal.specDeltas.map((delta, index) => delta.requirement.trim() || `untitled-${index}`);
+  const requirementIds = deterministicRequirementIds(requirementTitles);
+  return {
+    verb: proposal.proposedVerb,
+    title: proposal.refinedTitle,
+    requirements: proposal.specDeltas.map((delta, index) => ({
+      id: requirementIds[index]!,
+      position: index,
+      title: requirementTitles[index]!,
+      body: delta.text,
+    })),
+    criteria: activeTitles.map((title) => ({ id: criterionId(title), title, state: 'active' as const })),
+    plan: taskRows.map((task, index) => ({ id: task.id, position: index, title: task.title, state: 'active' as const })),
+  };
 }
 
 export function materializeSpec(
@@ -114,13 +142,12 @@ export function convertToVerbItem(store: DocumentStore, proposal: GroomProposal)
     }
     seedTaskState(tx, proposal.noteId);
     const taskRows = tx.select().from(tasks).where(eq(tasks.cardId, proposal.noteId)).all();
-    const activeTitles = [...new Set(proposal.specDeltas.map((delta) => delta.requirement.trim()).filter(Boolean))];
-    const criteria = applyCriterionOps(tx, proposal.noteId, 0, [], activeTitles, undefined, true);
-    recordScopeRevision(
+    recordAcceptedRevision(
       tx,
       proposal.noteId,
-      { verb: proposal.proposedVerb, title: proposal.refinedTitle, tasks: taskRows, criteria },
-      ['initial groom'],
+      initialScopeSnapshot(proposal, taskRows),
+      [{ kind: 'story', verb: proposal.proposedVerb, title: proposal.refinedTitle }],
+      { actor: 'groom' },
     );
     emitEvent(tx, 'card.groomed', { id: proposal.noteId, lane: 'groomed', position });
   });

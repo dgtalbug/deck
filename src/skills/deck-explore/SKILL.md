@@ -1,8 +1,8 @@
 ---
 name: deck-explore
-description: Read-only tour of deck state — board, epics, memory, issues, next digest. Use before proposing anything, or when the user asks "what's the state / what's next / what's on the board".
+description: Read-only tour of deck state — board, epics, memory, issues, next digest, accepted scope identity. Use before proposing anything, or when the user asks "what's the state / what's next / what's on the board / what scope is accepted".
 allowed-tools: Bash(deck:*), Bash(curl:*)
-owns: board, epics, epic, recall, issue, next
+owns: board, epics, epic, recall, issue, next, scope
 hosts: shell-only contract — Claude Code, GitHub Copilot, and Codex run these recipes through the deck CLI in a shell; no host-native tool syntax is required or claimed
 ---
 
@@ -34,6 +34,7 @@ deck epics       # epics with done/total rollups
 - `deck board --view todo` — flat todo list instead of lanes.
 - One card's issue: `deck issue <id>` — prints the mapped GitHub issue (number, state, labels).
 - One epic's tree: `deck epic <epicId>` — stories with lanes, task counts, done/total rollup.
+- Accepted scope identity: `deck scope show <id>` — classification, current accepted revision (id, digest, actor, basis, op log) and projection drift; `deck scope audit` — board-wide classification and quarantine diagnostics. `--json` on both.
 
 ### Memory (project brain)
 - `deck recall "<query>"` — FTS5 over session-memory bullets from past cards. Always recall before researching code: past findings are free, re-derivation is not.
