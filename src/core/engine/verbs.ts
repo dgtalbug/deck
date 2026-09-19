@@ -5,8 +5,9 @@ import { publishSpec } from '../board/publish.ts';
 import { GhUnavailableError, GitOpError } from '../git/errors.ts';
 import { rmSync } from 'node:fs';
 import { eq } from 'drizzle-orm';
-import { createBranch } from '../git/ops.ts';
+import { createBranch, localBranchExists } from '../git/ops.ts';
 import { runTx, type DocumentStore, type Tx } from '../board/store.ts';
+import { canonicalProjectId, guardEffect } from '../board/provider-operations.ts';
 import { cards, storyDeps } from '../board/schema.ts';
 import {
   activateOperation,
@@ -14,6 +15,7 @@ import {
   completeOperation,
   compensateOperation,
   ownerToken,
+  ensureLeaseFresh,
   reserveOperationInTx,
   type Operation,
 } from './ownership.ts';
@@ -110,7 +112,8 @@ export async function startVerb(
   }
 
   moveLane(store, id, 'active', 'engine');
-  activateOperation(store, operation!.id); 
+  activateOperation(store, operation!.id);
+  ensureLeaseFresh(store, operation!);
   let publish;
   try {
     publish = await publishSpec(store, id); 
@@ -125,7 +128,33 @@ export async function startVerb(
   const branch = branchFor(card, verb);
   try {
     await assertCleanTree(executionPath);
-    await createBranch(executionPath, { name: branch, checkout: true });
+    // Durable intent before the branch effect: a retry after a crash
+    // observes the marker (the branch name) before creating anything.
+    await guardEffect(
+      store,
+      {
+        cardId: id,
+        kind: 'branch-create',
+        repo: '',
+        projectId: canonicalProjectId(store),
+        marker: `deck:branch:${canonicalProjectId(store)}:${branch}`,
+        payload: { branch },
+        operationId: operation!.id,
+        step: 'branch-create',
+        expectedRef: branch,
+      },
+      ownerToken,
+      // A local branch name cannot prove a prior deck attempt (a foreign
+      // branch with the same name would reconcile as ours), so observation
+      // never matches here: a local effect is authoritative on return, and
+      // the collision refusal itself is the reconciliation.
+      async () => [],
+      async () => {
+        await createBranch(executionPath, { name: branch, checkout: true });
+        return branch;
+      },
+      (name) => ({ remoteId: name, remoteUrl: `refs/heads/${name}` }),
+    );
     scaffoldSession(executionPath, id, verb, branch);
   } catch (error) {
     moveLane(store, id, 'groomed', 'engine'); 

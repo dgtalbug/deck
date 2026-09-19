@@ -7,7 +7,7 @@ import { getIssueMap } from '../board/specstore.ts';
 import type { DocumentStore } from '../board/store.ts';
 import { runGit } from '../git/digest.ts';
 import { closeIssue } from '../git/issues.ts';
-import { deleteBranch, switchBranch } from '../git/ops.ts';
+import { deleteBranch, localBranchExists, switchBranch } from '../git/ops.ts';
 import { runGh } from '../git/gh.ts';
 import { GhUnavailableError } from '../git/errors.ts';
 import {
@@ -15,8 +15,10 @@ import {
   claimIntent,
   completeIntent,
   failIntent,
+  guardEffect,
   markerFor,
   recordIntent,
+  recordTombstone,
 } from '../board/provider-operations.ts';
 import { ownerToken, reserveOperation, compensateOperation } from './ownership.ts';
 import { branchFor } from './slug.ts';
@@ -89,13 +91,16 @@ export async function retryCleanup(store: DocumentStore, cardId: string): Promis
               results.push({ kind: task.kind, state: 'done', detail: 'no mapped issue' });
               break;
             }
-            const intent = recordIntent(store, {
+            // The close keeps a retained tombstone: if the close may have
+            // succeeded but readback is inconclusive, the target stays
+            // visible and no unsafe repeat runs.
+            const intent = recordTombstone(store, {
               cardId,
               kind: 'issue-close',
               repo: '',
               projectId: canonicalProjectId(store),
               marker: markerFor(canonicalProjectId(store), cardId),
-              payload: { issueNumber: map.issueNumber },
+              target: String(map.issueNumber),
             });
             try {
               claimIntent(store, intent.id, ownerToken);
@@ -124,14 +129,40 @@ export async function retryCleanup(store: DocumentStore, cardId: string): Promis
           case 'branch-delete': {
             const branch = branchFor(card, card.verb);
             try {
-              const current = await runGit(store.projectPath, ['rev-parse', '--abbrev-ref', 'HEAD'], 5000);
-              if (current.stdout.trim() === branch) {
-                const base = await defaultBranch(store.projectPath);
-                await switchBranch(store.projectPath, base);
-              }
-              await deleteBranch(store.projectPath, branch);
+              // Guarded deletion: the tombstone records the intended target;
+              // an already-absent branch (delete succeeded, response lost)
+              // completes without repeating the effect.
+              const outcome = await guardEffect(
+                store,
+                {
+                  cardId,
+                  kind: 'cleanup-close',
+                  repo: '',
+                  projectId: canonicalProjectId(store),
+                  marker: `deck:cleanup:${canonicalProjectId(store)}:${branch}`,
+                  payload: { branch },
+                  step: 'branch-delete',
+                  expectedRef: branch,
+                },
+                ownerToken,
+                async () => ((await localBranchExists(store.projectPath, branch)) ? [] : [{ remoteId: branch, remoteUrl: 'deleted' }]),
+                async () => {
+                  const current = await runGit(store.projectPath, ['rev-parse', '--abbrev-ref', 'HEAD'], 5000);
+                  if (current.stdout.trim() === branch) {
+                    const base = await defaultBranch(store.projectPath);
+                    await switchBranch(store.projectPath, base);
+                  }
+                  await deleteBranch(store.projectPath, branch);
+                  return branch;
+                },
+                (name) => ({ remoteId: name, remoteUrl: 'deleted' }),
+              );
               markTask(store, task.id, 'done');
-              results.push({ kind: task.kind, state: 'done', detail: `branch ${branch} deleted` });
+              results.push({
+                kind: task.kind,
+                state: 'done',
+                detail: outcome.reused ? `branch ${branch} already deleted (observed)` : `branch ${branch} deleted`,
+              });
             } catch (error) {
               const message = error instanceof Error ? error.message : String(error);
               markTask(store, task.id, 'failed', message);

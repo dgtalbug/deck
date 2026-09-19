@@ -301,3 +301,25 @@ export {
   searchPullRequestsByMarker,
 } from './provider.ts';
 export type { LocalIntegration, PrRef, ProviderCheck, PullRequestObservation } from './provider.ts';
+
+// Observation-only helpers for guarded saga steps: they never mutate.
+
+export async function localBranchExists(projectPath: string, branch: string): Promise<boolean> {
+  try {
+    const result = await runGit(projectPath, ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}`], 5000);
+    return result.code === 0 && result.stdout.trim().length > 0;
+  } catch {
+    return false;
+  }
+}
+
+export async function remoteBranchHead(projectPath: string, branch: string): Promise<string | null> {
+  try {
+    const result = await runGit(projectPath, ['ls-remote', 'origin', `refs/heads/${branch}`], 15000);
+    const line = result.stdout.trim().split('\n')[0] ?? '';
+    const sha = line.split('\t')[0] ?? '';
+    return sha.length === 40 ? sha : null;
+  } catch {
+    return null;
+  }
+}
