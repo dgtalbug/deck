@@ -47,7 +47,7 @@ bun run test:smoke     # rebuild + isolated compiled lifecycle smoke
 ./deck doctor          # 9 checks
 ```
 
-Or run from source: `bun run dev` (server) · `bun test` (full automated suite) · `bun run typecheck`.
+Or run from source: `bun run dev` (server) · `bun run test:fast` (everyday suite) · `bun test` (full suite + coverage) · `bun run typecheck`. Domain tiers (`test:ui`, `test:board`, `test:server`, `test:cli`, `test:engine`, `test:graph`, `test:slow`) and the slow/flake notes live in [docs/testing.md](docs/testing.md).
 
 `bun run test:smoke` is the compiled-binary lifecycle check. It uses an isolated temporary Deck home, project, Git repository, and fake `gh` executable; it does not touch a real project or GitHub account. The smoke exercises capture, HTTP grooming, start, verification gaps, clean verification, process restarts, and solo delivery finalization.
 

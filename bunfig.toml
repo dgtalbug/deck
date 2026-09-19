@@ -8,4 +8,5 @@ DECK_FEATURE_TWEAK = "true"
 # and agent/ carry example tests that must not join deck's suite.
 root = "./tests"
 preload = ["./tests/setup.ts"]
-coverage = true
+# Coverage is gate evidence, not a tax on every local run — request it
+# explicitly with `bun test --coverage` (bun run test:full).
