@@ -89,6 +89,7 @@ export async function deliveryStatusCommand(args: ParsedArgs, ctx: RunContext): 
   if (id === undefined || id.length === 0) throw new UsageError('usage: deck delivery <id>');
   const project = resolveProject(ctx.registry, args, ctx.cwd);
   const store = await getStore(project.path);
+  store.getCard(id);
   const status = deliveryStatus(store, id);
   const p = ctx.pal;
   const line = (label: string, value: string) => `  ${p.dim(label)}   ${value}`;

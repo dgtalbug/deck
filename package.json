@@ -8,6 +8,7 @@
     "dev": "bun run src/server/serve.ts",
     "seed": "bun run scripts/seed.ts",
     "test": "bun test",
+    "test:smoke": "bun run build:bin && bun test tests/smoke/",
     "typecheck": "tsc --noEmit",
     "lint": "oxlint src tests scripts",
     "build:ui": "rm -rf dist/ui && bun build src/ui/app.tsx --outdir dist/ui --minify --splitting && bun run scripts/check-ui-budget.ts && bun run scripts/embed-ui.ts",
