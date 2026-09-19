@@ -122,7 +122,9 @@ describe('E03 scope revision lineage', () => {
     expect(rows.length).toBe(2);
     expect(rows[0]!.revision).toBe(1);
     expect(rows[1]!.revision).toBe(2);
-    expect(JSON.parse(rows[0]!.operations as string)).toEqual(['initial groom']);
+    expect(JSON.parse(rows[0]!.operations as string)).toEqual([
+      { kind: 'story', verb: 'fix', title: 'refined: fix the thing' },
+    ]);
     // the render checksum is a publication identity — never labeled a scope revision
     const newest = newestSpecVersion(store, item.id);
     expect(newest?.checksum).toMatch(/^[0-9a-f]{64}$/);

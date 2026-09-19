@@ -8,6 +8,8 @@ import { runTx, type DocumentStore, type Tx } from './store.ts';
 import { runRetention } from './history.ts';
 import { isTweak, isVerbItem, type Card, type VerifyResult } from './types.ts';
 import { emitEvent } from '../events/outbox.ts';
+import { applyScopeEdit, currentAcceptedSnapshot, type ScopeOperation } from './accepted-scope.ts';
+import { rebuildTasksFromSnapshot } from './crud.ts';
 import { seedTaskState } from './task-patches.ts';
 
 function nowIso(): string {
@@ -47,28 +49,63 @@ export function applyVerifyResult(
       .run();
 
     if (result === 'gaps' && newTasks.length > 0) {
-      const existing = tx.select({ idx: tasks.idx }).from(tasks).where(eq(tasks.cardId, id)).all();
-      const existingTitles = new Set(
-        tx.select({ title: tasks.title }).from(tasks).where(eq(tasks.cardId, id)).all().map((taskRow) => taskRow.title),
-      );
-      let idx = existing.length > 0 ? Math.max(...existing.map((taskRow) => taskRow.idx)) + 1 : 0;
-      for (const title of newTasks) {
-        if (existingTitles.has(title)) continue;
-        existingTitles.add(title);
-        tx.insert(tasks)
-          .values({ cardId: id, idx, id: newTaskId(), title, done: false, addedByVerify: true })
-          .run();
-        idx += 1;
-      }
-      seedTaskState(tx, id);
-      if (idx > (existing.length > 0 ? Math.max(...existing.map((taskRow) => taskRow.idx)) + 1 : 0)) {
-        const all = tx.select().from(tasks).where(eq(tasks.cardId, id)).all();
-        const done = all.filter((taskRow) => taskRow.done).length;
-        emitEvent(tx, 'card.tasks.updated', {
-          id,
-          tasks: all.map((taskRow) => ({ title: taskRow.title, done: taskRow.done })),
-          progress: `${done}/${all.length}`,
-        });
+      const accepted = currentAcceptedSnapshot(tx, id);
+      if (accepted !== null) {
+        // gap tasks enter the accepted plan through explicit add operations —
+        // the visible list stays exactly plan + progress
+        const activeTitles = new Set(accepted.plan.filter((item) => item.state === 'active').map((item) => item.title));
+        const additions: ScopeOperation[] = [];
+        const seen = new Set<string>();
+        for (const title of newTasks) {
+          if (activeTitles.has(title) || seen.has(title)) continue;
+          seen.add(title);
+          additions.push({ kind: 'task', op: 'add', title });
+        }
+        if (additions.length > 0) {
+          applyScopeEdit(tx, id, { operations: additions, actor: 'verify' });
+          const next = currentAcceptedSnapshot(tx, id)!;
+          const addedTitles = new Set(additions.map((op) => op.kind === 'task' && op.op === 'add' ? op.title : ''));
+          const nextIds = new Set(next.plan.map((item) => item.id));
+          const addedById = new Map(
+            [...nextIds].map((taskId) => {
+              const item = next.plan.find((entry) => entry.id === taskId)!;
+              return [taskId, addedTitles.has(item.title)] as const;
+            }),
+          );
+          rebuildTasksFromSnapshot(tx, id, next, { addedByVerifyById: addedById });
+          const all = tx.select().from(tasks).where(eq(tasks.cardId, id)).all();
+          const done = all.filter((taskRow) => taskRow.done).length;
+          emitEvent(tx, 'card.tasks.updated', {
+            id,
+            tasks: all.map((taskRow) => ({ title: taskRow.title, done: taskRow.done })),
+            progress: `${done}/${all.length}`,
+          });
+        }
+      } else {
+        // unclassified legacy card: gap tasks stay progress-side and readable
+        const existing = tx.select({ idx: tasks.idx }).from(tasks).where(eq(tasks.cardId, id)).all();
+        const existingTitles = new Set(
+          tx.select({ title: tasks.title }).from(tasks).where(eq(tasks.cardId, id)).all().map((taskRow) => taskRow.title),
+        );
+        let idx = existing.length > 0 ? Math.max(...existing.map((taskRow) => taskRow.idx)) + 1 : 0;
+        for (const title of newTasks) {
+          if (existingTitles.has(title)) continue;
+          existingTitles.add(title);
+          tx.insert(tasks)
+            .values({ cardId: id, idx, id: newTaskId(), title, done: false, addedByVerify: true })
+            .run();
+          idx += 1;
+        }
+        seedTaskState(tx, id);
+        if (idx > (existing.length > 0 ? Math.max(...existing.map((taskRow) => taskRow.idx)) + 1 : 0)) {
+          const all = tx.select().from(tasks).where(eq(tasks.cardId, id)).all();
+          const done = all.filter((taskRow) => taskRow.done).length;
+          emitEvent(tx, 'card.tasks.updated', {
+            id,
+            tasks: all.map((taskRow) => ({ title: taskRow.title, done: taskRow.done })),
+            progress: `${done}/${all.length}`,
+          });
+        }
       }
     }
     emitEvent(tx, 'card.moved', { id, lane: result === 'clean' ? 'done' : 'active', position });

@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { openStore } from '../../../src/core/board/store.ts';
 import { convertToVerbItem } from '../../../src/core/board/groom.ts';
 import { getTaskAssignment } from '../../../src/core/board/task-patches.ts';
+import { updateGroom } from '../../../src/core/board/crud.ts';
 import type { DocumentStore } from '../../../src/core/board/store.ts';
 import { tmpProject } from '../../helpers.ts';
 
@@ -57,9 +58,24 @@ describe('collaboration migration', () => {
     const cardId = groomThreeTasks('removal drops state');
     const item = store.getVerbItem(cardId);
     const removed = item.tasks[2]!;
-    const next = item.tasks.filter((task) => task.id !== removed.id);
-    store.syncTasks(cardId, next, 'engine');
+    // removal is a scope operation; the accepted plan edit drops the task and
+    // its progress row together
+    updateGroom(store, cardId, {
+      noteId: cardId,
+      proposedVerb: 'feat',
+      refinedTitle: 'removal drops state',
+      research: { codebaseFindings: ['x'] },
+      specDeltas: [{ op: 'ADDED', requirement: 'req', text: 'text' }],
+      tasks: ['one', 'two'],
+      openQuestions: [],
+      taskOps: [
+        { op: 'keep', id: item.tasks[0]!.id },
+        { op: 'keep', id: item.tasks[1]!.id },
+        { op: 'remove', id: removed.id },
+      ],
+    });
     const row = store.raw().query('SELECT * FROM task_state WHERE task_id = ?').get(removed.id);
     expect(row).toBeNull();
+    expect(store.getVerbItem(cardId).tasks.map((task) => task.title)).toEqual(['one', 'two']);
   });
 });

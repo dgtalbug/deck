@@ -311,6 +311,13 @@ const POST_APPLY_STEPS: PostApplyStep[] = [
       importLegacyProviderLedger(sqlite);
     },
   },
+  {
+    migration: '20260920120000_accepted_scope',
+    run: (sqlite, projectPath) => {
+      const { adoptLegacyScope } = require('./scope-adopt.ts') as typeof import('./scope-adopt.ts');
+      adoptLegacyScope(sqlite, projectPath);
+    },
+  },
 ];
 
 export function runMigrations(

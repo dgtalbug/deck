@@ -98,7 +98,6 @@ export function getTaskAssignment(store: DocumentStore, cardId: string, taskId: 
     if (exists === undefined) throw new NotFoundError('task', `${cardId}/${taskId}`);
     return { taskId, cardId, revision: 1, owner: null, assignedAt: null };
   }
-  if (row.cardId !== cardId) throw new TaskCardMismatchError(taskId, cardId, row.cardId);
   return { taskId: row.taskId, cardId: row.cardId, revision: row.revision, owner: row.owner, assignedAt: row.assignedAt };
 }
 
@@ -115,20 +114,25 @@ export function assignTask(
       .get();
     if (taskRow === undefined) throw new NotFoundError('task', `${input.cardId}/${input.taskId}`);
     const ts = nowIso();
-    const existing = tx.select().from(taskState).where(eq(taskState.taskId, input.taskId)).get();
-    if (existing !== undefined && existing.cardId !== input.cardId) {
-      throw new TaskCardMismatchError(input.taskId, input.cardId, existing.cardId);
-    }
+    const existing = tx
+      .select()
+      .from(taskState)
+      .where(and(eq(taskState.cardId, input.cardId), eq(taskState.taskId, input.taskId)))
+      .get();
     if (existing === undefined) {
       tx.insert(taskState)
         .values({ taskId: input.taskId, cardId: input.cardId, revision: 1, owner: input.owner, assignedAt: ts, updatedAt: ts })
+        .onConflictDoUpdate({
+          target: [taskState.cardId, taskState.taskId],
+          set: { owner: input.owner, assignedAt: ts, updatedAt: ts },
+        })
         .run();
       result = { taskId: input.taskId, cardId: input.cardId, revision: 1, owner: input.owner, assignedAt: ts };
     } else {
       const revision = existing.revision + 1;
       tx.update(taskState)
         .set({ owner: input.owner, assignedAt: ts, updatedAt: ts, revision })
-        .where(eq(taskState.taskId, input.taskId))
+        .where(and(eq(taskState.cardId, input.cardId), eq(taskState.taskId, input.taskId)))
         .run();
       result = { taskId: input.taskId, cardId: input.cardId, revision, owner: input.owner, assignedAt: ts };
     }
@@ -169,12 +173,11 @@ export function applyTaskPatch(store: DocumentStore, input: TaskPatchInput): Tas
       throw new NotFoundError('task', `${input.cardId}/${input.taskId}`);
     }
 
-    const stateRow = tx.select().from(taskState).where(eq(taskState.taskId, input.taskId)).get() as
-      | TaskStateRow
-      | undefined;
-    if (stateRow !== undefined && stateRow.cardId !== input.cardId) {
-      throw new TaskCardMismatchError(input.taskId, input.cardId, stateRow.cardId);
-    }
+    const stateRow = tx
+      .select()
+      .from(taskState)
+      .where(and(eq(taskState.cardId, input.cardId), eq(taskState.taskId, input.taskId)))
+      .get() as TaskStateRow | undefined;
     const currentRevision = stateRow?.revision ?? 1;
     const currentOwner = stateRow?.owner ?? null;
     if (currentOwner === null) throw new TaskNotAssignedError(input.taskId, input.cardId);
@@ -189,9 +192,16 @@ export function applyTaskPatch(store: DocumentStore, input: TaskPatchInput): Tas
     if (stateRow === undefined) {
       tx.insert(taskState)
         .values({ taskId: input.taskId, cardId: input.cardId, revision, owner: input.owner, assignedAt: ts, updatedAt: ts })
+        .onConflictDoUpdate({
+          target: [taskState.cardId, taskState.taskId],
+          set: { revision, updatedAt: ts },
+        })
         .run();
     } else {
-      tx.update(taskState).set({ revision, updatedAt: ts }).where(eq(taskState.taskId, input.taskId)).run();
+      tx.update(taskState)
+        .set({ revision, updatedAt: ts })
+        .where(and(eq(taskState.cardId, input.cardId), eq(taskState.taskId, input.taskId)))
+        .run();
     }
 
     const outcome: TaskPatchResult = {

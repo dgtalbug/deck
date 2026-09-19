@@ -114,9 +114,11 @@ describe('setBlocked / syncTasks', () => {
     expect(store.getVerbItem(item.id).blocked).toBeUndefined();
   });
 
-  test('syncTasks replaces the task list wholesale (engine-only signature)', () => {
+  test('syncTasks is a progress projection of the accepted plan (engine-only signature)', () => {
     const note = store.addNote('task sync note');
     const item = convertToVerbItem(store, proposal(note.id));
+    // engine ids drift from the accepted plan ids but titles reconcile: done
+    // flags map onto plan identity, the plan itself is untouched
     const synced = store.syncTasks(
       item.id,
       [
@@ -125,8 +127,13 @@ describe('setBlocked / syncTasks', () => {
       ],
       'engine',
     );
-    expect(synced).toHaveLength(2);
-    expect(store.getVerbItem(item.id).tasks.map((task) => task.done)).toEqual([true, false]);
+    expect(synced.map((task) => task.id)).toEqual(item.tasks.map((task) => task.id));
+    expect(store.getVerbItem(item.id).tasks.map((task) => task.done)).toEqual([true, false, false]);
+    // unknown titles cannot replace the accepted plan without scope operations
+    expect(() =>
+      store.syncTasks(item.id, [{ id: 't-9', title: 'never groomed', done: true }], 'engine'),
+    ).toThrow(/not in the accepted plan/);
+    expect(store.getVerbItem(item.id).tasks).toHaveLength(3);
   });
 
   test('syncTasks on a non-verb card throws NotFound', () => {

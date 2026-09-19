@@ -29,6 +29,7 @@ import { emitEvent } from '../events/outbox.ts';
 import { withMomentSync } from '../engine/moments.ts';
 import { assertEngineSchema, assertWriterAllowed, noteWriterObservation } from './open-state.ts';
 import { runMigrations } from './migrate.ts';
+import { currentAcceptedSnapshot } from './accepted-scope.ts';
 import { seedTaskState } from './task-patches.ts';
 
 export const BOARD_DB_NAME = 'board.sqlite';
@@ -369,6 +370,62 @@ export class DocumentStore {
       );
     }
     const item = this.getVerbItem(id);
+    // Against an accepted implementation plan the engine list is a progress
+    // projection: known ids and title-matched ids update progress only, and
+    // replacement of the plan itself is refused without scope operations.
+    const accepted = currentAcceptedSnapshot(this.db, id);
+    if (accepted !== null && _source !== 'internal-migration') {
+      const activePlan = accepted.plan.filter((entry) => entry.state === 'active');
+      const planById = new Map(activePlan.map((entry) => [entry.id, entry]));
+      const progress = new Map<string, boolean>();
+      for (const task of next) {
+        const target = planById.get(task.id) ?? activePlan.find((entry) => entry.title === task.title);
+        if (target === undefined) {
+          throw new DeckError(
+            `task '${task.title}' (${task.id}) is not in the accepted plan of ${id} — ` +
+              `whole-list sync cannot change accepted scope; use scope edit operations (taskOps) instead`,
+            { cardId: id, taskId: task.id, title: task.title },
+          );
+        }
+        progress.set(target.id, task.done);
+      }
+      const merged: TaskState[] = activePlan.map((entry) => {
+        const existing = this.taskRowOf(id, entry.id);
+        return {
+          id: entry.id,
+          title: entry.title,
+          done: progress.get(entry.id) ?? existing?.done ?? false,
+          ...(existing?.addedByVerify === true ? { addedByVerify: true } : {}),
+        };
+      });
+      return withMomentSync(this, 'task', id, item.lane, item, () => {
+        runTx(this.db, (tx) => {
+          const row = this.cardRow(tx, id);
+          if (row.type !== 'verb') throw new NotFoundError('verb item', id);
+          tx.delete(tasks).where(eq(tasks.cardId, id)).run();
+          for (const [index, task] of merged.entries()) {
+            tx.insert(tasks)
+              .values({
+                cardId: id,
+                idx: index,
+                id: task.id,
+                title: task.title,
+                done: task.done,
+                addedByVerify: task.addedByVerify === true ? true : null,
+              })
+              .run();
+          }
+          const done = merged.filter((task) => task.done).length;
+          seedTaskState(tx, id);
+          emitEvent(tx, 'card.tasks.updated', {
+            id,
+            tasks: merged.map((task) => ({ title: task.title, done: task.done })),
+            progress: `${done}/${merged.length}`,
+          });
+        });
+        return merged;
+      });
+    }
     return withMomentSync(this, 'task', id, item.lane, item, () => {
       runTx(this.db, (tx) => {
         const row = this.cardRow(tx, id);
@@ -402,6 +459,14 @@ export class DocumentStore {
       });
       return next;
     });
+  }
+
+  private taskRowOf(cardId: string, taskId: string): TaskRow | undefined {
+    return this.db
+      .select()
+      .from(tasks)
+      .where(and(eq(tasks.cardId, cardId), eq(tasks.id, taskId)))
+      .get();
   }
 
 }

@@ -246,6 +246,10 @@ describe('E03 scope identity through grooming', () => {
     store.raw().exec(`UPDATE cards SET scope_revision = NULL WHERE id = '${item.id}'`);
     store.raw().exec(`DELETE FROM scope_items WHERE card_id = '${item.id}'`);
     store.raw().exec(`DELETE FROM scope_revisions WHERE card_id = '${item.id}'`);
+    store.raw().exec(`DELETE FROM spec_revisions WHERE card_id = '${item.id}'`);
+    store.raw().exec(`DELETE FROM spec_criteria WHERE card_id = '${item.id}'`);
+    store.raw().exec(`DELETE FROM spec_requirements WHERE card_id = '${item.id}'`);
+    store.raw().exec(`DELETE FROM spec_plan_items WHERE card_id = '${item.id}'`);
     // a title-only no-op re-groom does NOT invent identity: the revision
     // ledger initializes (first write), but criteria stay unclassified and a
     // repeat no-op does not version again

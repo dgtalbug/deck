@@ -6,47 +6,22 @@ import { cards, scopeItems, scopeRevisions } from './schema.ts';
 import type { SQLiteBunDatabase } from 'drizzle-orm/bun-sqlite';
 import type { CriterionOp, TaskOp, TaskState } from './types.ts';
 
+// Single-sourced readers: the accepted-scope module owns revision identity and
+// criteria reads (accepted snapshot first, legacy rows for unclassified cards).
+import { currentScopeRevision, legacyScopeDigest } from './accepted-scope.ts';
+export { currentScopeRevision, scopeCriteria } from './accepted-scope.ts';
+
 export const UNCLASSIFIED = 'unclassified';
 
-interface ScopeSnapshot {
-  verb: string;
-  title: string;
-  tasks: Array<{ id: string; title: string }>;
-  criteria: Array<{ id: string; state: string; title: string }>;
-}
-
-export function scopeDigest(snapshot: ScopeSnapshot): string {
-  const canonical = [
-    `verb: ${snapshot.verb}`,
-    `title: ${snapshot.title}`,
-    ...snapshot.tasks.map((task, index) => `task ${index}: ${task.id} ${task.title}`),
-    ...[...snapshot.criteria]
-      .sort((a, b) => a.id.localeCompare(b.id))
-      .map((criterion) => `criterion: ${criterion.id} ${criterion.state} ${criterion.title}`),
-  ].join('\n');
-  return createHash('sha256').update(canonical, 'utf8').digest('hex').slice(0, 32);
-}
-
-export function currentScopeRevision(db: SQLiteBunDatabase, cardId: string): number {
-  const row = db.select({ revision: cards.scopeRevision }).from(cards).where(eq(cards.id, cardId)).get();
-  return row?.revision ?? 0;
-}
-
-export function scopeCriteria(db: SQLiteBunDatabase, cardId: string): Array<{ id: string; title: string; state: string }> {
-  return db
-    .select({ id: scopeItems.id, title: scopeItems.title, state: scopeItems.state })
-    .from(scopeItems)
-    .where(eq(scopeItems.cardId, cardId))
-    .all();
-}
+export { legacyScopeDigest as scopeDigest } from './accepted-scope.ts';
 
 export function recordScopeRevision(
   db: SQLiteBunDatabase,
   cardId: string,
-  snapshot: ScopeSnapshot,
+  snapshot: Parameters<typeof legacyScopeDigest>[0],
   operations: string[],
 ): { revision: number; changed: boolean } {
-  const digest = scopeDigest(snapshot);
+  const digest = legacyScopeDigest(snapshot);
   const current = currentScopeRevision(db, cardId);
   const newest = db.select().from(scopeRevisions).where(eq(scopeRevisions.cardId, cardId)).all().at(-1) ?? undefined;
   if (newest !== undefined && newest.digest === digest && current === newest.revision) {
