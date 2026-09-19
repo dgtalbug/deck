@@ -2,7 +2,8 @@
 name: deck-onboard
 description: Onboard a project onto the deck engine — init, setup, doctor, and host adapters. Use when the user wants to start using deck in a repo, diagnose a broken setup, or list registered projects.
 allowed-tools: Bash(deck:*)
-owns: init, setup, doctor, projects, skill, backfill-specs, hooks, rules
+owns: init, setup, doctor, projects, skill, backfill-specs, hooks, rules, help
+hosts: shell-only contract — Claude Code, GitHub Copilot, and Codex run these recipes through the deck CLI in a shell; no host-native tool syntax is required or claimed
 ---
 
 # deck-onboard — project lifecycle

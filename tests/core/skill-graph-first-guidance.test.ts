@@ -96,3 +96,27 @@ describe('negative controls — the contract catches guidance regressions', () =
     expect(violations(sabotaged).join('\n')).toContain('overclaim');
   });
 });
+
+describe('skill host-contract and lifecycle honesty', () => {
+  test('every deck skill declares the shell-only host contract', () => {
+    for (const [rel, body] of Object.entries(skillAssets)) {
+      expect(body, rel).toMatch(/^hosts: shell-only contract/m);
+      expect(body, rel).toContain('no host-native tool syntax is required or claimed');
+    }
+  });
+
+  test('build guidance teaches the canonical start command, not only aliases', () => {
+    const build = skillAssets['deck-build/SKILL.md']!;
+    expect(build).toContain('deck start <verb> <id>');
+    expect(build).toMatch(/deprecated alias/);
+  });
+
+  test('no skill claims server startup from a bare invocation', () => {
+    // Inert discovery: guidance must point at `deck serve`, never imply that
+    // running bare `deck` starts the board.
+    for (const [rel, body] of Object.entries(skillAssets)) {
+      expect(body.includes('run `deck` to start'), rel).toBe(false);
+      expect(body.includes('deck (bare) starts'), rel).toBe(false);
+    }
+  });
+});

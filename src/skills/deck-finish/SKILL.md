@@ -3,6 +3,7 @@ name: deck-finish
 description: Close a built deck card — your own three-dimension verification pass, the mechanical review gate, then delivery: prepare (PR) and finalize on observed merge. Use when implementation is done and verified, or the user says review/archive/ship/deliver it.
 allowed-tools: Bash(deck:*), Bash(git:*)
 owns: review, archive, deliver, policy, delivery, cleanup, evidence, capability
+hosts: shell-only contract — Claude Code, GitHub Copilot, and Codex run these recipes through the deck CLI in a shell; no host-native tool syntax is required or claimed
 ---
 
 # deck-finish — verify → review → prepare → deliver

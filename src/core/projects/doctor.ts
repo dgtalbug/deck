@@ -128,20 +128,30 @@ function skillPackCheck(projectPath: string): DoctorCheck {
   if (status.files.length === 0) {
     return { name: 'skill pack', pass: true, detail: 'skipped — no agent host detected' };
   }
-  const missing = status.files.filter((f) => f.status === 'missing').length;
-  const stale = status.files.filter((f) => f.status === 'stale').length;
-  const current = status.files.filter((f) => f.status === 'current').length;
-  const customized = status.unrepairable;
-  const drifted = missing + stale;
-  const parts = [`${current} current`, customized.length > 0 ? `${customized.length} customized (user — left untouched)` : undefined];
+  const byStatus = (want: string) => status.files.filter((f) => f.status === want);
+  const overlay = byStatus('overlay').length;
+  const current = byStatus('current').length + overlay;
+  const missing = byStatus('missing').length;
+  const stale = byStatus('stale').length;
+  const customized = byStatus('customized');
+  const conflicted = byStatus('conflict');
+  const drifted = missing + stale + conflicted.length;
+  const parts = [
+    `${current} current${overlay > 0 ? ` (${overlay} with user overlay)` : ''}`,
+    customized.length > 0 ? `${customized.length} customized (user — left untouched)` : undefined,
+    conflicted.length > 0 ? `${conflicted.length} conflicted fence(s)` : undefined,
+  ];
   if (drifted === 0) {
     return { name: 'skill pack', pass: true, detail: parts.filter(Boolean).join(', ') || `${status.files.length} current` };
   }
+  // An obsolete managed base never passes just because custom text sits on
+  // top of it; the stale base itself fails with the safe rebase path.
   parts.unshift(`${missing} missing`, `${stale} stale`);
   return {
     name: 'skill pack',
     pass: false,
-    detail: `drift: ${parts.filter(Boolean).join(', ')} — run \`deck setup\` to repair the managed files (${status.repairable.length} would change)`,
+    detail: `drift: ${parts.filter(Boolean).join(', ')} — run \`deck setup\` to repair managed files, ` +
+      `or preview + adopt for customized ones (${status.repairable.length} would change)`,
   };
 }
 
@@ -150,8 +160,19 @@ async function mapDriftCheck(projectPath: string, opts: DiagnosticOptions): Prom
   if (!existsSync(dbPath)) {
     return { name: 'issue map', pass: true, detail: 'skipped — no board db' };
   }
-  const { openStore } = await import('../board/store.ts');
-  const store = await openStore(projectPath);
+  // Diagnostics never initialize or migrate: a pre-migration database is a
+  // finding, not something doctor repairs.
+  const { openReadModel } = await import('../board/store.ts');
+  const { SchemaMigrationRequiredError } = await import('../board/open-state.ts');
+  let store;
+  try {
+    store = await openReadModel(projectPath);
+  } catch (error) {
+    if (error instanceof SchemaMigrationRequiredError) {
+      return { name: 'issue map', pass: false, detail: `board schema needs migration — ${error.message}` };
+    }
+    throw error;
+  }
   const mapped = store.db.select().from(issueMap).all().sort((a, b) => a.issueNumber - b.issueNumber);
   if (mapped.length === 0) {
     return { name: 'issue map', pass: true, detail: 'no mapped issues' };

@@ -3,6 +3,7 @@ name: deck-plan
 description: Architect intake — turn one user idea (feature, problem, bug, big bet) into a fully-shaped board plan: epic + stories + tasks, created through engine doors. Use when the user describes something LARGE or multi-part. Planning only — never implement at intake.
 allowed-tools: Bash(deck:*), Bash(curl:*)
 owns: deps, epic-plan
+hosts: shell-only contract — Claude Code, GitHub Copilot, and Codex run these recipes through the deck CLI in a shell; no host-native tool syntax is required or claimed
 ---
 
 # deck-plan — one idea in, a shaped plan out

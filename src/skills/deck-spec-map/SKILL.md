@@ -3,6 +3,7 @@ name: deck-spec-map
 description: Token-cheap codebase research before proposing or building — graph-first mapping, read slices, never sweep. Use whenever you need to understand code before a deck proposal or implementation.
 allowed-tools: Bash(git:*), Bash(grep:*), Bash(deck:*)
 owns:
+hosts: shell-only contract — Claude Code, GitHub Copilot, and Codex run these recipes through the deck CLI in a shell; no host-native tool syntax is required or claimed
 ---
 
 # deck-spec-map — graph first, read slices, never sweep
