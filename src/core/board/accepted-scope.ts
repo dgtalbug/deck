@@ -144,10 +144,12 @@ export function currentScopeRevision(db: SQLiteBunDatabase, cardId: string): num
 }
 
 // Snapshot at the card's current accepted revision; null when the card has no
-// accepted revisions (legacy unclassified or quarantined).
+// accepted revisions (legacy unclassified) or unresolved quarantine excludes
+// it from accepted-revision projection.
 export function currentAcceptedSnapshot(db: SQLiteBunDatabase, cardId: string): AcceptedScopeSnapshot | null {
   const card = db.select().from(cards).where(eq(cards.id, cardId)).get();
   if (card === undefined || card.scopeRevision === null) return null;
+  if (scopeClassification(db, cardId) !== 'accepted') return null;
   return snapshotAt(db, cardId, card.scopeRevision, card);
 }
 

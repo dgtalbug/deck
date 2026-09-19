@@ -46,6 +46,7 @@ export const MANIFEST: AppOperation[] = [
   { id: 'board.rules', summary: 'list or check deck rules', mutability: 'read', cli: { route: 'rules', flags: { check: 'value' } }, opensProject: true },
   { id: 'board.recall', summary: 'search session memory', mutability: 'read', cli: { route: 'recall' }, opensProject: true },
   { id: 'board.ops', summary: 'list, inspect or reconcile engine operations', mutability: 'command', cli: { route: 'ops', flags: { confirm: 'boolean', clean: 'boolean' } }, opensProject: true },
+  { id: 'scope.inspect', summary: 'inspect accepted scope identity: revisions, audit classification, quarantine diagnostics and projection drift', mutability: 'read', cli: { route: 'scope', flags: { json: 'boolean' } }, rest: { method: 'GET', path: '/{project}/scope' }, mcp: ['scope_inspect'], opensProject: true },
 
   // Board commands.
   { id: 'note.create', summary: 'capture a note on the todo lane', mutability: 'command', cli: { route: 'note' }, rest: { method: 'POST', path: '/{project}/notes' }, mcp: ['note_capture'], opensProject: true },

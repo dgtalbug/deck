@@ -9,12 +9,14 @@ import { emitEvent } from '../events/outbox.ts';
 import { recordSpecVersion, renderCardSpec, enqueuePublish } from './specstore.ts';
 import {
   applyScopeEdit,
+  acceptedRevision,
   currentAcceptedSnapshot,
   currentScopeRevision,
   deterministicRequirementIds,
   recordAcceptedRevision,
   scopeClassification,
   scopeCriteria,
+  StaleBasisError,
   type AcceptedScopeSnapshot,
   type ScopeOperation,
 } from './accepted-scope.ts';
@@ -228,6 +230,43 @@ export function updateGroom(store: DocumentStore, id: string, proposal: GroomPro
       `card ${id} has quarantined scope identity — resolve the quarantine diagnostics before editing scope`,
       { cardId: id, classification },
     );
+  }
+
+  // Stale basis refuses before any mapping: an editor holding an older basis
+  // cannot address tasks it has never seen, so coverage errors would mask the
+  // actual conflict. The preview maps what it can and names the rest.
+  if (proposal.expectedRevision !== undefined && proposal.expectedRevision !== basis) {
+    if (classification !== 'accepted') {
+      throw new StaleWriterError(`scope of ${id}`, proposal.expectedRevision, basis);
+    }
+    const snapshot = currentAcceptedSnapshot(store.db, id)!;
+    const revisionRow = acceptedRevision(store.db, id)!;
+    const planIds = new Set(snapshot.plan.filter((item) => item.state === 'active').map((item) => item.id));
+    const attempted: ScopeOperation[] = [{ kind: 'story', title: proposal.refinedTitle, verb: proposal.proposedVerb }];
+    const conflicts: string[] = [];
+    const safeNoOps: ScopeOperation[] = [];
+    for (const op of proposal.taskOps ?? []) {
+      if (op.op === 'add') {
+        attempted.push({ kind: 'task', op: 'add', title: op.title });
+        continue;
+      }
+      if (!planIds.has(op.id)) {
+        conflicts.push(`task '${op.id}' is not in the current accepted plan (basis moved)`);
+        continue;
+      }
+      const mapped: ScopeOperation =
+        op.op === 'keep' ? { kind: 'task', op: 'keep', id: op.id }
+        : op.op === 'rename' ? { kind: 'task', op: 'rename', id: op.id, title: op.title }
+        : { kind: 'task', op: 'remove', id: op.id };
+      attempted.push(mapped);
+      if (op.op === 'keep') safeNoOps.push(mapped);
+    }
+    throw new StaleBasisError(id, proposal.expectedRevision, basis, {
+      current: { cardId: id, revision: basis, revisionId: revisionRow.revisionId, contentDigest: revisionRow.contentDigest },
+      attempted,
+      conflicts,
+      safeNoOps,
+    });
   }
 
   runTx(store.db, (tx) => {

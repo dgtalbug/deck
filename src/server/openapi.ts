@@ -106,6 +106,17 @@ export function openApiDocument(): Record<string, unknown> {
           responses: { '200': jsonResponse('Board view'), '404': errorResponses['404'] },
         },
       },
+      '/{project}/scope': {
+        get: {
+          summary: 'Accepted scope identity: one card (?card=) or the board audit view (?view=audit)',
+          parameters: [
+            projectParam,
+            { name: 'card', in: 'query', schema: { type: 'string' }, description: 'card id to inspect' },
+            { name: 'view', in: 'query', schema: { type: 'string', enum: ['audit'] }, description: 'board-wide audit classification and quarantine diagnostics' },
+          ],
+          responses: { '200': jsonResponse('ScopeShow | ScopeAuditView'), '404': errorResponses['404'] },
+        },
+      },
       '/{project}/next': {
         get: {
           summary: 'Top of the groomed queue with a ≤2k-token digest (respects WIP limit)',

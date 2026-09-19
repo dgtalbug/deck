@@ -4,6 +4,7 @@ import { applyExplicitResult } from '../core/board/verify.ts';
 import { runVerification } from '../core/engine/verify.ts';
 import { convertToVerbItem } from '../core/board/groom.ts';
 import { applyTaskPatch, assignTask } from '../core/board/task-patches.ts';
+import { scopeAuditView, scopeShow } from '../core/board/scope-inspect.ts';
 import {
   acceptHandoff,
   listHandoffs,
@@ -160,6 +161,13 @@ export async function callTool(registry: ProjectRegistry, name: string, params: 
     case 'handoff_status': {
       const cardId = params['cardId'];
       return listHandoffs(store, typeof cardId === 'string' && cardId.length > 0 ? { cardId } : undefined);
+    }
+    case 'scope_inspect': {
+      const view = params['view'];
+      if (view === 'audit') return scopeAuditView(store);
+      const cardId = params['cardId'];
+      if (typeof cardId !== 'string' || cardId.length === 0) throw new InvalidParamsError('cardId (or view=audit)');
+      return scopeShow(store, cardId);
     }
     case 'graph_search':
       return graphTool(store, params, (db, graphPath, status, staleInspection) => {

@@ -166,6 +166,20 @@ export const TOOLS: readonly ToolDescriptor[] = [
     },
   },
   {
+    name: 'scope_inspect',
+    description:
+      'Read accepted scope identity for one card (revision id/digest/actor/basis/oplog, snapshot, projection drift) or the board-wide audit view (classification + quarantine diagnostics); read-only (scopeShow/scopeAuditView core)',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        project: PROJECT_ARG,
+        cardId: { type: 'string', description: 'card to inspect (required unless view=audit)' },
+        view: { type: 'string', enum: ['audit'], description: 'board-wide audit view instead of a single card' },
+      },
+      required: ['project'],
+    },
+  },
+  {
     name: 'graph_search',
     description:
       'FTS5 symbol search over the project graph (default 20, max 100 results); reports workspace identity, freshness and truncation; never indexes',
@@ -210,6 +224,7 @@ export const MCP_TOOL_PROFILE = {
     'handoff_offer',
     'handoff_accept',
     'handoff_status',
+    'scope_inspect',
     'graph_search',
     'graph_impact',
   ],
