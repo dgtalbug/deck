@@ -1,9 +1,19 @@
 import { createHash } from 'node:crypto';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { DeckError, NotFoundError, StaleWriterError } from './errors.ts';
 import { emitEvent } from '../events/outbox.ts';
-import { runTx, type DocumentStore } from './store.ts';
+import { runTx, type DocumentStore, type Tx } from './store.ts';
 import { taskPatches, taskState, tasks, type TaskStateRow } from './schema.ts';
+
+// Tasks start their delivery state at revision 1 with no owner. Seeding rides
+// the mutation that creates the task rows, never a later read or open.
+export function seedTaskState(exec: Tx, cardId: string): void {
+  exec.run(
+    sql`INSERT OR IGNORE INTO task_state (task_id, card_id, revision, owner, assigned_at, updated_at)
+        SELECT t.id, t.card_id, 1, NULL, NULL, ${new Date().toISOString()}
+        FROM tasks t WHERE t.card_id = ${cardId}`,
+  );
+}
 
 export interface TaskAssignment {
   taskId: string;

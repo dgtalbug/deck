@@ -86,6 +86,8 @@ export const operations = sqliteTable('operations', {
     .notNull(),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
+  leaseExpiresAt: text('lease_expires_at'),
+  fenceToken: integer('fence_token').notNull().default(0),
 });
 
 export type CardRow = typeof cards.$inferSelect;

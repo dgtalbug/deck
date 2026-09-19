@@ -19,6 +19,7 @@ import {
   recordIntent,
   reconcileOperation,
 } from './provider-operations.ts';
+import { seedTaskState } from './task-patches.ts';
 import type { ProviderOperationRow } from './schema.ts';
 import {
   checksumOf,
@@ -263,6 +264,7 @@ function ensurePlaceholder(store: DocumentStore, path: string, markdown: string)
     tx.insert(tasks)
       .values({ cardId: id, idx: 0, id: newTaskId(), title: `track ${path} spec`, done: true })
       .run();
+    seedTaskState(tx, id);
     emitEvent(tx, 'card.created', { id, lane: 'groomed', position });
   });
   return id;

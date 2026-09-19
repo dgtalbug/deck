@@ -108,7 +108,7 @@ describe('setBlocked lane guard', () => {
 });
 
 describe('on-open sweep', () => {
-  test('legacy blocked flags on engine-lane cards are cleared at open', async () => {
+  test('legacy blocked flags on engine-lane cards are cleared by the migration', async () => {
     const id = seedCard('sweep target card');
     moveLane(store, id, 'active', 'engine');
     store.db
@@ -116,7 +116,11 @@ describe('on-open sweep', () => {
         // biome-ignore lint/security/non-literal-sql: fixed literal in a test
         `UPDATE cards SET blocked_reason = 'legacy', blocked_at = '2020-01-01T00:00:00Z' WHERE id = '${id}'`,
       );
+    // Replay the data translation as a database that has not run it yet.
+    store.raw().exec("DELETE FROM migration_runs WHERE migration = '20260919120000_control_plane_baseline'");
+    store.raw().close();
     const reopened = await openStore(dir);
+    store = reopened;
     expect(reopened.getVerbItem(id).blocked).toBeUndefined();
   });
 

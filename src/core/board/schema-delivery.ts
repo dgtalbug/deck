@@ -48,8 +48,20 @@ export const evidenceRecords = sqliteTable('evidence_records', {
 export const providerOperations = sqliteTable('provider_operations', {
   id: text('id').primaryKey(),
   cardId: text('card_id').notNull(),
-  kind: text('kind', { enum: ['issue-create', 'issue-edit', 'issue-close', 'pr-create', 'pr-update'] })
-    .$type<'issue-create' | 'issue-edit' | 'issue-close' | 'pr-create' | 'pr-update'>()
+  kind: text('kind', {
+    enum: ['issue-create', 'issue-edit', 'issue-close', 'pr-create', 'pr-update', 'branch-create', 'branch-push', 'integration', 'cleanup-close'],
+  })
+    .$type<
+      | 'issue-create'
+      | 'issue-edit'
+      | 'issue-close'
+      | 'pr-create'
+      | 'pr-update'
+      | 'branch-create'
+      | 'branch-push'
+      | 'integration'
+      | 'cleanup-close'
+    >()
     .notNull(),
   provider: text('provider').notNull(),
   repo: text('repo').notNull(),
@@ -80,6 +92,12 @@ export const providerOperations = sqliteTable('provider_operations', {
   nextAction: text('next_action'),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
+  operationId: text('operation_id'),
+  step: text('step'),
+  expectedRef: text('expected_ref'),
+  payloadDigest: text('payload_digest'),
+  observedAt: text('observed_at'),
+  tombstone: integer('tombstone').notNull().default(0),
 });
 
 export const deliveries = sqliteTable('deliveries', {

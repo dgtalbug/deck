@@ -18,23 +18,28 @@ export function metaValue(sqlite: Database, key: string): string | null {
   return row?.value ?? null;
 }
 
-export function recordWriterVersion(sqlite: Database): void {
+export function setMetaValue(sqlite: Database, key: string, value: string): void {
   sqlite.exec(
     'CREATE TABLE IF NOT EXISTS deck_meta (key TEXT PRIMARY KEY NOT NULL, value TEXT NOT NULL)',
   );
   sqlite
     .query(
-      `INSERT INTO deck_meta (key, value) VALUES ('writer_version', ?) ` +
+      `INSERT INTO deck_meta (key, value) VALUES (?, ?) ` +
         `ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
     )
-    .run(DECK_VERSION);
+    .run(key, value);
+}
+
+// Records the newest writer binary that opened this database. This is an
+// observation, not a compatibility claim: only a verified migration may raise
+// min_writer_version (advanceWriterFloor).
+export function recordWriterVersion(sqlite: Database): void {
+  setMetaValue(sqlite, 'writer_version', DECK_VERSION);
+}
+
+export function advanceWriterFloor(sqlite: Database): void {
   const floor = metaValue(sqlite, 'min_writer_version');
   if (floor === null || versionValue(DECK_VERSION) > versionValue(floor)) {
-    sqlite
-      .query(
-        `INSERT INTO deck_meta (key, value) VALUES ('min_writer_version', ?) ` +
-          `ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
-      )
-      .run(DECK_VERSION);
+    setMetaValue(sqlite, 'min_writer_version', DECK_VERSION);
   }
 }

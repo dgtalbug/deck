@@ -109,7 +109,8 @@ describe('collaboration transport parity', () => {
     expect(stale.status).toBeGreaterThanOrEqual(400);
     expect(store.getVerbItem(cardId).tasks[0]!.done).toBe(false);
     const row = store.raw().query('SELECT revision FROM task_state WHERE task_id = ?').get(taskId) as { revision: number };
-    expect(row.revision).toBe(1);
+    // The legit assign bumped the pristine seed to 2; the refused patch left it there.
+    expect(row.revision).toBe(2);
   });
 
   test('invalid payload fails before effects', async () => {
@@ -117,7 +118,8 @@ describe('collaboration transport parity', () => {
     const { cardId, taskId } = await groomedTask(store, 'invalid payload card');
     const bad = await req('POST', `/testproj/cards/${cardId}/tasks/${taskId}/assign`, { owner: '' });
     expect(bad.status).toBe(400);
-    const row = store.raw().query('SELECT owner FROM task_state WHERE task_id = ?').get(taskId);
-    expect(row).toBeNull();
+    // The task's seeded delivery row exists but is untouched by the refusal.
+    const row = store.raw().query('SELECT owner, revision FROM task_state WHERE task_id = ?').get(taskId);
+    expect(row).toEqual({ owner: null, revision: 1 });
   });
 });

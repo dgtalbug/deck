@@ -13,6 +13,7 @@ import { assertUnderWip } from './lanes.ts';
 import { recordSpecVersion, renderCardSpec, enqueuePublish } from './specstore.ts';
 import { runMomentPostSync, runMomentPreSync } from '../engine/moments.ts';
 import { applyCriterionOps, recordScopeRevision } from './scope.ts';
+import { seedTaskState } from './task-patches.ts';
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -111,6 +112,7 @@ export function convertToVerbItem(store: DocumentStore, proposal: GroomProposal)
         .values({ cardId: proposal.noteId, idx: index, id: newTaskId(), title, done: false })
         .run();
     }
+    seedTaskState(tx, proposal.noteId);
     const taskRows = tx.select().from(tasks).where(eq(tasks.cardId, proposal.noteId)).all();
     const activeTitles = [...new Set(proposal.specDeltas.map((delta) => delta.requirement.trim()).filter(Boolean))];
     const criteria = applyCriterionOps(tx, proposal.noteId, 0, [], activeTitles, undefined, true);
@@ -241,6 +243,7 @@ export function tweak(store: DocumentStore, id: string): Tweak {
     tx.insert(tasks)
       .values({ cardId: id, idx: 0, id: newTaskId(), title: row.title, done: false })
       .run();
+    seedTaskState(tx, id);
     emitEvent(tx, 'card.moved', { id, lane: 'active', position });
   });
   return store.getCard(id) as Tweak;

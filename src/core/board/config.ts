@@ -3,7 +3,12 @@ import { join } from 'node:path';
 
 const deckConfigSchema = z.object({
   server: z.object({ port: z.number().int().min(1).max(65535) }).optional(),
-  board: z.object({ wipLimit: z.number().int().min(1) }).optional(),
+  board: z
+    .object({
+      wipLimit: z.number().int().min(1),
+      leaseMinutes: z.number().int().min(1).max(1440).optional(),
+    })
+    .optional(),
 });
 
 export type DeckConfig = z.infer<typeof deckConfigSchema>;
