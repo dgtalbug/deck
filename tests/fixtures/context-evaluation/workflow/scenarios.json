@@ -1,0 +1,174 @@
+[
+  {
+    "id": "wf-small-fix",
+    "kind": "small-fix",
+    "prompt": "The todo view subtitle says 'Captur → groom'. Fix the typo so it reads 'Capture → groom'.",
+    "skillsExpected": ["deck-capture"],
+    "requiredFacts": [
+      "candidate scan ran (deck board / deck epics / detail read) before any deck note",
+      "exactly one decision recorded (reuse/update/distinct/clarify) with matched id or no-match reason",
+      "fix-shaped work carries reproduce + rca research per deck-types",
+      "card stays unstarted (todo/groomed) — no implementation in the capture run"
+    ],
+    "forbiddenActions": [
+      "epic-or-story ceremony for a ≤3-task fix",
+      "starting the card (deck fix/feat …) during capture",
+      "editing source files during the capture run"
+    ],
+    "rubric": [
+      "scan-before-create",
+      "one-decision-recorded",
+      "board-state-matches-decision",
+      "engine-doors-only",
+      "no-card-started"
+    ]
+  },
+  {
+    "id": "wf-bounded-feature",
+    "kind": "bounded-feature",
+    "prompt": "Add a 'pinned notes' strip to the board's todo view: a user can pin up to three notes and they render above the list.",
+    "skillsExpected": ["deck-plan"],
+    "requiredFacts": [
+      "count-law sizing recorded (≤3 tasks → capture handoff, >3 → single story)",
+      "chosen shape carries the slice fields: outcome, scope/non-goals, acceptance criteria, validation",
+      "dependency decision explicit (edge or stated none)",
+      "no card started and no implementation in the planning run"
+    ],
+    "forbiddenActions": [
+      "creating an epic for single-story work",
+      "leaving dependency ordering implicit",
+      "starting any card"
+    ],
+    "rubric": [
+      "scan-before-create",
+      "count-law-sizing-recorded",
+      "slice-fields-present",
+      "dependency-decision-explicit",
+      "engine-doors-only",
+      "no-card-started"
+    ]
+  },
+  {
+    "id": "wf-cross-cutting-feature",
+    "kind": "cross-cutting-feature",
+    "prompt": "Add saved views to the board: persist named filter configurations, expose them over the board API, and render a saved-view picker in the UI.",
+    "skillsExpected": ["deck-plan"],
+    "requiredFacts": [
+      "epic created with intent and acceptance criteria",
+      "stories decomposed by responsibility with slice fields per story",
+      "dependency edges recorded where ordering is required, explicit none otherwise",
+      "every criterion linked or deferred-with-reason; uncovered criteria named",
+      "build order recommended; nothing started"
+    ],
+    "forbiddenActions": [
+      "declaring the epic complete",
+      "unreviewable mega-story",
+      "starting any story",
+      "direct db writes"
+    ],
+    "rubric": [
+      "scan-before-create",
+      "epic-intent-and-criteria",
+      "slice-fields-per-story",
+      "dependencies-recorded-or-none",
+      "criteria-linked-or-deferred",
+      "engine-doors-only",
+      "no-card-started"
+    ]
+  },
+  {
+    "id": "wf-ambiguity",
+    "kind": "ambiguity",
+    "prompt": "Make the board toolbar better.",
+    "skillsExpected": ["deck-capture"],
+    "requiredFacts": [
+      "candidate scan ran and considered open work",
+      "decision is clarify: ONE open question naming candidate ids where relevant",
+      "no card created from the ambiguous request"
+    ],
+    "forbiddenActions": [
+      "guessing a shape without asking",
+      "creating a note despite an unresolved ambiguity",
+      "asking multiple stacked questions"
+    ],
+    "rubric": [
+      "scan-before-create",
+      "one-decision-recorded",
+      "board-state-matches-decision",
+      "engine-doors-only"
+    ]
+  },
+  {
+    "id": "wf-repeated-intake",
+    "kind": "repeated-intake",
+    "prompt": "Retry: add the dark-mode toggle to the board toolbar. (A prior session already captured this request.)",
+    "skillsExpected": ["deck-capture"],
+    "requiredFacts": [
+      "candidate scan found the existing open card",
+      "decision is reuse or update naming the existing card id",
+      "board still holds exactly one card for the request — no duplicate",
+      "if groomed, the existing card id was groomed (POST for a note, PATCH for an already-groomed card)"
+    ],
+    "forbiddenActions": [
+      "creating a second card for the retried request",
+      "ignoring the existing card",
+      "forking the card identity"
+    ],
+    "rubric": [
+      "scan-before-create",
+      "one-decision-recorded",
+      "no-duplicate-created",
+      "card-identity-preserved",
+      "engine-doors-only"
+    ]
+  },
+  {
+    "id": "wf-graph-grounded-planning",
+    "kind": "graph-grounded-planning",
+    "prompt": "Plan the change 'rename formatTodoRow to renderTodoRow everywhere it is used' for this repository — the plan must state the blast radius before any edit is proposed.",
+    "skillsExpected": ["deck-plan"],
+    "requiredFacts": [
+      "deck graph impact/why (or graph status naming the limitation) appears in the transcript before the plan's edit list",
+      "the plan records callers/blast radius sourced from the graph output or source inspection",
+      "graph relationships are labeled by tier; heuristic/unresolved edges are not presented as resolved",
+      "plan output is board state (cards/specs), not source edits"
+    ],
+    "forbiddenActions": [
+      "proposing edits without any blast-radius statement",
+      "presenting an unresolved graph edge as resolved",
+      "editing source files during planning"
+    ],
+    "rubric": [
+      "scan-before-create",
+      "graph-consulted-before-plan",
+      "blast-radius-recorded",
+      "edge-tiers-labeled",
+      "engine-doors-only",
+      "no-card-started"
+    ]
+  },
+  {
+    "id": "wf-interruption-resume",
+    "kind": "interruption-resume",
+    "prompt": "Continue the capture you started for the toolbar dark-mode toggle. (The prior run was interrupted after the note was created but before grooming.)",
+    "skillsExpected": ["deck-capture"],
+    "requiredFacts": [
+      "the scan was rerun on resume and found the interrupted card",
+      "existing card identity preserved: same id, update path taken (groom the existing id)",
+      "task ids and spec path consistent with the existing card after grooming",
+      "no second card created"
+    ],
+    "forbiddenActions": [
+      "creating a new card for the continuation",
+      "re-capturing the note instead of grooming the existing id",
+      "losing the original card id"
+    ],
+    "rubric": [
+      "scan-rerun-on-resume",
+      "existing-id-groomed",
+      "card-identity-preserved",
+      "no-duplicate-created",
+      "engine-doors-only"
+    ]
+  }
+]
