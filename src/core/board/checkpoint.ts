@@ -1,17 +1,28 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { SESSIONS_DIR, sessionPath } from './memory.ts';
+import { DeckError } from './errors.ts';
 
 export type CheckpointKind = 'decision' | 'gotcha' | 'remaining' | 'blocker';
 
 export const CHECKPOINT_KINDS: readonly CheckpointKind[] = ['decision', 'gotcha', 'remaining', 'blocker'];
-export const MAX_CHECKPOINT_TEXT = 2000; 
+export const MAX_CHECKPOINT_TEXT = 2000;
 export const MAX_CHECKPOINT_ENTRIES = 50;
 const LOCK_TIMEOUT_MS = 5000;
 const LOCK_POLL_MS = 25;
 
-export class CheckpointConflictError extends Error {}
-export class CheckpointBoundsError extends Error {}
+// DeckError subclasses so the CLI maps checkpoint conflicts and bounds
+// violations to the typed failure path (exit 1), not unexpected-error (exit 2)
+export class CheckpointConflictError extends DeckError {
+  constructor(message: string) {
+    super(message, {});
+  }
+}
+export class CheckpointBoundsError extends DeckError {
+  constructor(message: string) {
+    super(message, {});
+  }
+}
 
 export interface CheckpointEntry {
   id: string;
