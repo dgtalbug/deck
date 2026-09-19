@@ -3,6 +3,7 @@ name: deck-types
 description: The spec-type registry — list, author, edit, and remove deck's spec types, and understand the per-type gates and laws. Use when the user wants a custom workflow/type, when grooming fails on missing sections, or to inspect what a type requires.
 allowed-tools: Bash(deck:*), Bash(curl:*)
 owns: types
+hosts: shell-only contract — Claude Code, GitHub Copilot, and Codex run these recipes through the deck CLI in a shell; no host-native tool syntax is required or claimed
 ---
 
 # deck-types — the spec-type registry

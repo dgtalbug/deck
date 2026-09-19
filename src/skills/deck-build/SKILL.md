@@ -1,8 +1,9 @@
 ---
 name: deck-build
-description: Build an approved, groomed deck card — start the verb, implement scoped to the spec with the type's task law, run the verify loop. Use after the user approves a card (deck feat/fix/… <id>) or says "start/build card X".
+description: Build an approved, groomed deck card — start the verb, implement scoped to the spec with the type's task law, run the verify loop. Use after the user approves a card (deck start <verb> <id>; deck feat/fix/… remain deprecated aliases) or says "start/build card X".
 allowed-tools: Bash(deck:*), Bash(git:*)
-owns: feat, fix, docs, style, refactor, perf, test, build, ci, chore, revert, tweak, override, workspace
+owns: start, feat, fix, docs, style, refactor, perf, test, build, ci, chore, revert, tweak, override, workspace
+hosts: shell-only contract — Claude Code, GitHub Copilot, and Codex run these recipes through the deck CLI in a shell; no host-native tool syntax is required or claimed
 ---
 
 # deck-build — approved card → code
@@ -25,7 +26,8 @@ Load nothing else — the digest carries the spec, tasks, and the type's task la
 
 1. **Start (the approval act, if not already started):**
    ```bash
-   deck <verb> <id>     # e.g. deck fix dash-load-slow
+   deck start <verb> <id>   # canonical; e.g. deck start fix dash-load-slow
+   # (deck feat/fix/… <id> still work as deprecated aliases)
    ```
    Engine: card → active, branch `verb/<first-four-title-words>` (≤32 chars), issue retargeted draft→open. Refusals: `missing required section(s)` → re-groom (deck-update); `branch '…' already exists` → retitle one of the two same-titled cards; WIP limit → finish the named active card first (deck-continue).
 2. **Implement on the branch**, scoped by tasks:

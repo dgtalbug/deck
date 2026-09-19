@@ -8,6 +8,7 @@ import type { Card, GroomProposal, Lane, VerbItem } from './types.ts';
 import { emitEvent } from '../events/outbox.ts';
 import { recordSpecVersion, renderCardSpec, enqueuePublish } from './specstore.ts';
 import { applyCriterionOps, applyTaskOps, currentScopeRevision, recordScopeRevision, scopeCriteria } from './scope.ts';
+import { seedTaskState } from './task-patches.ts';
 
 const MANUAL_LANES: ReadonlySet<Lane> = new Set(['todo', 'groomed']);
 
@@ -87,6 +88,7 @@ export function updateGroom(store: DocumentStore, id: string, proposal: GroomPro
         .values({ cardId: id, idx: index, id: task.id, title: task.title, done: doneById.get(task.id) === true })
         .run();
     }
+    seedTaskState(tx, id);
     tx.update(cards)
       .set({
         title: proposal.refinedTitle,

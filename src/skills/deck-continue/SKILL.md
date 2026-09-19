@@ -3,6 +3,7 @@ name: deck-continue
 description: Resume a mid-flight deck card or repair a wedged build — deck next as the whole resume context, verify overrides, queued-publish and drift repair. Use when returning to interrupted work or when the engine reports something stuck.
 allowed-tools: Bash(deck:*), Bash(git:*)
 owns: verify, ops, checkpoint, task, handoff, baseline
+hosts: shell-only contract — Claude Code, GitHub Copilot, and Codex run these recipes through the deck CLI in a shell; no host-native tool syntax is required or claimed
 ---
 
 # deck-continue — resume and repair

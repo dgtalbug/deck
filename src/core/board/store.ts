@@ -1,12 +1,11 @@
 import { Database } from 'bun:sqlite';
 import { and, asc, eq, inArray, notInArray, sql } from 'drizzle-orm';
 import { drizzle, type SQLiteBunDatabase } from 'drizzle-orm/bun-sqlite';
-import { migrate } from 'drizzle-orm/bun-sqlite/migrator';
 import { existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { readDeckConfig } from './config.ts';
-import { DeckError, DependencyBlockedError, HoldViolation, NotFoundError, StaleWriterError } from './errors.ts';
+import { DeckError, DependencyBlockedError, HoldViolation, NotFoundError, ReadOnlyStoreError, StaleWriterError, UninitializedProjectError } from './errors.ts';
 import { newCardId } from './ids.ts';
 import { endPosition, gapTooSmall, midpoint, renumberPositions } from './positions.ts';
 import {
@@ -28,7 +27,9 @@ import { toEpic, toNote, toTweak, toVerbItem } from './mappers.ts';
 import { isNote } from './types.ts';
 import { emitEvent } from '../events/outbox.ts';
 import { withMomentSync } from '../engine/moments.ts';
-import { ensureEngineState, assertWriterAllowed } from './open-state.ts';
+import { assertEngineSchema, assertWriterAllowed, noteWriterObservation } from './open-state.ts';
+import { runMigrations } from './migrate.ts';
+import { seedTaskState } from './task-patches.ts';
 
 export const BOARD_DB_NAME = 'board.sqlite';
 
@@ -39,7 +40,15 @@ function nowIso(): string {
 export type Tx = Parameters<Parameters<SQLiteBunDatabase['transaction']>[0]>[0];
 type SyncTxCallback = Parameters<SQLiteBunDatabase['transaction']>[0];
 
+// Read-model discipline: a db opened through openReadModel is registered
+// here, and every transactional mutation through runTx refuses on it. This
+// is the single gateway for store/engine mutations.
+const readOnlyDbs = new WeakSet<SQLiteBunDatabase>();
+
 export function runTx(db: SQLiteBunDatabase, fn: (tx: Tx) => void): void {
+  if (readOnlyDbs.has(db)) {
+    throw new ReadOnlyStoreError('transactional write');
+  }
   db.transaction(fn as unknown as SyncTxCallback, { behavior: 'immediate' });
 }
 
@@ -48,6 +57,7 @@ export class DocumentStore {
   readonly dbPath: string;
   readonly wipLimit: number;
   readonly db: SQLiteBunDatabase;
+  readonly mode: 'application' | 'read';
 
   private constructor(
     projectPath: string,
@@ -55,18 +65,23 @@ export class DocumentStore {
     db: SQLiteBunDatabase,
     wipLimit: number,
     private readonly sqlite: Database,
+    mode: 'application' | 'read' = 'application',
   ) {
     this.projectPath = projectPath;
     this.dbPath = dbPath;
     this.db = db;
     this.wipLimit = wipLimit;
+    this.mode = mode;
   }
 
   raw(): Database {
     return this.sqlite;
   }
 
-  static async open(projectPath: string): Promise<DocumentStore> {
+  // Explicit initialization and upgrade door: creates the project directory
+  // and database, applies pending migrations with a verified backup, records
+  // the writer observation, and reconciles retention once per open.
+  static async openApplicationStore(projectPath: string): Promise<DocumentStore> {
     const dir = join(projectPath, '.deck');
     mkdirSync(dir, { recursive: true });
     const dbPath = join(dir, BOARD_DB_NAME);
@@ -75,21 +90,9 @@ export class DocumentStore {
     sqlite.exec('PRAGMA journal_mode = WAL');
     assertWriterAllowed(sqlite);
     const db = drizzle({ client: sqlite });
-    const drizzleDir = join(import.meta.dir, '../../../drizzle');
-    for (let attempt = 0; ; attempt++) {
-      try {
-        if (existsSync(drizzleDir)) {
-          migrate(db, { migrationsFolder: drizzleDir });
-        } else {
-          migrate(db, { migrationsJournal: (await import('./migrations')).migrationsJournal });
-        }
-        break;
-      } catch (error) {
-        if (attempt >= 4) throw error;
-        await Bun.sleep(50 * (attempt + 1));
-      }
-    }
-    await ensureEngineState(sqlite, projectPath);
+    runMigrations(sqlite, projectPath, { dbPath });
+    assertEngineSchema(sqlite);
+    noteWriterObservation(sqlite);
     const config = await readDeckConfig(projectPath);
     const store = new DocumentStore(projectPath, dbPath, db, config.board?.wipLimit ?? 3, sqlite);
     // Startup reconciliation (not write-on-GET): bring migrated or older
@@ -97,6 +100,28 @@ export class DocumentStore {
     const { runRetention } = await import('./history.ts');
     runRetention(store);
     return store;
+  }
+
+  // Read model: opens an existing compatible database without creating the
+  // project, migrating, seeding, recovering ownership, or acknowledging
+  // delivery. Missing or pre-migration databases refuse with typed,
+  // actionable diagnostics.
+  static async openReadModel(projectPath: string): Promise<DocumentStore> {
+    const dbPath = join(projectPath, '.deck', BOARD_DB_NAME);
+    if (!existsSync(dbPath)) {
+      throw new UninitializedProjectError(projectPath);
+    }
+    const sqlite = new Database(dbPath);
+    sqlite.exec('PRAGMA busy_timeout = 5000');
+    assertEngineSchema(sqlite, { ensure: false });
+    const db = drizzle({ client: sqlite });
+    readOnlyDbs.add(db);
+    const config = await readDeckConfig(projectPath);
+    return new DocumentStore(projectPath, dbPath, db, config.board?.wipLimit ?? 3, sqlite, 'read');
+  }
+
+  static async open(projectPath: string): Promise<DocumentStore> {
+    return DocumentStore.openApplicationStore(projectPath);
   }
 
   listUserVerbs(): string[] {
@@ -368,6 +393,7 @@ export class DocumentStore {
             .run();
         }
         const done = next.filter((task) => task.done).length;
+        seedTaskState(tx, id);
         emitEvent(tx, 'card.tasks.updated', {
           id,
           tasks: next.map((task) => ({ title: task.title, done: task.done })),
@@ -381,5 +407,9 @@ export class DocumentStore {
 }
 
 export async function openStore(projectPath: string): Promise<DocumentStore> {
-  return DocumentStore.open(projectPath);
+  return DocumentStore.openApplicationStore(projectPath);
+}
+
+export async function openReadModel(projectPath: string): Promise<DocumentStore> {
+  return DocumentStore.openReadModel(projectPath);
 }

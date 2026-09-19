@@ -3,6 +3,7 @@ name: deck-sync
 description: Flush deck's publish queue and reconcile GitHub issues with the board — drift kinds, their meanings, and their prescribed fixes. Use after archive, when gh was offline, when sync reports drift, or as the end-of-session health check.
 allowed-tools: Bash(deck:*), Bash(gh:*)
 owns: sync
+hosts: shell-only contract — Claude Code, GitHub Copilot, and Codex run these recipes through the deck CLI in a shell; no host-native tool syntax is required or claimed
 ---
 
 # deck-sync — queue flush + drift reconciliation

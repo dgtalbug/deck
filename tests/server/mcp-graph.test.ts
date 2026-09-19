@@ -74,29 +74,36 @@ describe('mcp graph tools', () => {
     const before = statSync(join(project.path, '.deck', 'graph.sqlite')).mtimeMs;
 
     const result = (await raw('graph_search', { project: 'graphproj', query: 'probeFn' })).payload as {
-      results: Array<{ name: string }>;
-      workspace: { freshness: { state: string } };
+      result: Array<{ name: string }>;
+      freshness: { state: string };
     };
-    expect(result.results.some((hit) => hit.name === 'probeFn')).toBe(true);
-    expect(['ready', 'unchecked']).toContain(result.workspace.freshness.state);
+    expect(result.result.some((hit) => hit.name === 'probeFn')).toBe(true);
+    expect(result.freshness.state).toBe('ready');
     expect(statSync(join(project.path, '.deck', 'graph.sqlite')).mtimeMs).toBe(before);
   });
 
-  test('stale graph reports stale generation identity', async () => {
+  test('stale graph refuses by default and passes labeled with allowStale', async () => {
     writeFileSync(join(project.path, 'probe.ts'), 'export function probeFn(): number { return 2; }\n');
-    const result = (await raw('graph_search', { project: 'graphproj', query: 'probeFn' })).payload as {
-      workspace: { freshness: { state: string } };
+    const refusal = await raw('graph_search', { project: 'graphproj', query: 'probeFn' });
+    expect(refusal.isError).toBe(true);
+    expect((refusal.payload as { error: string }).error).toMatch(/graph is stale-sources/);
+    const allowed = (await raw('graph_search', { project: 'graphproj', query: 'probeFn', allowStale: true })).payload as {
+      freshness: { state: string; staleInspection: boolean };
     };
-    expect(result.workspace.freshness.state).toMatch(/^stale/);
+    expect(allowed.freshness.state).toBe('stale-sources');
+    expect(allowed.freshness.staleInspection).toBe(true);
   });
 
   test('impact honors depth caps and reports resolution tiers', async () => {
-    const result = (await raw('graph_impact', { project: 'graphproj', symbol: 'probeFn', depth: 99 })).payload as {
-      seed: string;
-      edges: Array<{ resolution: string }>;
+    const result = (await raw('graph_impact', { project: 'graphproj', symbol: 'probeFn', depth: 99, allowStale: true })).payload as {
+      result: { seed: string; edges: Array<{ resolution: string }> };
+      freshness: { state: string };
+      identity: { generation: number };
     };
-    expect(result.seed).toContain('probeFn');
-    for (const edge of result.edges) {
+    expect(result.result.seed).toContain('probeFn');
+    expect(result.freshness.state).toBe('stale-sources');
+    expect(result.identity.generation).toBeGreaterThan(0);
+    for (const edge of result.result.edges) {
       expect(['structural', 'heuristic', 'unresolved']).toContain(edge.resolution);
     }
   });
@@ -117,7 +124,7 @@ describe('mcp graph tools', () => {
   });
 
   test('argument caps: limit clamps to 100, oversized query refuses', async () => {
-    const capped = (await raw('graph_search', { project: 'graphproj', query: 'probeFn', limit: 100000 })).payload as {
+    const capped = (await raw('graph_search', { project: 'graphproj', query: 'probeFn', limit: 100000, allowStale: true })).payload as {
       truncated: boolean;
     };
     expect(capped).toBeDefined();

@@ -3,6 +3,7 @@ name: deck-lens
 description: Run structural audits over the codebase graph — dead code, god functions, god classes, entry points, most/least-used. Use during stabilization audits, pre-archive hygiene passes, or when the user asks what to simplify.
 allowed-tools: Bash(deck:*)
 owns:
+hosts: shell-only contract — Claude Code, GitHub Copilot, and Codex run these recipes through the deck CLI in a shell; no host-native tool syntax is required or claimed
 ---
 
 # deck-lens — structural audits

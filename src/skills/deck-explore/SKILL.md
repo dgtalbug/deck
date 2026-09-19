@@ -3,6 +3,7 @@ name: deck-explore
 description: Read-only tour of deck state — board, epics, memory, issues, next digest. Use before proposing anything, or when the user asks "what's the state / what's next / what's on the board".
 allowed-tools: Bash(deck:*), Bash(curl:*)
 owns: board, epics, epic, recall, issue, next
+hosts: shell-only contract — Claude Code, GitHub Copilot, and Codex run these recipes through the deck CLI in a shell; no host-native tool syntax is required or claimed
 ---
 
 # deck-explore — read-only state tour

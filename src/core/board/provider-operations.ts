@@ -37,10 +37,14 @@ export interface RecordIntentInput {
   payload: Record<string, unknown>;
   expectedHead?: string | undefined;
   expectedBase?: string | undefined;
+  operationId?: string | undefined;
+  step?: string | undefined;
+  expectedRef?: string | undefined;
 }
 
 export function recordIntent(store: DocumentStore, input: RecordIntentInput): ProviderOperationRow {
   const payload = JSON.stringify(input.payload);
+  const payloadDigest = createHash('sha256').update(payload).digest('hex').slice(0, 16);
   const newest = store.db
     .select()
     .from(providerOperations)
@@ -75,6 +79,12 @@ export function recordIntent(store: DocumentStore, input: RecordIntentInput): Pr
     expectedHead: input.expectedHead ?? null,
     expectedBase: input.expectedBase ?? null,
     state: 'intented' as const,
+    operationId: input.operationId ?? null,
+    step: input.step ?? null,
+    expectedRef: input.expectedRef ?? null,
+    payloadDigest: payloadDigest,
+    observedAt: null,
+    tombstone: 0,
     remoteId: null,
     remoteUrl: null,
     owner: null,
@@ -232,4 +242,103 @@ export function reconcileOperation(
     state: 'uncertain',
     nextAction: 'no match is currently visible — re-check later or reconcile manually; no replacement create',
   });
+}
+
+// Cleanup and close intents keep a retained tombstone: the intended target
+// and observed result stay visible even when the effect is uncertain, so no
+// retry repeats an unsafe deletion blindly.
+export function recordTombstone(
+  store: DocumentStore,
+  input: {
+    cardId: string;
+    kind: ProviderOpKind;
+    repo: string;
+    projectId: string;
+    marker: string;
+    target: string;
+    operationId?: string;
+  },
+): ProviderOperationRow {
+  const row = recordIntent(store, {
+    cardId: input.cardId,
+    kind: input.kind,
+    repo: input.repo,
+    projectId: input.projectId,
+    marker: input.marker,
+    payload: { target: input.target },
+    operationId: input.operationId,
+    step: 'tombstone',
+    expectedRef: input.target,
+  });
+  store.db
+    .update(providerOperations)
+    .set({ tombstone: 1, updatedAt: nowIso() })
+    .where(eq(providerOperations.id, row.id))
+    .run();
+  return getOperation(store, row.id)!;
+}
+
+export interface GuardedEffectOutcome<T> {
+  row: ProviderOperationRow;
+  result: T;
+  reused: boolean;
+}
+
+// Durable intent before effect, with observe-before-retry: an existing
+// unresolved intent is reconciled against the marker BEFORE any new effect
+// runs, so a crash after success reuses the observed result and never
+// creates a second resource.
+export async function guardEffect<T>(
+  store: DocumentStore,
+  input: {
+    cardId: string;
+    kind: ProviderOpKind;
+    repo: string;
+    projectId: string;
+    marker: string;
+    payload: Record<string, unknown>;
+    operationId?: string;
+    step?: string;
+    expectedRef?: string;
+  },
+  worker: string,
+  observe: () => Promise<RemoteMatch[]>,
+  effect: () => Promise<T>,
+  describe: (result: T) => { remoteId: string; remoteUrl?: string },
+): Promise<GuardedEffectOutcome<T>> {
+  const row = recordIntent(store, input);
+  if (row.state === 'succeeded' || row.state === 'reconciled') {
+    return { row, result: undefined as T, reused: true };
+  }
+  // Any unresolved prior attempt: reconcile by marker before acting.
+  const matches = await observe();
+  if (matches.length === 1) {
+    const settled = reconcileOperation(store, row.id, matches);
+    return { row: settled, result: undefined as T, reused: true };
+  }
+  if (matches.length > 1) {
+    reconcileOperation(store, row.id, matches); // records conflicted
+    throw new DeckError(
+      `provider operation ${row.id} (${input.kind}) is conflicted — ${matches.length} resources match ${input.marker}; ` +
+        `resolve manually before retry`,
+      { id: row.id, marker: input.marker, matches: matches.length },
+    );
+  }
+  claimIntent(store, row.id, worker);
+  try {
+    const result = await effect();
+    const described = describe(result);
+    const completed = completeIntent(store, row.id, worker, described.remoteId, described.remoteUrl);
+    store.db
+      .update(providerOperations)
+      .set({ observedAt: nowIso() })
+      .where(eq(providerOperations.id, row.id))
+      .run();
+    return { row: completed, result, reused: false };
+  } catch (error) {
+    // The effect may have succeeded remotely before failing locally: the
+    // next attempt must observe first, never blind-retry.
+    markUncertain(store, row.id, worker, String(error));
+    throw error;
+  }
 }

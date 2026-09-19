@@ -40,10 +40,12 @@ describe('evidence/delivery migration', () => {
       .values({ cardId: 'legacy-card-1', issueNumber: 42, state: 'open', checksum: 'x', updatedAt: now })
       .onConflictDoNothing()
       .run();
-    // Simulate a board that predates the ledger: clear the one-time flag and
-    // any rows the first open already imported, then reopen.
+    // Simulate a board that predates the ledger: clear the one-time flag, the
+    // rows the first open already imported, and the migration record that
+    // owns the import, then reopen — the upgrade re-imports, exactly once.
     store.raw().query("DELETE FROM provider_operations WHERE id LIKE 'pop-legacy-%'").run();
     store.raw().query("DELETE FROM deck_meta WHERE key = 'provider_ledger_migrated'").run();
+    store.raw().exec("DELETE FROM migration_runs WHERE migration = '20260919120000_control_plane_baseline'");
     const again = await openStore(project.path);
     const { providerOperations } = await import('../../../src/core/board/schema.ts');
     const legacy = again.db.select().from(providerOperations).all().filter((row) => row.cardId === 'legacy-card-1');

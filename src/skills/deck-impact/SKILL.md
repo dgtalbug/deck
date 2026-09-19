@@ -3,6 +3,7 @@ name: deck-impact
 description: Check what a code change would break BEFORE editing — run deck graph impact/why on every symbol you intend to modify. Use when planning a change, starting a build card, or touching any shared function or class.
 allowed-tools: Bash(deck:*)
 owns: graph
+hosts: shell-only contract — Claude Code, GitHub Copilot, and Codex run these recipes through the deck CLI in a shell; no host-native tool syntax is required or claimed
 ---
 
 # deck-impact — blast radius before edits

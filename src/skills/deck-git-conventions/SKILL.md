@@ -3,6 +3,7 @@ name: deck-git-conventions
 description: deck's git law as a commit-time runbook — branch naming, commit prefixes, PR body, merge titles, tags, never-main, and the revert door. Use whenever you are about to commit, push, PR, or merge work on a deck card.
 allowed-tools: Bash(git:*), Bash(deck:*)
 owns:
+hosts: shell-only contract — Claude Code, GitHub Copilot, and Codex run these recipes through the deck CLI in a shell; no host-native tool syntax is required or claimed
 ---
 
 # deck-git-conventions — the commit-time law

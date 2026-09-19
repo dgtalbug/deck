@@ -3,6 +3,7 @@ name: deck-capture
 description: Capture a user request as a deck note, research it cheaply, pick the spec type, and groom it into a spec. Use when the user describes something to build, fix, or change. Planning only — never implement in the same run.
 allowed-tools: Bash(deck:*), Bash(curl:*)
 owns: note, story, groom
+hosts: shell-only contract — Claude Code, GitHub Copilot, and Codex run these recipes through the deck CLI in a shell; no host-native tool syntax is required or claimed
 ---
 
 # deck-capture — request → note → research → typed spec

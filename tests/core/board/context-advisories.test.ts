@@ -5,6 +5,7 @@ import { sql } from 'drizzle-orm';
 import { openStore, type DocumentStore } from '../../../src/core/board/store.ts';
 import { captureSourceBaseline } from '../../../src/core/board/source-baselines.ts';
 import { buildAdvisory } from '../../../src/core/board/context-advisories.ts';
+import { currentFingerprint } from '../../../src/core/graph/index.ts';
 import { openGraph, writeMeta } from '../../../src/core/graph/schema.ts';
 import { tmpProject } from '../../helpers.ts';
 
@@ -44,7 +45,7 @@ function seedGraph(_cardId: string): void {
   graph.query("INSERT OR REPLACE INTO g_symbol (id, name, fqn, kind, file_id, start_line, end_line, fan_in, importance) VALUES ('s3', 'maybeNeighbor', 'maybeNeighbor', 'function', 'f3', 1, 1, 1, 0.1)").run();
   graph.query("INSERT OR REPLACE INTO g_edge (id, source_id, target_id, kind, resolution, confidence) VALUES ('e1', 's1', 's2', 'CALLS', 'structural', 1.0)").run();
   graph.query("INSERT OR REPLACE INTO g_edge (id, source_id, target_id, kind, resolution, confidence) VALUES ('e2', 's1', 's3', 'CALLS', 'heuristic', 0.6)").run();
-  writeMeta(graph, { root: path, origin: null, schemaVersion: 2, lastIndex: new Date().toISOString(), fileCount: 3, nodeCount: 3, edgeCount: 2, inputFingerprint: 'fp-1', generation: 1, complete: true });
+  writeMeta(graph, { root: path, origin: null, schemaVersion: 2, lastIndex: new Date().toISOString(), fileCount: 3, nodeCount: 3, edgeCount: 2, inputFingerprint: currentFingerprint(path), generation: 1, complete: true });
   graph.close();
 }
 

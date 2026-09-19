@@ -8,6 +8,7 @@ import { runTx, type DocumentStore, type Tx } from './store.ts';
 import { runRetention } from './history.ts';
 import { isTweak, isVerbItem, type Card, type VerifyResult } from './types.ts';
 import { emitEvent } from '../events/outbox.ts';
+import { seedTaskState } from './task-patches.ts';
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -59,6 +60,7 @@ export function applyVerifyResult(
           .run();
         idx += 1;
       }
+      seedTaskState(tx, id);
       if (idx > (existing.length > 0 ? Math.max(...existing.map((taskRow) => taskRow.idx)) + 1 : 0)) {
         const all = tx.select().from(tasks).where(eq(tasks.cardId, id)).all();
         const done = all.filter((taskRow) => taskRow.done).length;

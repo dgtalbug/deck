@@ -83,3 +83,44 @@ export class StaleWriterError extends DeckError {
     );
   }
 }
+
+export class UninitializedProjectError extends DeckError {
+  constructor(projectPath: string) {
+    super(
+      `no board database at ${projectPath}/.deck/board.sqlite — initialize the project first ` +
+        `(\`deck init\` or any write command such as \`deck note\`)`,
+      { projectPath },
+    );
+  }
+}
+
+export class ReadOnlyStoreError extends DeckError {
+  constructor(action: string) {
+    super(
+      `this store was opened read-only — '${action}' requires an application open ` +
+        `(a write command or \`deck serve\`)`,
+      { action },
+    );
+  }
+}
+
+export class LeaseStillActiveError extends DeckError {
+  constructor(operationId: string, expiresAt: string, waitMs: number) {
+    super(
+      `operation ${operationId} holds a live lease until ${expiresAt} (~${Math.ceil(waitMs / 1000)}s) — ` +
+        `explicit recovery is refused while the owner may still be alive`,
+      { operationId, expiresAt, waitMs },
+    );
+  }
+}
+
+export class UncertainEffectsError extends DeckError {
+  constructor(operationId: string, effects: Array<{ kind: string; state: string; id: string }>) {
+    const names = effects.map((effect) => `${effect.id} (${effect.kind}, ${effect.state})`).join(', ');
+    super(
+      `operation ${operationId} still has active or uncertain external effects: ${names} — ` +
+        `reconcile them before takeover`,
+      { operationId, effects },
+    );
+  }
+}

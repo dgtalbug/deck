@@ -176,6 +176,7 @@ export const TOOLS: readonly ToolDescriptor[] = [
         query: { type: 'string', description: 'symbol text (≤4 KiB)' },
         limit: { type: 'number', description: 'result cap (default 20, max 100)' },
         workspace: { type: 'string', description: 'workspace id/name or path of an attached worktree (default canonical)' },
+        allowStale: { type: 'boolean', description: 'read a stale graph labeled as stale inspection instead of refusing' },
       },
       required: ['project', 'query'],
     },
@@ -192,6 +193,7 @@ export const TOOLS: readonly ToolDescriptor[] = [
         depth: { type: 'number', description: 'hop depth (default 1, max 3)' },
         direction: { type: 'string', enum: ['in', 'out', 'both'] },
         workspace: { type: 'string', description: 'workspace id/name or path of an attached worktree (default canonical)' },
+        allowStale: { type: 'boolean', description: 'read a stale graph labeled as stale inspection instead of refusing' },
       },
       required: ['project', 'symbol'],
     },
@@ -244,10 +246,22 @@ export function resolveGraphPath(
   return row.path;
 }
 
+export class GraphStaleError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'GraphStaleError';
+  }
+}
+
 export function graphTool(
   store: import('../core/board/store.ts').DocumentStore,
   params: Record<string, unknown>,
-  run: (db: import('bun:sqlite').Database, graphPath: string, freshness: unknown) => unknown,
+  run: (
+    db: import('bun:sqlite').Database,
+    graphPath: string,
+    status: import('../core/graph/schema.ts').GraphStatus,
+    staleInspection: boolean,
+  ) => unknown,
 ): unknown {
   const graphPath = resolveGraphPath(store, params['workspace']);
   if (!graphExists(graphPath)) {
@@ -260,9 +274,18 @@ export function graphTool(
   const db = openGraph(graphPath);
   try {
     const status = graphStatus(graphPath, db);
+    const allowStale = params['allowStale'] === true;
+    // Same freshness policy as core and CLI: refuse absent/stale/unverifiable
+    // graphs by default; explicit stale inspection passes labeled.
+    if (status.state !== 'ready' && !allowStale) {
+      throw new GraphStaleError(
+        `graph is ${status.state}${status.reason !== undefined ? ` — ${status.reason}` : ''}; ` +
+          `run 'deck graph index' or pass allowStale: true for labeled stale inspection`,
+      );
+    }
     const meta = readMeta(db);
-    const freshness = { state: status.state, reason: status.reason, generation: meta?.lastIndex ?? null };
-    const payload = run(db, graphPath, freshness);
+    const freshness = { state: status.state, reason: status.reason, generation: meta?.generation ?? null, staleInspection: allowStale && status.state !== 'ready' };
+    const payload = run(db, graphPath, status, allowStale && status.state !== 'ready');
     const encoded = JSON.stringify(payload);
     if (Buffer.byteLength(encoded, 'utf8') > MCP_RESULT_CAP_BYTES) {
       const budget = { graph: 'truncated', reason: `response exceeds ${MCP_RESULT_CAP_BYTES} bytes` };

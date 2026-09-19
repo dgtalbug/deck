@@ -15,7 +15,7 @@ import type { Lane } from '../core/board/types.ts';
 import { initProject } from '../core/projects/init.ts';
 import { ProjectRegistry } from '../core/projects/registry.ts';
 import { projectSummary } from '../core/projects/summary.ts';
-import { getStore } from '../core/projects/stores.ts';
+import { getReadStore, getStore } from '../core/projects/stores.ts';
 import { renderDoctor, runDoctor } from '../core/projects/doctor.ts';
 import { moveBody, reorderBody, verifyBody } from '../server/routes/cards.ts';
 import { noteBody } from '../server/routes/notes.ts';
@@ -53,6 +53,7 @@ import { detectLevel, palette, type Palette } from './color.ts';
 import { withSpinner } from './spin.ts';
 import { cardSummary, renderBoard, renderProjects, renderTodo } from './render.ts';
 import { DECK_VERSION } from '../version.ts';
+import { manifestByCliRoute, type AppOperation } from '../core/capabilities.ts';
 
 export const parity = {
   'deck note': 'addNote',
@@ -129,7 +130,7 @@ export interface RunContext {
   pal: Palette;
 }
 
-const commands: Record<string, Command> = {
+export const commands: Record<string, Command> = {
   note: async (args, ctx) => {
     const body = noteBody.parse({ title: args.positionals.join(' ') });
     const project = resolveProject(ctx.registry, args, ctx.cwd);
@@ -142,7 +143,7 @@ const commands: Record<string, Command> = {
       { isatty: Boolean(process.stdout.isTTY), dumb: Bun.env['TERM'] === 'dumb', io: ctx.io },
       'opening board…',
       async () => {
-        const store = await getStore(project.path);
+        const store = await getReadStore(project.path);
         return flagString(args.flags, 'view') === 'todo'
           ? renderTodo(todoView(store), ctx.pal)
           : renderBoard(boardView(store), ctx.pal);
@@ -236,7 +237,7 @@ const commands: Record<string, Command> = {
   },
   projects: async (_args, ctx) => {
     const projects = await Promise.all(
-      ctx.registry.list().map(async (project) => projectSummary(await getStore(project.path), project)),
+      ctx.registry.list().map(async (project) => projectSummary(await getReadStore(project.path), project)),
     );
     return renderProjects(projects, ctx.pal);
   },
@@ -270,6 +271,22 @@ const commands: Record<string, Command> = {
   story: storyCommand,
   setup: setupCommand,
   skill: skillCommand,
+  start: async (args, ctx) => {
+    const [verb, id] = args.positionals;
+    if (verb === undefined || id === undefined) {
+      throw new UsageError('usage: deck start <verb> <id> (e.g. deck start feat c1)');
+    }
+    const store = await (await import('../core/projects/stores.ts')).getStore(resolveProject(ctx.registry, args, ctx.cwd).path);
+    if (!store.isRegisteredVerb(verb)) {
+      throw new UsageError(`unknown verb '${verb}' — register it with deck workflow or use a built-in`);
+    }
+    const runner = await import('./start.ts');
+    return runner.startCommand(
+      { ...args, positionals: [id] },
+      { registry: ctx.registry, cwd: ctx.cwd, io: ctx.io, pal: ctx.pal },
+      verb as import('../core/board/types.ts').VerbName,
+    );
+  },
   mcp: async (args, ctx) => {
     await runMcpLoop(ctx.registry, stdioIo());
     return 0;
@@ -281,6 +298,12 @@ const commands: Record<string, Command> = {
     return 0;
   },
 };
+
+function commandHelp(op: AppOperation): string {
+  const flags = op.cli?.flags === undefined ? '' : ` — flags: ${Object.keys(op.cli.flags).map((f) => `--${f}`).join(' ')}`;
+  const deprecation = op.cli?.deprecated === true ? ' (deprecated alias — prefer deck start)' : '';
+  return `${op.cli?.route ?? op.id}: ${op.summary}${flags}${deprecation}`;
+}
 
 function requiredId(args: ParsedArgs, usage: string): string {
   const id = args.positionals[0];
@@ -296,13 +319,42 @@ export async function runCli(argv: string[], options: RunOptions = {}): Promise<
     io,
     pal: palette(detectLevel(Bun.env, Boolean(process.stdout.isTTY))),
   };
-  const args = parseArgs(argv.length === 1 && argv[0] === '-v' ? ['--version'] : argv);
-  if (args.command === undefined) {
+  const byRoute = manifestByCliRoute();
+  let args: ParsedArgs;
+  try {
+    args = parseArgs(
+      argv.length === 1 && argv[0] === '-v' ? ['--version'] : argv,
+      { specFor: (command) => byRoute.get(command)?.flags },
+    );
+  } catch (error) {
+    if (error instanceof UsageError) {
+      io.err(`deck: ${error.message}`);
+      return 64;
+    }
+    throw error;
+  }
+  if (args.command === undefined || args.command === 'help') {
     if (args.flags['version'] !== undefined) {
       io.out(`deck v${DECK_VERSION}`);
       return 0;
     }
-    await serveMain();
+    // Bare invocation, `deck help` and `deck help <cmd>` are inert: help
+    // only, never a project open, write, provider call, or port bind.
+    if (args.positionals[0] !== undefined) {
+      const target = byRoute.get(args.positionals[0]);
+      io.out(target === undefined ? `deck: unknown command '${args.positionals[0]}'\n\n${USAGE}` : commandHelp(target.op));
+      return target === undefined ? 64 : 0;
+    }
+    const flagNames = Object.keys(args.flags).filter((flag) => flag !== 'version');
+    if (flagNames.length > 0) {
+      io.err(`deck: flags without a command start nothing — use 'deck serve' to start the server`);
+      return 64;
+    }
+    io.out(USAGE);
+    return 0;
+  }
+  if (args.flags['version'] !== undefined) {
+    io.out(`deck v${DECK_VERSION}`);
     return 0;
   }
   let handler: Command | undefined = commands[args.command];
@@ -312,6 +364,10 @@ export async function runCli(argv: string[], options: RunOptions = {}): Promise<
       io.err(`deck: unknown command '${args.command}'\n\n${USAGE}`);
       return 64;
     }
+  }
+  const op = byRoute.get(args.command)?.op;
+  if (op?.cli?.deprecated === true) {
+    io.err(`deck: '${args.command}' is a deprecated alias — prefer 'deck start ${args.command} <id>'`);
   }
   try {
     const result = await handler(args, ctx);

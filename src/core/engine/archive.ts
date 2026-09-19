@@ -7,6 +7,7 @@ import { runGit } from '../git/digest.ts';
 import {
   createPullRequest,
   pushRemote,
+  remoteBranchHead,
   searchPullRequestsByMarker,
   switchBranch,
 } from '../git/ops.ts';
@@ -19,6 +20,7 @@ import type { HookWarning } from './hooks.ts';
 import {
   canonicalProjectId,
   claimIntent,
+  guardEffect,
   completeIntent,
   failIntent,
   listCardOperations,
@@ -30,6 +32,7 @@ import {
 import type { ProviderOperationRow } from '../board/schema.ts';
 import {
   compensateOperation,
+  ensureLeaseFresh,
   completeOperation,
   ownerToken,
   reserveOperation,
@@ -106,6 +109,7 @@ export async function archiveVerb(store: DocumentStore, id: string): Promise<Arc
   }
 
   const operation = reserveOperation(store, id, 'archive');
+  ensureLeaseFresh(store, operation);
   try {
     return await prepareDelivery(store, id, card, map, version, policy.mode, operation);
   } catch (error) {
@@ -171,7 +175,34 @@ async function prepareDelivery(
     if (current.stdout.trim() !== branch) {
       await switchBranch(checkout, branch);
     }
-    await pushRemote(checkout);
+    // Durable intent before the push effect: observe the remote ref first so
+    // a retry after response loss reuses the pushed head instead of re-pushing.
+    const pushBranch = branch;
+    const pushHead = (await runGit(checkout, ['rev-parse', 'HEAD'])).stdout.trim();
+    await guardEffect(
+      store,
+      {
+        cardId: id,
+        kind: 'branch-push',
+        repo: '',
+        projectId: canonicalProjectId(store),
+        marker: `deck:push:${canonicalProjectId(store)}:${pushBranch}`,
+        payload: { branch: pushBranch, head: pushHead },
+        operationId: operation.id,
+        step: 'branch-push',
+        expectedRef: pushHead,
+      },
+      ownerToken,
+      async () => {
+        const remote = await remoteBranchHead(checkout, pushBranch);
+        return remote === null ? [] : [{ remoteId: remote, remoteUrl: `refs/heads/${pushBranch}` }];
+      },
+      async () => {
+        await pushRemote(checkout);
+        return pushHead;
+      },
+      (head) => ({ remoteId: head, remoteUrl: `refs/heads/${pushBranch}` }),
+    );
     const projectId = canonicalProjectId(store);
     const marker = markerFor(projectId, id);
     const resolved = await resolvePullRequest(store, id, marker, version.markdown, branch, base);

@@ -9,8 +9,9 @@ import {
   listHandoffs,
   offerHandoff,
 } from '../core/engine/handoffs.ts';
-import { openGraph, readMeta } from '../core/graph/schema.ts';
-import { graphExists, graphStatus } from '../core/graph/index.ts';
+import { openGraph, readMeta as readGraphMeta, type GraphStatus } from '../core/graph/schema.ts';
+import { graphExists, graphStatus, gitOrigin } from '../core/graph/index.ts';
+import { buildEnvelope } from '../core/graph/envelope.ts';
 import { findSymbol, impact } from '../core/graph/queries.ts';
 import { searchSymbols } from '../core/graph/search.ts';
 import { eq } from 'drizzle-orm';
@@ -161,7 +162,7 @@ export async function callTool(registry: ProjectRegistry, name: string, params: 
       return listHandoffs(store, typeof cardId === 'string' && cardId.length > 0 ? { cardId } : undefined);
     }
     case 'graph_search':
-      return graphTool(store, params, (db, graphPath, fresh) => {
+      return graphTool(store, params, (db, graphPath, status, staleInspection) => {
         const query = params['query'];
         if (typeof query !== 'string' || query.trim().length === 0) throw new InvalidParamsError('query');
         if (query.length > MCP_INPUT_MAX) throw new InvalidParamsError(`query exceeds ${MCP_INPUT_MAX} chars`);
@@ -171,11 +172,16 @@ export async function callTool(registry: ProjectRegistry, name: string, params: 
             ? Math.min(Math.max(requested, 1), GRAPH_SEARCH_MAX)
             : GRAPH_SEARCH_DEFAULT;
         const hits = searchSymbols(db, query, limit + 1);
-        return {
-          workspace: { path: graphPath, freshness: fresh },
+        return buildEnvelope(db, {
+          projectPath: graphPath,
+          origin: gitOrigin(graphPath),
+          status,
+          query: { text: query, limit },
           truncated: hits.length > limit,
-          results: hits.slice(0, limit),
-        };
+          staleInspection,
+          generationBefore: readGraphMeta(db)?.generation ?? 0,
+          result: hits.slice(0, limit),
+        });
       });
     case 'graph_impact': {
       const symbol = params['symbol'];
@@ -185,7 +191,7 @@ export async function callTool(registry: ProjectRegistry, name: string, params: 
       if (requestedDepth !== undefined && (typeof requestedDepth !== 'number' || !Number.isInteger(requestedDepth))) {
         throw new InvalidParamsError('depth must be an integer');
       }
-      return graphTool(store, params, (db, graphPath, fresh) => {
+      return graphTool(store, params, (db, graphPath, status, staleInspection) => {
         const depth =
           typeof requestedDepth === 'number'
             ? Math.min(Math.max(requestedDepth, 1), GRAPH_IMPACT_DEPTH_MAX)
@@ -194,20 +200,22 @@ export async function callTool(registry: ProjectRegistry, name: string, params: 
         const dir = direction === 'in' || direction === 'out' ? direction : 'both';
         const seeds = findSymbol(db, symbol);
         if (seeds.length === 0) {
-          return { workspace: { path: graphPath, freshness: fresh }, seed: symbol, found: false, nodes: [], edges: [] };
+          return { workspace: { path: graphPath, freshness: { state: status.state, reason: status.reason ?? null } }, seed: symbol, found: false, nodes: [], edges: [] };
         }
         const seed = seeds[0]!;
         const result = impact(db, seed.id, { maxDepth: depth, direction: dir });
-        return {
-          workspace: { path: graphPath, freshness: fresh },
-          seed: seed.fqn,
-          found: true,
-          direction: result.direction,
-          nodes: result.nodes,
-          edges: result.edges,
+        // Same shared envelope as core and CLI: identity, freshness, applied
+        // filters, uncertainty and truncation travel with every result.
+        return buildEnvelope(db, {
+          projectPath: graphPath,
+          origin: gitOrigin(graphPath),
+          status,
+          query: { seedFqn: seed.fqn, direction: result.direction, kinds: result.kinds, depth },
           truncated: result.truncated,
-          cap: result.cap,
-        };
+          staleInspection,
+          generationBefore: readGraphMeta(db)?.generation ?? 0,
+          result: { seed: seed.fqn, found: true, nodes: result.nodes, edges: result.edges, cap: result.cap },
+        });
       });
     }
     default:

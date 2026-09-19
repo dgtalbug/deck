@@ -6,7 +6,7 @@ import type { Server } from 'bun';
 import { ProjectRegistry } from '../../src/core/projects/registry.ts';
 import { buildServer } from '../../src/server/serve.ts';
 import { tmpProject } from '../helpers.ts';
-import { subscribeBoardEvents, type SseSubscription } from '../../src/ui/slices/board/sse.ts';
+import { coalescingEmitter, subscribeBoardEvents, type SseSubscription } from '../../src/ui/slices/board/sse.ts';
 
 // Bun has no native EventSource → these tests exercise the fetch-stream
 // path of sse.ts against a live in-process server (task 4.3).
@@ -142,5 +142,25 @@ describe('subscribeBoardEvents (fetch-stream fallback)', () => {
     globalThis.fetch = originalFetch;
     // no assertion to crash on — reaching here without a hang is the test
     expect(true).toBe(true);
+  });
+});
+
+describe('oversized diagnostic frames', () => {
+  test('a deck.oversized frame is delivered as a resync signal, never recorded as a durable ack', async () => {
+    const seen: Array<Record<string, unknown>> = [];
+    const emit = coalescingEmitter((events) => {
+      for (const event of events) seen.push(event as unknown as Record<string, unknown>);
+    });
+    emit([
+      { rowid: 7, type: 'deck.oversized', payload: { rowid: 7, originalType: 'card.blocked', byteSize: 99999, resync: true } } as never,
+      { rowid: 8, type: 'card.blocked', payload: { id: 'after', reason: 'visible' } } as never,
+    ]);
+    await Bun.sleep(140);
+    expect(seen.length).toBeGreaterThan(0);
+    const oversize = seen.find((event) => event['type'] === 'deck.oversized');
+    expect(oversize).toBeDefined();
+    // The browser received the frame — that is delivery, not acknowledgement:
+    // this client holds no ack surface at all, which is exactly the contract.
+    expect((oversize!['payload'] as Record<string, unknown>)['resync']).toBe(true);
   });
 });

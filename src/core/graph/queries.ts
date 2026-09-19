@@ -1,10 +1,11 @@
 import type { Database } from 'bun:sqlite';
+import { GraphInputError } from './envelope.ts';
 
 export interface ImpactNode {
   id: string;
   kind: 'file' | 'symbol';
   name: string;
-  detail: string; 
+  detail: string;
   depth: number;
   fanIn: number | null;
   importance: number | null;
@@ -13,11 +14,41 @@ export interface ImpactNode {
 export interface ImpactResult {
   seed: string;
   direction: 'in' | 'out' | 'both';
+  kinds: string[];
   nodes: ImpactNode[];
   edges: Array<{ source: string; target: string; kind: string; resolution: string; confidence: number }>;
   truncated: boolean;
   cap: number;
   selectedIds: string[];
+  uncertainty: {
+    structural: number;
+    heuristic: number;
+    ambiguous: number;
+    unresolved: number;
+    unresolvedNames: string[];
+    candidatesTruncated: boolean;
+  };
+}
+
+export const DEFAULT_GRAPH_KINDS = ['CALLS', 'IMPORTS', 'INHERITS', 'INSTANTIATES', 'IMPLEMENTS', 'REFERENCES', 'CONTAINS', 'DEFINES'] as const;
+
+// Omitted kinds select the documented defaults everywhere (core, CLI, MCP).
+// An explicit empty list or an unknown kind is a typed usage error, never a
+// silent false-empty result.
+export function normalizeKinds(kinds: string[] | undefined): string[] {
+  if (kinds === undefined) return [...DEFAULT_GRAPH_KINDS];
+  if (kinds.length === 0) {
+    throw new GraphInputError(
+      `kinds filter is empty — omit --kinds to use the defaults (${DEFAULT_GRAPH_KINDS.join(',').toLowerCase()})`,
+    );
+  }
+  const unknown = kinds.filter((kind) => !(DEFAULT_GRAPH_KINDS as readonly string[]).includes(kind));
+  if (unknown.length > 0) {
+    throw new GraphInputError(
+      `unknown edge kind(s) ${unknown.join(', ')} — valid kinds: ${DEFAULT_GRAPH_KINDS.join(', ').toLowerCase()}`,
+    );
+  }
+  return kinds;
 }
 
 const DEFAULT_CAP = 500;
@@ -39,12 +70,12 @@ const STEPS: Record<'in' | 'out' | 'both', { join: string; next: string }> = {
 export function impact(
   db: Database,
   seedId: string,
-  options: { direction?: 'in' | 'out' | 'both'; maxDepth?: number; kinds?: string[]; cap?: number } = {},
+  options: { direction?: 'in' | 'out' | 'both'; maxDepth?: number; kinds?: string[] | undefined; cap?: number } = {},
 ): ImpactResult {
   const direction = options.direction ?? 'both';
   const maxDepth = options.maxDepth ?? 2;
   const cap = options.cap ?? DEFAULT_CAP;
-  const kinds = options.kinds ?? ['CALLS', 'IMPORTS', 'INHERITS', 'INSTANTIATES', 'IMPLEMENTS', 'REFERENCES', 'CONTAINS', 'DEFINES'];
+  const kinds = normalizeKinds(options.kinds);
   const step = STEPS[direction];
   const next = step.next;
   const sql = `
@@ -83,8 +114,42 @@ export function impact(
     }
     const selectedIds = [seedId, ...hit.map((row) => row.node_id)];
     const edges = edgesAmong(db, selectedIds);
-    return { seed: seedId, direction, nodes, edges, truncated, cap, selectedIds };
+    const uncertainty = uncertaintyFor(db, seedId);
+    return { seed: seedId, direction, kinds, nodes, edges, truncated, cap, selectedIds, uncertainty };
   });
+}
+
+// Uncertainty observed at the seed itself: resolution tiers over the seed's
+// outgoing edges (including unresolved edges with no traversable target),
+// ambiguous-candidate counts and the referenced-but-unresolved names.
+function uncertaintyFor(db: Database, seedId: string): ImpactResult['uncertainty'] {
+  const tiers = db
+    .query(
+      `SELECT resolution, COUNT(*) AS n FROM g_edge WHERE source_id = ? GROUP BY resolution`,
+    )
+    .all(seedId) as Array<{ resolution: string; n: number }>;
+  const by = new Map(tiers.map((row) => [row.resolution, row.n]));
+  const ambiguousRows = db
+    .query(
+      `SELECT COUNT(*) AS n, COALESCE(SUM(json_extract(meta, '$.candidateCount') > 5), 0) AS over
+       FROM g_edge WHERE source_id = ? AND json_extract(meta, '$.ambiguous') = 1`,
+    )
+    .get(seedId) as { n: number; over: number };
+  const names = db
+    .query(
+      `SELECT DISTINCT json_extract(meta, '$.callee_name') AS name FROM g_edge
+       WHERE source_id = ? AND target_id IS NULL AND json_extract(meta, '$.callee_name') IS NOT NULL
+       ORDER BY name LIMIT 51`,
+    )
+    .all(seedId) as Array<{ name: string }>;
+  return {
+    structural: by.get('structural') ?? 0,
+    heuristic: by.get('heuristic') ?? 0,
+    ambiguous: ambiguousRows.n,
+    unresolved: by.get('unresolved') ?? 0,
+    unresolvedNames: names.slice(0, 50).map((row) => row.name),
+    candidatesTruncated: ambiguousRows.over > 0 || names.length > 50,
+  };
 }
 
 export function why(db: Database, seedId: string, cap = DEFAULT_CAP): ImpactResult {

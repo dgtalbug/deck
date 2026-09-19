@@ -3,6 +3,7 @@ name: deck-update
 description: Edit work that has not started — re-groom a groomed card, move/reorder notes, hold/unblock, demote back to note, register verbs. Use when the user changes their mind about queued work.
 allowed-tools: Bash(deck:*), Bash(curl:*)
 owns: move, reorder, block, unblock, workflow
+hosts: shell-only contract — Claude Code, GitHub Copilot, and Codex run these recipes through the deck CLI in a shell; no host-native tool syntax is required or claimed
 ---
 
 # deck-update — pre-start edits

@@ -254,7 +254,9 @@ describe('installSkillPack', () => {
 
       // classify: fenced but content current inside → current
       let status = skillPackStatus(dir, hosts as never);
-      expect(status.files.find((f) => f.file === 'agents/deck-build/SKILL.md')!.status).toBe('current');
+      // A current managed base with preserved user bytes outside the fence
+      // is a compatible overlay — healthy, and precisely labeled.
+      expect(status.files.find((f) => f.file === 'agents/deck-build/SKILL.md')!.status).toBe('overlay');
       expect(status.repairable).not.toContain('agents/deck-build/SKILL.md');
 
       // a stale fenced body (asset changed underneath) → stale, repairable
