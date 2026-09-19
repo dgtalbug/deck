@@ -99,6 +99,32 @@ export const MANIFEST: AppOperation[] = [
     mcp: ['graph_search', 'graph_impact'],
     opensProject: true,
   },
+  {
+    id: 'impact.doors',
+    summary: 'capture, approve, read and inspect drift of immutable graph impact snapshots for cards',
+    mutability: 'command',
+    cli: {
+      route: 'impact',
+      flags: {
+        json: 'boolean',
+        seeds: 'value',
+        rationale: 'value',
+        by: 'value',
+        why: 'boolean',
+        in: 'boolean',
+        out: 'boolean',
+        depth: 'value',
+        kinds: 'repeat',
+        'stale-ok': 'boolean',
+        reason: 'value',
+        confirm: 'repeat',
+        'acknowledge-uncertainty': 'value',
+        'acknowledge-fallback': 'boolean',
+        base: 'value',
+      },
+    },
+    opensProject: true,
+  },
 
   // Project lifecycle and harness.
   { id: 'project.init', summary: 'initialize a deck project', mutability: 'command', cli: { route: 'init', flags: { name: 'value' } }, opensProject: false },

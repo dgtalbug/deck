@@ -3,6 +3,7 @@ import {
   primaryKey,
   sqliteTable,
   text,
+  uniqueIndex,
 } from 'drizzle-orm/sqlite-core';
 
 export const scopeRevisions = sqliteTable('scope_revisions', {
@@ -124,6 +125,38 @@ export const storyDeps = sqliteTable('story_deps', {
   createdAt: text('created_at').notNull(),
 });
 
+// Immutable graph impact planning evidence: one capture per decision, tied to
+// the accepted revision current at capture time. Rows are never rewritten by
+// later graph reindexing, source changes, or scope edits.
+export const impactSnapshots = sqliteTable('impact_snapshots', {
+  id: text('id').primaryKey(),
+  cardId: text('card_id').notNull(),
+  basisRevision: integer('basis_revision').notNull(),
+  basisRevisionId: text('basis_revision_id').notNull(),
+  mode: text('mode', { enum: ['graph', 'fallback'] }).$type<'graph' | 'fallback'>().notNull(),
+  actor: text('actor').notNull(),
+  rationale: text('rationale').notNull(),
+  evidence: text('evidence').notNull(),
+  capturedAt: text('captured_at').notNull(),
+});
+
+// Explicit actor acceptance of a snapshot for one accepted revision, recorded
+// separately from mutable task progress and rendered projections.
+export const impactApprovals = sqliteTable('impact_approvals', {
+  id: text('id').primaryKey(),
+  cardId: text('card_id').notNull(),
+  snapshotId: text('snapshot_id').notNull(),
+  revision: integer('revision').notNull(),
+  revisionId: text('revision_id').notNull(),
+  actor: text('actor').notNull(),
+  rationale: text('rationale').notNull(),
+  acknowledgedUncertainty: text('acknowledged_uncertainty').notNull(),
+  fallbackAcknowledged: integer('fallback_acknowledged', { mode: 'boolean' }).notNull(),
+  approvedAt: text('approved_at').notNull(),
+}, (table) => [
+  uniqueIndex('impact_approvals_basis_unique').on(table.cardId, table.snapshotId, table.revision),
+]);
+
 export type ScopeRevisionRow = typeof scopeRevisions.$inferSelect;
 export type ScopeItemRow = typeof scopeItems.$inferSelect;
 export type SpecRevisionRow = typeof specRevisions.$inferSelect;
@@ -136,3 +169,5 @@ export type EpicCriterionRow = typeof epicCriteria.$inferSelect;
 export type EpicCriterionLinkRow = typeof epicCriterionLinks.$inferSelect;
 export type ChildAcknowledgementRow = typeof childAcknowledgements.$inferSelect;
 export type StoryDepRow = typeof storyDeps.$inferSelect;
+export type ImpactSnapshotRow = typeof impactSnapshots.$inferSelect;
+export type ImpactApprovalRow = typeof impactApprovals.$inferSelect;

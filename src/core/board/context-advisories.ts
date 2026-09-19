@@ -7,6 +7,7 @@ import { retrieveReferences, type CorpusFile } from './context-retrieval.ts';
 import { openGraph, readMeta } from '../graph/schema.ts';
 import { graphStatus } from '../graph/index.ts';
 import { findSymbol, impact } from '../graph/queries.ts';
+import { impactBasisView } from './impact-snapshots.ts';
 
 export type AdvisoryStrategy = 'baseline' | 'graph';
 
@@ -91,13 +92,22 @@ export function buildAdvisory(store: DocumentStore, cardId: string, query: strin
   try {
     const ranked = rankGraphNeighbors(graph, baseRanked);
     const meta = readMeta(graph)!;
+    const basis = impactBasisView(store.db, cardId);
+    const basisLine =
+      basis.classification === 'approved-graph'
+        ? `impact basis: approved snapshot ${basis.snapshot!.id} @ revision ${basis.revision}`
+        : basis.classification === 'approved-fallback'
+          ? `impact basis: approved fallback snapshot ${basis.snapshot!.id} @ revision ${basis.revision} (source-search, not graph)`
+          : basis.classification === 'captured-unapproved'
+            ? `impact basis: snapshot ${basis.snapshot!.id} captured but NOT approved for revision ${basis.revision} — blast radius is not graph-backed`
+            : `impact basis: no impact snapshot for revision ${basis.revision} — blast radius is not graph-backed`;
     const header = `graph retrieval (generation ${meta.generation}${meta.inputFingerprint !== null ? `, fingerprint ${meta.inputFingerprint.slice(0, 12)}` : ''}) — ${ranked.truncated ? `top ${ranked.references.length} of ${ranked.total}` : `${ranked.references.length} neighbor(s)`}`;
     return {
       strategy,
       state: 'ok',
       references: ranked.references.map((r) => r.reference),
       truncated: ranked.truncated,
-      body: [header, ...ranked.references.map((r) => `- ${r.reference} [${r.tier}]`), ...changeLines(changes)].join('\n'),
+      body: [header, basisLine, ...ranked.references.map((r) => `- ${r.reference} [${r.tier}]`), ...changeLines(changes)].join('\n'),
     };
   } finally {
     graph.close();
