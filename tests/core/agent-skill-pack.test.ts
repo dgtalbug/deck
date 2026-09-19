@@ -115,7 +115,8 @@ describe('executable prompt contracts + negative controls (DECK-ARCH-009)', () =
     const main = readFileSync(mainPath, 'utf8');
     const commandsStart = main.indexOf('const commands');
     expect(commandsStart).toBeGreaterThan(0); // the dispatch table exists
-    const usage = main.slice(main.indexOf('const USAGE'), main.indexOf('`;', main.indexOf('const USAGE')));
+    const usageSource = readFileSync(join(import.meta.dir, '..', '..', 'src', 'cli', 'usage.ts'), 'utf8');
+    const usage = usageSource.slice(usageSource.indexOf('const USAGE'), usageSource.indexOf('`;', usageSource.indexOf('const USAGE')));
     const known = new Set<string>();
     for (const line of usage.split('\n')) {
       const match = /^ {2,4}([a-z][a-z|-]*[a-z])(\s|$)/.exec(line);
@@ -171,8 +172,8 @@ describe('executable prompt contracts + negative controls (DECK-ARCH-009)', () =
 
 describe('CLI command coverage', () => {
   test('every usage command is owned by exactly one skill (serve/mcp documented-only)', () => {
-    const main = readFileSync(join(import.meta.dir, '..', '..', 'src', 'cli', 'main.ts'), 'utf8');
-    const usage = main.slice(main.indexOf('const USAGE'), main.indexOf('`;', main.indexOf('const USAGE')));
+    const usageSource = readFileSync(join(import.meta.dir, '..', '..', 'src', 'cli', 'usage.ts'), 'utf8');
+    const usage = usageSource.slice(usageSource.indexOf('const USAGE'), usageSource.indexOf('`;', usageSource.indexOf('const USAGE')));
     // command words: first token of each indented usage line
     const commands = new Set<string>();
     for (const line of usage.split('\n')) {
