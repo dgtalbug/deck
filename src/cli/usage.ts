@@ -41,8 +41,9 @@ commands:
   projects                          list registered projects
   sync                              flush the publish queue + report issue drift
   backfill-specs                   import existing specs + publish their issues
+  start <verb> <id>                 start a build: active + issue + branch (canonical)
   feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert <id>
-                                    start a build: active + issue + branch
+                                    deprecated aliases of 'deck start <verb> <id>'
   workflow <new-verb>               register a user verb on the shared engine
   hooks                             list hooks — deck.rules.yaml declarations + .deck/hooks executables
   recall <query>                    search session memory (FTS5)
@@ -60,4 +61,5 @@ commands:
   policy <id> --mode team|solo     enroll the delivery/evidence policy (--check, --approvals, --manual)
   cleanup <id>                     retry unfinished post-delivery follow-ups (issue close, branch, changelog, release)
   issue <id>                       print the card's mapped GitHub issue
-  serve [--port <n>] [--host <h>]   start the server (default when bare)`;
+  serve [--port <n>] [--host <h>]   start the server explicitly (bare 'deck' prints help)
+  help [command]                    this help, or one command's surface — never opens a project`;

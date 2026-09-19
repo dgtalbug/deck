@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { join } from 'node:path';
 import { DECK_VERSION } from '../version.ts';
-import { blockBody, groomBody, moveBody, reorderBody, updateBody } from './routes/cards.ts';
+import { blockBody, groomBody, moveBody, reorderBody, taskAssignBody, updateBody } from './routes/cards.ts';
 import { noteBody } from './routes/notes.ts';
 import { branchBody, commitBody, mergeBody, pullsBody, stashBody, switchBody } from './routes/git.ts';
 import { startBody } from './routes/engine.ts';
@@ -65,7 +65,7 @@ function gitPath(id: string, summary: string, body: z.ZodType): [string, Record<
   return [`/{project}/git/${id}`, post(summary, body, [projectParam])];
 }
 
-function openApiDocument(): Record<string, unknown> {
+export function openApiDocument(): Record<string, unknown> {
   return {
     openapi: '3.1.0',
     info: {
@@ -220,7 +220,43 @@ function openApiDocument(): Record<string, unknown> {
         },
       },
       '/{project}/cards/{id}/start': post('Start a verb build: engine transition to active, spec published as an issue at start, guarded branch created', startBody),
-      '/{project}/cards/{id}/archive': post('Minimal archive: spec-generated PR merged --no-ff, card done, mapped issue closed, branch deleted', z.object({})),
+      '/{project}/cards/{id}/archive': post('Minimal archive: spec-generated PR merged --no-ff, card done, mapped issue closed, branch deleted', z.object({})),  '/{project}/cards/{id}/tasks/{taskId}': {
+    patch: {
+      summary: 'Cooperative task patch (revision-checked, stable command id)',
+      requestBody: requestBody(taskAssignBody),
+      responses: { '200': jsonResponse('The patched task state'), ...errorResponses },
+    },
+  },
+  '/{project}/cards/{id}/tasks/{taskId}/assign': {
+    post: {
+      summary: 'Assign a task to an owner',
+      requestBody: requestBody(taskAssignBody),
+      responses: { '200': jsonResponse('The assignment'), ...errorResponses },
+    },
+  },
+  '/{project}/cards/{id}/handoffs': {
+    get: { summary: 'List handoffs', responses: { '200': jsonResponse('Handoff rows') } },
+    post: {
+      summary: 'Offer a task handoff',
+      requestBody: requestBody(taskAssignBody),
+      responses: { '200': jsonResponse('The offered handoff'), ...errorResponses },
+    },
+  },
+  '/{project}/cards/{id}/handoffs/{handoffId}/accept': {
+    post: {
+      summary: 'Accept a handoff',
+      requestBody: requestBody(taskAssignBody),
+      responses: { '200': jsonResponse('The accepted handoff'), ...errorResponses },
+    },
+  },
+  '/{project}/cards/{id}/handoffs/{handoffId}/cancel': {
+    post: {
+      summary: 'Cancel a handoff, returning the task to the sender',
+      requestBody: requestBody(taskAssignBody),
+      responses: { '200': jsonResponse('The cancelled handoff'), ...errorResponses },
+    },
+  },
+
       '/{project}/sync': post('Flush the offline publish queue and report issue-map drift (reconcile never mutates cards)', z.object({}), [projectParam]),
       '/{project}/backfill-specs': post('One-time import of openspec/specs/** into the spec store + issue publication (idempotent)', z.object({}), [projectParam]),
     },

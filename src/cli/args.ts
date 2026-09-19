@@ -15,12 +15,24 @@ export class UsageError extends Error {
   }
 }
 
+export interface FlagSpec {
+  [flag: string]: 'boolean' | 'value' | 'repeat';
+}
+
+export interface ParseOptions {
+  // Resolves the flag spec for a command once its first token is known; a
+  // missing entry falls back to permissive legacy parsing (dynamic user
+  // verbs, internal calls) rather than inventing a contract.
+  specFor?: (command: string) => FlagSpec | undefined;
+}
+
 function isFlag(token: string): boolean {
   return token.startsWith('--') && token.length > 2;
 }
 
-export function parseArgs(argv: string[]): ParsedArgs {
+export function parseArgs(argv: string[], options: ParseOptions = {}): ParsedArgs {
   const parsed: ParsedArgs = { positionals: [], flags: {}, passthrough: [] };
+  let spec: FlagSpec | undefined;
   let i = 0;
   for (; i < argv.length; i++) {
     const token = argv[i]!;
@@ -29,8 +41,12 @@ export function parseArgs(argv: string[]): ParsedArgs {
       return parsed;
     }
     if (!isFlag(token)) {
-      if (parsed.command === undefined) parsed.command = token;
-      else parsed.positionals.push(token);
+      if (parsed.command === undefined) {
+        parsed.command = token;
+        spec = options.specFor?.(token);
+      } else {
+        parsed.positionals.push(token);
+      }
       continue;
     }
     const eq = token.indexOf('=');
@@ -43,23 +59,43 @@ export function parseArgs(argv: string[]): ParsedArgs {
       name = token.slice(2);
     }
     if (name.length === 0) throw new UsageError(`empty flag name in '${token}'`);
+    // Unknown flags on a manifested command are usage errors before effects.
+    if (spec !== undefined && !(name in spec)) {
+      const known = Object.keys(spec).map((flag) => `--${flag}`).join(', ');
+      throw new UsageError(`unknown flag --${name} for '${parsed.command}'${known.length > 0 ? ` — known flags: ${known}` : ' (this command takes no flags)'}`);
+    }
+    const kind = spec?.[name];
+    if (kind === 'boolean') {
+      if (inline !== undefined) {
+        throw new UsageError(`--${name} is a boolean flag — write it without a value`);
+      }
+      setFlag(parsed.flags, name, true, kind);
+      continue;
+    }
+    // Value and repeat flags consume the next token; only legacy-unspec'd
+    // flags may fall back to a boolean form.
     if (inline !== undefined) {
-      setFlag(parsed.flags, name, inline);
+      setFlag(parsed.flags, name, inline, kind);
       continue;
     }
     const next = argv[i + 1];
     if (next !== undefined && !isFlag(next) && next !== '--') {
-      setFlag(parsed.flags, name, next);
+      setFlag(parsed.flags, name, next, kind);
       i += 1;
+    } else if (kind === 'value' || kind === 'repeat') {
+      throw new UsageError(`--${name} requires a value`);
     } else {
-      setFlag(parsed.flags, name, true);
+      setFlag(parsed.flags, name, true, kind);
     }
   }
   return parsed;
 }
 
-function setFlag(flags: Record<string, FlagValue>, name: string, value: string | true): void {
+function setFlag(flags: Record<string, FlagValue>, name: string, value: string | true, kind?: 'boolean' | 'value' | 'repeat'): void {
   const existing = flags[name];
+  if (kind === 'value' && existing !== undefined) {
+    throw new UsageError(`--${name} may only be given once`);
+  }
   if (existing === undefined) {
     flags[name] = value;
     return;
