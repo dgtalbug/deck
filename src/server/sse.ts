@@ -1,5 +1,5 @@
 import type { RouteTable } from './http.ts';
-import { latestRowid, readSinceBatched, FRAME_BYTE_LIMIT } from '../core/events/outbox.ts';
+import { latestRowid, readSinceBatched, FRAME_BYTE_LIMIT, isOversized } from '../core/events/outbox.ts';
 import type { DocumentStore } from '../core/board/store.ts';
 import type { ProjectRegistry } from '../core/projects/registry.ts';
 import { projectStore } from './stores.ts';
@@ -53,21 +53,31 @@ async function tick(store: DocumentStore, tailer: Tailer): Promise<void> {
     return;
   }
   const batch = readSinceBatched(store.db, tailer.lastRowid);
-  if (batch.oversizedRowids.length > 0) {
-    // An oversized event invalidates connections without materializing it;
-    // durable events are never pruned and replay is not promised.
-    for (const send of [...tailer.subscribers]) tailer.subscribers.delete(send);
-    tailer.lastRowid = batch.lastRowid;
-    releaseTailer(store, tailer);
-    return;
-  }
-  if (batch.events.length === 0) {
+  if (batch.entries.length === 0) {
     broadcast(store, tailer, ': keepalive\n\n'); // heartbeats count toward the cap
     return;
   }
-  for (const event of batch.events) {
-    tailer.lastRowid = event.rowid;
-    broadcast(store, tailer, frame(event));
+  for (const entry of batch.entries) {
+    tailer.lastRowid = entry.rowid;
+    if (isOversized(entry)) {
+      // An ordered, bounded diagnostic at the oversized position: the client
+      // keeps its cursor, sees exactly what was skipped and why, and can
+      // resynchronize — no invisible gap. Sending this frame is NOT a durable
+      // browser acknowledgement; durable consumers ack separately.
+      broadcast(
+        store,
+        tailer,
+        `id: ${entry.rowid}\nevent: deck.oversized\ndata: ${JSON.stringify({
+          rowid: entry.rowid,
+          originalType: entry.originalType,
+          byteSize: entry.byteSize,
+          recoveryRef: entry.recoveryRef,
+          resync: true,
+        })}\n\n`,
+      );
+    } else {
+      broadcast(store, tailer, frame(entry));
+    }
     if (tailer.subscribers.size === 0) return;
     // yield between events so healthy readers drain while a burst streams
     await Promise.resolve();
