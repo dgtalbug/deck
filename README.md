@@ -12,12 +12,12 @@ and a GitHub loop — one binary, one server, every agent.
 
 ## Status — what's real today
 
-deck is early and building in the open. The **board, CLI, server, UI, the SDD engine verbs, and the git/gh layer are shipped and live-verified** (796 tests green). The plan and decision ledger live in [`.meta/sdd-engine.md`](.meta/sdd-engine.md).
+deck is early and building in the open. The **board, CLI, server, UI, SDD engine verbs, and git/gh layer are implemented and covered by the repository's automated checks**. The plan and decision ledger live in [`.meta/sdd-engine.md`](.meta/sdd-engine.md). Passing tests are source-level evidence; they do not by themselves prove a hosted deployment or every provider path.
 
 **Working now:**
 
 - **Board core** — `todo → groomed → active → verify → done` lanes on SQLite (WAL for concurrent agents, FTS5-ready), engine-owned lane law (humans move `todo ↔ groomed` only; `active`/`verify`/`done` are engine events), WIP limits, transactional event outbox.
-- **Three doors, one core** — the same core functions behind a REST/SSE server ([OpenAPI 0.3.0](http://127.0.0.1:3325/openapi.json)), a CLI, and a single-file compiled binary.
+- **Multiple doors, one core** — the same domain functions are exposed through the CLI, REST/SSE server, MCP server, web UI, and single-file compiled binary. The running server exposes its current OpenAPI document at [`/openapi.json`](http://127.0.0.1:3325/openapi.json).
 - **CLI** — `deck note · board · groom · move · reorder · block · unblock · next · tweak · feat/fix/… · verify · review · archive · deliver · delivery · policy · cleanup · recall · checkpoint · baseline · ops · rules · graph · init · doctor · projects · serve`.
 - **Web UI** — dark-default board at `http://127.0.0.1:3325` with live SSE updates, note capture in one action, card detail, groom form, deep-linkable `?view=todo|git`, guarded git view (branch/merge/commit/stash/PR), skeleton loading states.
 - **Git + gh** — 13 guarded git operations plus PR create/list behind typed `GhUnavailable` handling; `gh` resolved beyond `PATH`.
@@ -40,13 +40,16 @@ git clone https://github.com/dgtalbug/deck.git
 cd deck
 bun install
 bun run build          # UI bundle + single-file ./deck binary
+bun run test:smoke     # rebuild + isolated compiled lifecycle smoke
 
 ./deck serve           # board at http://127.0.0.1:3325
 ./deck note "first thought"
 ./deck doctor          # 9 checks
 ```
 
-Or run from source: `bun run dev` (server) · `bun test` (796 tests) · `bun run typecheck`.
+Or run from source: `bun run dev` (server) · `bun test` (full automated suite) · `bun run typecheck`.
+
+`bun run test:smoke` is the compiled-binary lifecycle check. It uses an isolated temporary Deck home, project, Git repository, and fake `gh` executable; it does not touch a real project or GitHub account. The smoke exercises capture, HTTP grooming, start, verification gaps, clean verification, process restarts, and solo delivery finalization.
 
 ## The loop (where this is going)
 

@@ -48,7 +48,7 @@ commands:
   recall <query>                    search session memory (FTS5)
   setup                             onboard agent hosts (adapter table + detection)
   skill new <name>                 scaffold a skill pack from the pinned template
-  mcp                              MCP stdio server (JSON-RPC 2.0, four tools)
+  mcp                              MCP stdio server (JSON-RPC 2.0, 13 tools)
   epic "<title>" / epic <id>        create an epic, or print its story tree + criteria
   epic-plan <id> intent|link|defer|ack   epic intent/criteria authoring (revision-checked)
   deps <card> [list|add|remove|set <p>…] story dependency edges (cycle-checked)

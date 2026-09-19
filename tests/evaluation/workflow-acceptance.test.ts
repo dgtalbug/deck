@@ -158,7 +158,16 @@ describe('workflow-acceptance: attempt validation against its scenario', () => {
 });
 
 describe('workflow-acceptance: retained agent-run evidence stays consistent with the law', () => {
-  const evidenceRoot = join(import.meta.dir, '..', '..', 'openspec', 'changes', 'add-agent-workflow-acceptance-tests', 'evidence');
+  const evidenceRoot = join(
+    import.meta.dir,
+    '..',
+    '..',
+    'openspec',
+    'changes',
+    'archive',
+    '2026-09-19-add-agent-workflow-acceptance-tests',
+    'evidence',
+  );
   const manifest = JSON.parse(readFileSync(join(evidenceRoot, 'attempts.json'), 'utf8')) as {
     environment: WorkflowAttempt['setup'];
     attempts: WorkflowAttempt[];
