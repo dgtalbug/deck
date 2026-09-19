@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { desc, eq } from 'drizzle-orm';
+import { and, desc, eq } from 'drizzle-orm';
 import { NotFoundError } from './errors.ts';
 import { cards, issueMap, publishQueue, specs as specsTable } from './schema.ts';
 import { canonicalProjectId, markerFor } from './provider-operations.ts';
@@ -9,6 +9,7 @@ import { runTx, type DocumentStore } from './store.ts';
 import type { VerbItem } from './types.ts';
 import { branchFor } from '../engine/slug.ts';
 import { commitPrefixFor } from './types-registry.ts';
+import { currentScopeRevision } from './accepted-scope.ts';
 
 export interface SpecVersion {
   cardId: string;
@@ -16,6 +17,15 @@ export interface SpecVersion {
   markdown: string;
   checksum: string;
   createdAt: string;
+  scopeRevision: number | null;
+}
+
+export interface ProjectionDrift {
+  cardId: string;
+  projection: 'markdown' | 'issue';
+  staleRevision: number | null;
+  currentRevision: number;
+  action: string;
 }
 
 export interface IssueMapEntry {
@@ -24,6 +34,7 @@ export interface IssueMapEntry {
   state: 'draft' | 'open' | 'closed';
   checksum: string;
   updatedAt: string;
+  scopeRevision: number | null;
 }
 
 export interface QueuedPublish {
@@ -77,6 +88,7 @@ export function renderCardSpec(store: DocumentStore, card: VerbItem): string {
 
 export function recordSpecVersion(store: DocumentStore, cardId: string, markdown: string): SpecVersion {
   const checksum = checksumOf(markdown);
+  const acceptedRevision = currentScopeRevision(store.db, cardId) || null;
   let out!: SpecVersion;
   runTx(store.db, (tx) => {
     const row = tx.select().from(cards).where(eq(cards.id, cardId)).get();
@@ -88,13 +100,28 @@ export function recordSpecVersion(store: DocumentStore, cardId: string, markdown
       .orderBy(desc(specsTable.version))
       .get();
     if (newest !== undefined && newest.checksum === checksum) {
-      out = { cardId, version: newest.version, markdown: newest.markdown, checksum: newest.checksum, createdAt: newest.createdAt };
+      // projection refresh is idempotent for the same accepted revision; a
+      // legacy unlinked render adopts the accepted revision link once
+      if (newest.scopeRevision === null && acceptedRevision !== null) {
+        tx.update(specsTable)
+          .set({ scopeRevision: acceptedRevision })
+          .where(and(eq(specsTable.cardId, cardId), eq(specsTable.version, newest.version)))
+          .run();
+      }
+      out = {
+        cardId,
+        version: newest.version,
+        markdown: newest.markdown,
+        checksum: newest.checksum,
+        createdAt: newest.createdAt,
+        scopeRevision: newest.scopeRevision ?? acceptedRevision,
+      };
       return;
     }
     const version = (newest?.version ?? 0) + 1;
     const createdAt = nowIso();
-    tx.insert(specsTable).values({ cardId, version, markdown, checksum, createdAt }).run();
-    out = { cardId, version, markdown, checksum, createdAt };
+    tx.insert(specsTable).values({ cardId, version, markdown, checksum, createdAt, scopeRevision: acceptedRevision }).run();
+    out = { cardId, version, markdown, checksum, createdAt, scopeRevision: acceptedRevision };
   });
   return out;
 }
@@ -118,6 +145,36 @@ export function newestSpecVersion(store: DocumentStore, cardId: string): SpecVer
   return specs(store, cardId)[0];
 }
 
+// Projection drift: a stored projection names the accepted revision it was
+// generated from; when the current accepted revision moved past it, name both.
+export function markdownDrift(store: DocumentStore, cardId: string): ProjectionDrift | null {
+  const newest = newestSpecVersion(store, cardId);
+  if (newest === undefined) return null;
+  const current = currentScopeRevision(store.db, cardId) || null;
+  if (current === null || newest.scopeRevision === current) return null;
+  return {
+    cardId,
+    projection: 'markdown',
+    staleRevision: newest.scopeRevision,
+    currentRevision: current,
+    action: `re-render the spec (POST /cards/${cardId}/render or edit the card) to project accepted revision ${current}`,
+  };
+}
+
+export function issueDrift(store: DocumentStore, cardId: string): ProjectionDrift | null {
+  const map = getIssueMap(store, cardId);
+  if (map === undefined) return null;
+  const current = currentScopeRevision(store.db, cardId) || null;
+  if (current === null || map.scopeRevision === current) return null;
+  return {
+    cardId,
+    projection: 'issue',
+    staleRevision: map.scopeRevision,
+    currentRevision: current,
+    action: `publish the card again (POST /cards/${cardId}/publish) to project accepted revision ${current}`,
+  };
+}
+
 export function getIssueMap(store: DocumentStore, cardId: string): IssueMapEntry | undefined {
   const row = store.db.select().from(issueMap).where(eq(issueMap.cardId, cardId)).get();
   return row === undefined ? undefined : { ...row };
@@ -131,16 +188,26 @@ export function deleteIssueMap(store: DocumentStore, cardId: string): void {
 
 export function setIssueMap(
   store: DocumentStore,
-  entry: { cardId: string; issueNumber: number; state: 'draft' | 'open' | 'closed'; checksum: string },
+  entry: {
+    cardId: string;
+    issueNumber: number;
+    state: 'draft' | 'open' | 'closed';
+    checksum: string;
+    scopeRevision?: number | null;
+  },
 ): IssueMapEntry {
   const updatedAt = nowIso();
+  const scopeRevision = entry.scopeRevision ?? null;
   runTx(store.db, (tx) => {
     tx.insert(issueMap)
-      .values({ ...entry, updatedAt })
-      .onConflictDoUpdate({ target: issueMap.cardId, set: { issueNumber: entry.issueNumber, state: entry.state, checksum: entry.checksum, updatedAt } })
+      .values({ ...entry, scopeRevision, updatedAt })
+      .onConflictDoUpdate({
+        target: issueMap.cardId,
+        set: { issueNumber: entry.issueNumber, state: entry.state, checksum: entry.checksum, scopeRevision, updatedAt },
+      })
       .run();
   });
-  return { ...entry, updatedAt };
+  return { ...entry, scopeRevision, updatedAt };
 }
 
 export function enqueuePublish(store: DocumentStore, cardId: string, checksum: string): QueuedPublish {

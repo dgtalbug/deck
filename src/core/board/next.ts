@@ -5,14 +5,14 @@ import type { DocumentStore } from './store.ts';
 import type { NextDigest, TaskState, VerbItem } from './types.ts';
 import { firstReady, mostAdvancedActive } from './lanes.ts';
 import { isVerbItem, isTweak, type Tweak } from './types.ts';
-import { getIssueMap } from './specstore.ts';
+import { getIssueMap, newestSpecVersion } from './specstore.ts';
 import { getSpecType } from './types-registry.ts';
 import { loadRules, rulesDigest } from './rules.ts';
 import { branchFor } from '../engine/slug.ts';
 import { memoryStatus, recall } from './memory.ts';
 import { epicPlanning } from './planning.ts';
 import { checkpointBasis, checkpointProvenance, readCheckpoint, type CheckpointEntry } from './checkpoint.ts';
-import { currentScopeRevision } from './scope.ts';
+import { acceptedRevision, currentScopeRevision } from './accepted-scope.ts';
 import { buildAdvisory, type AdvisoryStrategy } from './context-advisories.ts';
 
 const MAX_CONTEXT_CHARS = 8000;
@@ -116,6 +116,20 @@ function mandatorySections(store: DocumentStore, card: VerbItem | Tweak, mode: '
     header.push(`# ${card.verb}: ${card.title}`, `card: ${card.id}`, `branch: ${branchFor(card, card.verb)}`);
     const map = getIssueMap(store, card.id);
     header.push(`issue: ${map === undefined ? 'unpublished' : `#${map.issueNumber}`}`);
+    // identity lines: accepted scope revision is distinct from the rendered
+    // publication checksum and from mutable task progress
+    const revision = acceptedRevision(store.db, card.id);
+    header.push(
+      revision === null
+        ? 'scope: UNCLASSIFIED (no accepted revision — verify scope before work)'
+        : `scope: accepted revision ${revision.revision} (${revision.revisionId})`,
+    );
+    const newest = newestSpecVersion(store, card.id);
+    if (newest !== undefined) {
+      header.push(`render: v${newest.version} checksum ${newest.checksum.slice(0, 12)} (publication identity, not scope)`);
+    }
+    const done = card.tasks.filter((task) => task.done).length;
+    header.push(`progress: ${done}/${card.tasks.length} tasks done (mutable progress, not scope)`);
   } else if (isTweak(card)) {
     header.push(`# tweak: ${card.title}`, `card: ${card.id}`, `requirement: ${card.requirement}`);
   }

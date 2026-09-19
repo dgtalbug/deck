@@ -94,6 +94,7 @@ export async function publishSpec(store: DocumentStore, cardId: string): Promise
           issueNumber: pending.recovered,
           state: stage === 'draft' ? 'draft' : 'open',
           checksum: version.checksum,
+          scopeRevision: version.scopeRevision,
         });
         return { issueNumber: pending.recovered, queued: false };
       }
@@ -127,6 +128,7 @@ export async function publishSpec(store: DocumentStore, cardId: string): Promise
           issueNumber: created.number,
           state: stage === 'draft' ? 'draft' : 'open',
           checksum: version.checksum,
+          scopeRevision: version.scopeRevision,
         });
         return { issueNumber: created.number, queued: false, url: created.url };
       } catch (error) {
@@ -145,12 +147,12 @@ export async function publishSpec(store: DocumentStore, cardId: string): Promise
     if (map.state === 'draft' && stage === 'active') {
       if (map.checksum !== version.checksum) await editThroughLedger(store, cardId, map.issueNumber, version.checksum, version.markdown, marker, repo, projectId);
       await setLaneLabel(store.projectPath, map.issueNumber, card.lane);
-      setIssueMap(store, { cardId, issueNumber: map.issueNumber, state: 'open', checksum: version.checksum });
+      setIssueMap(store, { cardId, issueNumber: map.issueNumber, state: 'open', checksum: version.checksum, scopeRevision: version.scopeRevision });
       return { issueNumber: map.issueNumber, queued: false };
     }
     if (map.checksum !== version.checksum) {
       await editThroughLedger(store, cardId, map.issueNumber, version.checksum, version.markdown, marker, repo, projectId);
-      setIssueMap(store, { cardId, issueNumber: map.issueNumber, state: map.state, checksum: version.checksum });
+      setIssueMap(store, { cardId, issueNumber: map.issueNumber, state: map.state, checksum: version.checksum, scopeRevision: version.scopeRevision });
     }
     return { issueNumber: map.issueNumber, queued: false };
   } catch (error) {

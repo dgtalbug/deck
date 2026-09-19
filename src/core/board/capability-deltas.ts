@@ -3,7 +3,19 @@ import { z } from 'zod';
 import { DeckError } from './errors.ts';
 
 const stableId = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*:[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
-const digest = /^[a-f0-9]{16,64}$/;
+const digestPattern = /^[a-f0-9]{16,64}$/;
+// Source card and criterion identities are Deck-native (slug card ids, hash
+// criterion ids) and carry no namespace; caller-minted ids keep stableId.
+const deckNativeId = z.string().min(1);
+
+const sourceSchema = z.object({
+  cardId: deckNativeId,
+  criterionId: deckNativeId,
+  scopeRevision: z.number().int().nonnegative(),
+  criterionDigest: z.string().regex(digestPattern),
+  evidenceId: z.string().regex(stableId),
+  deliveryId: z.string().regex(stableId),
+});
 
 export const capabilityDeltaSchema = z.discriminatedUnion('op', [
   z.object({
@@ -12,45 +24,24 @@ export const capabilityDeltaSchema = z.discriminatedUnion('op', [
     capabilityId: z.string().regex(stableId),
     statementId: z.string().regex(stableId),
     statementText: z.string().min(1),
-    source: z.object({
-      cardId: z.string().regex(stableId),
-      criterionId: z.string().regex(stableId),
-      scopeRevision: z.number().int().nonnegative(),
-      criterionDigest: z.string().regex(digest),
-      evidenceId: z.string().regex(stableId),
-      deliveryId: z.string().regex(stableId),
-    }),
+    source: sourceSchema,
   }),
   z.object({
     op: z.literal('modify'),
     deltaId: z.string().regex(stableId),
     capabilityId: z.string().regex(stableId),
     statementId: z.string().regex(stableId),
-    expectedPriorDigest: z.string().regex(digest),
+    expectedPriorDigest: z.string().regex(digestPattern),
     statementText: z.string().min(1),
-    source: z.object({
-      cardId: z.string().regex(stableId),
-      criterionId: z.string().regex(stableId),
-      scopeRevision: z.number().int().nonnegative(),
-      criterionDigest: z.string().regex(digest),
-      evidenceId: z.string().regex(stableId),
-      deliveryId: z.string().regex(stableId),
-    }),
+    source: sourceSchema,
   }),
   z.object({
     op: z.literal('remove'),
     deltaId: z.string().regex(stableId),
     capabilityId: z.string().regex(stableId),
     statementId: z.string().regex(stableId),
-    expectedPriorDigest: z.string().regex(digest),
-    source: z.object({
-      cardId: z.string().regex(stableId),
-      criterionId: z.string().regex(stableId),
-      scopeRevision: z.number().int().nonnegative(),
-      criterionDigest: z.string().regex(digest),
-      evidenceId: z.string().regex(stableId),
-      deliveryId: z.string().regex(stableId),
-    }),
+    expectedPriorDigest: z.string().regex(digestPattern),
+    source: sourceSchema,
   }),
 ]);
 
