@@ -5,6 +5,7 @@ import { getSpecType } from '../board/types-registry.ts';
 import { listOverrides, loadRules, runChecks } from '../board/rules.ts';
 import type { DocumentStore } from '../board/store.ts';
 import type { VerbItem } from '../board/types.ts';
+import { impactDrift } from '../board/impact-snapshots.ts';
 import { runGit } from '../git/digest.ts';
 import { completeOperation, compensateOperation, reserveOperation } from './ownership.ts';
 import { branchFor } from './slug.ts';
@@ -17,6 +18,9 @@ export interface Finding {
   risk: string;
   violates: string;
   kind?: 'snapshot-unavailable' | 'snapshot-stale';
+  // Findings block archive unless explicitly marked non-blocking. Impact-drift
+  // findings are reviewer attention, not automatic failures.
+  blocking?: boolean;
 }
 
 async function diffFiles(
@@ -162,6 +166,7 @@ export async function reviewGate(store: DocumentStore, id: string): Promise<Find
             violates: 'law 1 (simple — ceremony scales with blast radius)',
           });
         }
+        findings.push(...impactDriftFindings(store, id, files));
       }
     }
     const rulesLoad = loadRules(executionPath(store, id));
@@ -241,6 +246,61 @@ async function defaultBranchOf(projectPath: string): Promise<string> {
     if (short.length > 0) return short;
   }
   return 'main';
+}
+
+// Actual-versus-planned impact drift against the approved snapshot for the
+// current accepted revision. Visible findings, never automatically blocking:
+// uncertain or fallback evidence must not be laundered into false certainty.
+function impactDriftFindings(store: DocumentStore, id: string, changedFiles: string[]): Finding[] {
+  const drift = impactDrift(store.db, id, changedFiles);
+  if (drift.basis === 'missing') {
+    return [
+      {
+        risk:
+          drift.revision === 0
+            ? 'no accepted revision and no approved impact snapshot — blast-radius evidence is missing'
+            : `no approved impact snapshot for revision ${drift.revision} — blast-radius evidence is missing or fallback (deck impact capture, then deck impact approve)`,
+        violates: 'graph impact basis',
+        blocking: false,
+      },
+    ];
+  }
+  const findings: Finding[] = [];
+  if (drift.basis === 'approved-fallback') {
+    findings.push({
+      risk: `blast-radius basis is approved fallback snapshot ${drift.snapshotId} (source-search, not graph evidence) — drift comparison uses fallback evidence`,
+      violates: 'graph impact basis',
+      blocking: false,
+    });
+  }
+  if (drift.basis === 'captured-unapproved') {
+    return [
+      {
+        risk: `impact snapshot ${drift.snapshotId} is captured but NOT approved for revision ${drift.revision} — blast radius is not graph-backed`,
+        violates: 'graph impact basis',
+        blocking: false,
+      },
+    ];
+  }
+  for (const file of drift.unexpectedFiles) {
+    findings.push({
+      risk:
+        `changed file '${file}' is outside approved impact snapshot ${drift.snapshotId} — actual-versus-planned drift` +
+        (drift.uncertaintyLabel !== null ? ` (${drift.uncertaintyLabel})` : ''),
+      violates: 'graph impact basis',
+      blocking: false,
+    });
+  }
+  for (const expected of drift.untouchedHighRisk) {
+    findings.push({
+      risk:
+        `expected high-risk impact ${expected.file}:${expected.symbol} (fan-in ${expected.fanIn ?? '?'}, ${expected.tier}) is untouched — evidence for reviewer attention, not proof of incorrect implementation` +
+        (expected.tier !== 'structural' ? ' — uncertain: requires source confirmation, not a definite scope violation' : ''),
+      violates: 'graph impact basis',
+      blocking: false,
+    });
+  }
+  return findings;
 }
 
 export class ReviewBlockedError extends DeckError {

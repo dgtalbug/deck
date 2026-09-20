@@ -31,6 +31,7 @@ import * as graphIndex from '../../src/core/graph/index.ts';
 import * as planning from '../../src/core/board/planning.ts';
 import * as taskPatches from '../../src/core/board/task-patches.ts';
 import * as scopeInspect from '../../src/core/board/scope-inspect.ts';
+import * as impactSnapshots from '../../src/core/board/impact-snapshots.ts';
 import * as engineHandoffs from '../../src/core/engine/handoffs.ts';
 import * as projectsWorkspaces from '../../src/core/projects/workspaces.ts';
 import * as sourceBaselines from '../../src/core/board/source-baselines.ts';
@@ -56,6 +57,7 @@ const functions: Record<string, unknown> = {
   ...sourceBaselines,
   ...taskPatches,
   ...scopeInspect,
+  ...impactSnapshots,
   ...engineHandoffs,
   ...projectsWorkspaces,
   ...crud,

@@ -84,27 +84,31 @@ describe('digest injection', () => {
 });
 
 describe('review gate', () => {
+  // These cards carry no approved impact snapshot, so review also reports the
+  // missing graph-impact basis as a visible, non-gating finding; the rules
+  // assertions below filter to blocking findings to stay about rules checks.
   test('FAIL(error) check is a finding; a recorded override answers it', async () => {
     writeRules(
       ['version: 1', 'principles:', '  - id: file-cap', '    rule: cap', "    check: 'exit 7'"].join('\n'),
     );
     const findings = await reviewGate(store, cardId);
-    expect(findings).toHaveLength(1);
-    expect(findings[0]).toMatchObject({ violates: 'deck.rules: file-cap' });
-    expect(findings[0]!.risk).toContain('deck override file-cap');
+    const blocking = findings.filter((finding) => finding.blocking !== false);
+    expect(blocking).toHaveLength(1);
+    expect(blocking[0]).toMatchObject({ violates: 'deck.rules: file-cap' });
+    expect(blocking[0]!.risk).toContain('deck override file-cap');
 
     recordOverride(store, cardId, 'file-cap', 'user decided');
-    expect(await reviewGate(store, cardId)).toEqual([]);
+    expect((await reviewGate(store, cardId)).filter((finding) => finding.blocking !== false)).toEqual([]);
   });
 
   test('FAIL(warn) never blocks review', async () => {
     writeRules(
       ['version: 1', 'principles:', '  - id: soft', '    rule: soft law', "    check: 'exit 1'", '    severity: warn'].join('\n'),
     );
-    expect(await reviewGate(store, cardId)).toEqual([]);
+    expect((await reviewGate(store, cardId)).filter((finding) => finding.blocking !== false)).toEqual([]);
   });
 
   test('no rules file adds no findings', async () => {
-    expect(await reviewGate(store, cardId)).toEqual([]);
+    expect((await reviewGate(store, cardId)).filter((finding) => finding.blocking !== false)).toEqual([]);
   });
 });

@@ -122,7 +122,11 @@ describe('reviewGate', () => {
     enrollPolicy(store, id, { mode: 'team' });
     store.syncTasks(id, store.getVerbItem(id).tasks.map((task) => ({ ...task, done: true })), 'engine');
     const findings = await reviewGate(store, id);
-    expect(findings).toEqual([]);
+    // Impact-basis findings are visible by contract but never archive-gating:
+    // a card without an approved snapshot reports the missing basis instead of
+    // silently reading as graph-backed.
+    expect(findings.filter((finding) => finding.blocking !== false)).toEqual([]);
+    expect(findings.some((finding) => finding.violates === 'graph impact basis')).toBe(true);
     writeFileSync(join(dir, 'b.txt'), 'change\n');
     git('add .');
     git('commit -q -m "feat: change"');

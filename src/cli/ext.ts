@@ -289,9 +289,11 @@ export async function reviewCommand(args: ParsedArgs, ctx: RunContext): Promise<
     );
   }
   const findings = await reviewGate(store, id);
+  if (findings.length > 0) ctx.io.out(renderFindings(findings));
+  const blocking = findings.filter((finding) => finding.blocking !== false);
+  if (blocking.length > 0) return 1;
   if (findings.length > 0) {
-    ctx.io.out(renderFindings(findings));
-    return 1;
+    return `${findings.length} non-blocking finding(s) stand (visible, not archive-gating)`;
   }
   return 'review clean — archive is unblocked';
 }

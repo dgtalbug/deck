@@ -138,6 +138,9 @@ describe('deck review', () => {
     await startVerb(store, id, 'feat');
     store.syncTasks(id, store.getVerbItem(id).tasks.map((task) => ({ ...task, done: true })), 'engine');
     expect(await run(['review', id])).toBe(0);
-    expect(out.join('\n')).toContain('review clean');
+    // No approved impact snapshot on this card: the missing basis is reported
+    // as a visible, non-gating finding instead of "review clean".
+    expect(out.join('\n')).toContain('non-blocking finding(s) stand (visible, not archive-gating)');
+    expect(out.join('\n')).toContain('no approved impact snapshot for revision 1');
   });
 });

@@ -135,7 +135,8 @@ async function prepareDelivery(
   const base = await defaultBranch(checkout);
 
   const findings = await reviewGate(store, id);
-  if (findings.length > 0) throw new ReviewBlockedError(id, findings);
+  const blocking = findings.filter((finding) => finding.blocking !== false);
+  if (blocking.length > 0) throw new ReviewBlockedError(id, blocking);
 
   const evidence = await evaluateEligibility(store, id);
   if (!evidence.eligible) {

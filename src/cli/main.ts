@@ -30,6 +30,7 @@ import { workspaceCommand } from './workspace.ts';
 import { graphCommand } from './graph.ts';
 import { overrideCommand, rulesCommand } from './rules.ts';
 import { scopeCommand } from './scope.ts';
+import { impactCommand } from './impact.ts';
 import {
   backfillCommand,
   epicCommand,
@@ -107,6 +108,7 @@ export const parity = {
   'deck handoff': 'offerHandoff',
   'deck workspace': 'createWorkspace',
   'deck baseline': 'captureSourceBaseline',
+  'deck impact': 'captureImpactSnapshot',
   'deck evidence': 'collectEvidenceBundleSnapshot',
   'deck capability': 'previewCapabilityProjection',
 };
@@ -153,6 +155,7 @@ export const commands: Record<string, Command> = {
   },
   groom: groomCommand,
   scope: scopeCommand,
+  impact: impactCommand,
   move: async (args, ctx) => {
     const id = requiredId(args, 'move <id> --to <lane>');
     const body = moveBody.parse({ to: flagString(args.flags, 'to') });
