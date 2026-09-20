@@ -57,3 +57,20 @@ Export and review SHALL make no external writes or automatic remote artifact fet
 
 - **WHEN** the destination exists or writing fails
 - **THEN** no existing output is overwritten and no partial bundle is presented as complete
+
+### Requirement: Completion bundle reconstructs lifecycle chain
+The portable evidence bundle SHALL include enough stable identity and provenance to reconstruct requirement, accepted spec revision, approved impact basis, implementation plan, apply operation, checkpoint lineage, task progress, evidence runs, review findings, diff identifiers, delivery state, completion identity and remaining uncertainty from a clean clone. Bundle export SHALL omit raw sensitive logs, environment values, unbounded checkpoint bodies and machine-specific absolute paths while recording omissions.
+
+#### Scenario: Clean clone readback
+- **WHEN** a completion bundle is exported and opened in a clean clone without chat history
+- **THEN** the reviewer can trace each completed criterion through accepted scope, impact basis, evidence run, review and delivery/completion provenance
+
+#### Scenario: Remaining uncertainty is preserved
+- **WHEN** completion includes accepted exceptions, unavailable provider observations or non-blocking impact uncertainty
+- **THEN** the bundle records those states instead of claiming complete certainty
+
+#### Scenario: Partial bundle is not published
+- **WHEN** bundle generation fails or required lifecycle links are missing
+- **THEN** no partial bundle is presented as complete
+
+> Not in this change: external artifact fetching or embedding raw command output.

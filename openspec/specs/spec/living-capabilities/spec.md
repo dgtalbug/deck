@@ -56,3 +56,16 @@ Accepted versions and delta identities SHALL be immutable. An identical retry SH
 - **THEN** only explicitly accepted eligible deltas become current; missing proof cannot be waived
 
 > Not in this change: automatic semantic merging, provider authority, or rewriting OpenSpec archives as proof.
+
+### Requirement: Capability projection requires Phase 4 completion proof
+Living capability projection SHALL treat Phase 4 completion identity and current evidence/delivery provenance as the eligibility source for new or changed capability statements. A done lane, checked tasks, provider issue state, OpenSpec archive, rendered Markdown or legacy unbatched evidence SHALL NOT make a capability eligible without attributable completion proof.
+
+#### Scenario: Completed source projects capability
+- **WHEN** a source delta references accepted scope with current evidence runs, review, completion identity and delivery policy satisfied
+- **THEN** projection can treat the delta as eligible with that lineage
+
+#### Scenario: Legacy done work is unknown
+- **WHEN** historical done work lacks Phase 4 completion proof
+- **THEN** projection reports unknown or ineligible status rather than inferring current capability truth
+
+> Not in this change: semantic merging or rewriting historical projection records.
