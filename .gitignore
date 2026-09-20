@@ -1,6 +1,7 @@
 # Allowlist mode: ignore everything at the repo root except what's listed below.
-# Only source code and project manifests belong in version control — everything
-# else (local notes, generated files, editor/agent state) stays local.
+# Track source, tests, assets, manifests, and explicitly allowed public docs.
+# Local planning, generated files, and editor/agent state stay local.
+# Ignore rules do not untrack files already committed; use git rm --cached.
 /*
 
 # Tracked
@@ -19,6 +20,7 @@
 !/bun.lock
 !/LICENSE
 !/README.md
+!/CHANGELOG.md
 !/docs/
 /docs/*
 !/docs/testing.md
@@ -43,3 +45,7 @@ coverage/
 .deck/board.sqlite
 .deck/board.sqlite-wal
 .deck/board.sqlite-shm
+
+# Local planning only (including completed and archived changes)
+/openspec/
+/specs/
