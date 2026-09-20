@@ -24,6 +24,11 @@ export interface ProjectionSourceRecord {
     policyVersion: number;
     inputFingerprint: string | null;
   } | null;
+  completion: {
+    id: string;
+    acceptedRevision: number;
+    inputFingerprint: string;
+  } | null;
 }
 
 export interface ProjectionEligibility {
@@ -38,6 +43,22 @@ export interface ProjectionEligibility {
 export function readCapabilityEligibility(source: ProjectionSourceRecord): ProjectionEligibility {
   const reasons: string[] = [];
   let sourceDrift: ProjectionEligibility['sourceDrift'] = 'none';
+  let legacy = false;
+  if (source.completion === null) {
+    // Phase 4 completion proof is the eligibility source: historical done work
+    // without an attributable completion record stays unknown, never inferred.
+    legacy = true;
+    sourceDrift = 'unknown';
+    reasons.push('Phase 4 completion proof is missing — historical or legacy work cannot be treated as current capability truth');
+  } else {
+    if (source.completion.acceptedRevision !== source.requestedScopeRevision) {
+      sourceDrift = 'changed';
+      reasons.push('completion proof predates the current accepted scope revision');
+    }
+    if (source.evidence !== null && source.completion.inputFingerprint !== source.evidence.inputFingerprint) {
+      reasons.push('completion input fingerprint does not match the evidence record');
+    }
+  }
   if (source.currentScopeRevision === null || source.scopeDigest === null) {
     sourceDrift = 'unknown';
     reasons.push('exact source scope revision is unavailable');
@@ -79,7 +100,7 @@ export function readCapabilityEligibility(source: ProjectionSourceRecord): Proje
   }
 
   const assurance = source.delivery?.provenance ?? 'unknown';
-  const status = reasons.length === 0 ? 'eligible' : sourceDrift === 'unknown' ? 'unknown' : 'ineligible';
+  const status = reasons.length === 0 ? 'eligible' : legacy || sourceDrift === 'unknown' ? 'unknown' : 'ineligible';
   return {
     status,
     assurance,

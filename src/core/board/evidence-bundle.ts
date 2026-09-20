@@ -1,16 +1,22 @@
 import { createHash } from 'node:crypto';
 import { isAbsolute, normalize } from 'node:path';
-import { and, asc, eq, inArray } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray } from 'drizzle-orm';
 import {
+  applyOperations,
   cards,
+  checkpointRecords,
+  completionRecords,
   deliveries,
   epicCriteria,
   evidenceRecords,
+  evidenceRunLinks,
+  evidenceRuns,
   scopeItems,
   scopeRevisions,
   specs,
   tasks,
 } from './schema.ts';
+import { impactBasisView } from './impact-snapshots.ts';
 import { NotFoundError } from './errors.ts';
 import { canonicalProjectId } from './provider-operations.ts';
 import type { DocumentStore } from './store.ts';
@@ -262,7 +268,11 @@ export function collectEvidenceBundleSnapshot(
       }))
       .sort((a, b) => a.id.localeCompare(b.id)),
     omissions: omissions.sort((a, b) => `${a.field}:${a.reason}`.localeCompare(`${b.field}:${b.reason}`)),
-    extensions: {},
+    extensions: {
+      // Phase 4 lifecycle chain: stable identities only. Checkpoint bodies are
+      // omitted (bounded digests instead), checkout paths stay machine-local.
+      'deck/lifecycle': lifecycleExtension(store, childIds, omissions),
+    },
   };
 
   return {
@@ -272,4 +282,105 @@ export function collectEvidenceBundleSnapshot(
       digest: canonicalEvidenceBundleDigest(bundleWithoutDigest),
     },
   };
+}
+
+// Reconstructable requirement-to-completion lineage from recorded identities:
+// accepted revision, impact basis, apply operations, checkpoint digests,
+// evidence runs, review state, delivery and completion identity, plus the
+// remaining uncertainty the completion knowingly carries.
+function lifecycleExtension(
+  store: DocumentStore,
+  cardIds: string[],
+  omissions: EvidenceBundleOmission[],
+): Record<string, unknown> {
+  const stories: Record<string, unknown>[] = [];
+  for (const cardId of cardIds) {
+    const basis = impactBasisView(store.db, cardId);
+    const apply = store.db
+      .select()
+      .from(applyOperations)
+      .where(eq(applyOperations.cardId, cardId))
+      .all();
+    const checkpoints = store.db
+      .select()
+      .from(checkpointRecords)
+      .where(eq(checkpointRecords.cardId, cardId))
+      .all();
+    if (checkpoints.length > 0) {
+      omissions.push({
+        field: `lifecycle.${cardId}.checkpoints`,
+        reason: 'checkpoint-body',
+        note: 'checkpoint bodies are omitted; digests and revisions carry the lineage',
+      });
+    }
+    if (apply.some((row) => row.checkout.length > 0)) {
+      omissions.push({
+        field: `lifecycle.${cardId}.apply.checkout`,
+        reason: 'absolute-path',
+        note: 'machine-local checkout paths are omitted from portable bundles',
+      });
+    }
+    const runs = store.db
+      .select()
+      .from(evidenceRuns)
+      .where(eq(evidenceRuns.cardId, cardId))
+      .all();
+    const completion = store.db
+      .select()
+      .from(completionRecords)
+      .where(eq(completionRecords.cardId, cardId))
+      .orderBy(desc(completionRecords.acceptedRevision))
+      .get();
+    stories.push({
+      cardId,
+      impactBasis: { classification: basis.classification, snapshotId: basis.snapshot?.id ?? null, approved: basis.approval !== null },
+      applyOperations: apply.map((row) => ({
+        id: row.id,
+        acceptedRevision: row.acceptedRevision,
+        revisionId: row.revisionId,
+        planDigest: row.planDigest,
+        impactBasis: row.impactBasis,
+        state: row.state,
+        createdAt: row.createdAt,
+      })),
+      checkpoints: checkpoints.map((row) => ({
+        id: row.id,
+        checkpointRevision: row.checkpointRevision,
+        scopeRevision: row.scopeRevision,
+        digest: row.digest,
+        kind: row.kind,
+        projection: row.projection,
+        createdAt: row.createdAt,
+      })),
+      evidenceRuns: runs.map((row) => ({
+        id: row.id,
+        state: row.state,
+        result: row.result,
+        scopeRevision: row.scopeRevision,
+        policyVersion: row.policyVersion,
+        inputFingerprint: row.inputFingerprint,
+        links: store.db
+          .select()
+          .from(evidenceRunLinks)
+          .where(eq(evidenceRunLinks.runId, row.id))
+          .all()
+          .map((link) => ({ criterionId: link.criterionId, taskId: link.taskId })),
+      })),
+      completion: completion === undefined
+        ? null
+        : {
+          id: completion.id,
+          acceptedRevision: completion.acceptedRevision,
+          revisionId: completion.revisionId,
+          planDigest: completion.planDigest,
+          inputFingerprint: completion.inputFingerprint,
+          deliveryId: completion.deliveryId,
+          deliveryProvenance: completion.deliveryProvenance,
+          reviewState: completion.reviewState,
+          uncertainty: JSON.parse(completion.uncertainty) as string[],
+          createdAt: completion.createdAt,
+        },
+    });
+  }
+  return { schema: 'deck.lifecycle/1', stories };
 }

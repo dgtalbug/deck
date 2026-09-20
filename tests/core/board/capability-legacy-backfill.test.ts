@@ -49,6 +49,11 @@ function source(overrides: Partial<ProjectionSourceRecord> = {}): ProjectionSour
       policyVersion: 2,
       inputFingerprint: 'input:legacy',
     },
+    completion: {
+      id: 'completion:legacy',
+      acceptedRevision: 3,
+      inputFingerprint: 'input:legacy',
+    },
     ...overrides,
   };
 }
@@ -84,6 +89,18 @@ describe('capability legacy backfill fixtures', () => {
     expect(eligibility.status).toBe('ineligible');
     expect(preview.changes).toEqual([]);
     expect(preview.conflicts).toEqual([{ deltaId: 'delta:legacy', reason: 'source is ineligible' }]);
+  });
+
+  test('done-lane legacy work without Phase 4 completion proof is unknown, never eligible', () => {
+    const eligibility = readCapabilityEligibility(source({ completion: null }));
+
+    expect(eligibility.status).toBe('unknown');
+    expect(eligibility.reasons).toContain('Phase 4 completion proof is missing — historical or legacy work cannot be treated as current capability truth');
+    const preview = previewCapabilityProjection([], delta('Legacy source-backed capability.'), new Map([
+      ['delta:legacy', eligibility],
+    ]));
+    expect(preview.changes).toEqual([]);
+    expect(preview.conflicts).toEqual([{ deltaId: 'delta:legacy', reason: 'source is unknown' }]);
   });
 
   test('accepted historical deltas use the same transaction and lineage contracts', () => {

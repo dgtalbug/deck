@@ -12,6 +12,7 @@ import { GhUnavailableError } from '../git/errors.ts';
 import { branchFor } from './slug.ts';
 import { evaluateEligibility } from './evidence.ts';
 import { compensateOperation, completeOperation, reserveOperation } from './ownership.ts';
+import { recordCompletion } from './apply.ts';
 import { defaultBranch } from './archive.ts';
 import { runMomentPost } from './moments.ts';
 
@@ -231,6 +232,12 @@ export async function finalizeDelivery(store: DocumentStore, id: string): Promis
         .where(eq(deliveries.id, delivery.id))
         .run();
     });
+    await recordCompletion(store, {
+      cardId: id,
+      deliveryId: delivery.id,
+      deliveryProvenance: 'hosted',
+      reviewState: 'reviewed-preparation',
+    });
     completeFromDelivery(store, id, delivery.id);
     completeOperation(store, operation.id);
 
@@ -290,6 +297,12 @@ async function finalizeSolo(
         .set({ mergeSha: integration.mergedSha, mergeMethod: 'local-no-ff', provenance: 'local', updatedAt: nowIso() })
         .where(eq(deliveries.id, delivery.id))
         .run();
+    });
+    await recordCompletion(store, {
+      cardId: id,
+      deliveryId: delivery.id,
+      deliveryProvenance: 'local',
+      reviewState: 'reviewed-preparation',
     });
     completeFromDelivery(store, id, delivery.id);
     completeOperation(store, operation.id);
