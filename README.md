@@ -1,145 +1,463 @@
-# ♠ deck
+<p align="center">
+  <img src="public/assets/deck-banner.png" alt="Deck — The control room between you and your coding agent. Local-first, spec-driven, MIT." width="100%">
+</p>
 
-**The control deck for your agent crew.**
+<p align="center">
+  <strong>Graph-native software delivery for humans and AI coding agents.</strong>
+</p>
 
-deck is a local-first harness, SDD engine, and project brain for AI coding agents.
-Spec-driven development as conventional-commit verbs, a kanban board on SQLite,
-and a GitHub loop — one binary, one server, every agent.
+<p align="center">
+  <a href="https://github.com/dgtalbug/deck/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-a3e635?style=flat-square" alt="MIT license"></a>
+  <img src="https://img.shields.io/badge/status-early_development-fbbf24?style=flat-square" alt="Early development">
+  <img src="https://img.shields.io/badge/local--first-SQLite-93c5fd?style=flat-square" alt="Local-first with SQLite">
+</p>
 
-> **less text, more work.** The UI is the eagle-eye view; agents do the typing.
+<p align="center">
+  <a href="#why-deck">Why Deck</a> ·
+  <a href="#the-delivery-loop">The delivery loop</a> ·
+  <a href="#get-started">Get started</a> ·
+  <a href="#agent-skills">Agent skills</a> ·
+  <a href="#project-status">Project status</a> ·
+  <a href="#contributing">Contributing</a>
+</p>
+
+<p align="center">
+  <a href="#your-first-change">Your first change</a> ·
+  <a href="#from-a-requirement-to-a-work-plan">Planning big work</a>
+</p>
 
 ---
 
-## Status — what's real today
+Deck is a local-first, open-source software delivery system being built to turn a requirement into a specification, a graph-informed implementation plan, controlled execution, and verified completion—**all tied to the actual codebase**.
 
-deck is early and building in the open. The **board, CLI, server, UI, SDD engine verbs, and git/gh layer are implemented and covered by the repository's automated checks**. The plan and decision ledger live in [`.meta/sdd-engine.md`](.meta/sdd-engine.md). Passing tests are source-level evidence; they do not by themselves prove a hosted deployment or every provider path.
+The board makes work visible. The CLI, API, MCP, and agent skills connect humans and agents to Deck's native lifecycle. GitHub integration carries work and delivery records into the tools teams already use.
 
-**Working now:**
+> **Early development.** Deck's core foundations are implemented and undergoing stabilization. The full experience across every interface is still evolving. The workflow below describes the product direction; see [project status](#project-status) for current boundaries.
 
-- **Board core** — `todo → groomed → active → verify → done` lanes on SQLite (WAL for concurrent agents, FTS5-ready), engine-owned lane law (humans move `todo ↔ groomed` only; `active`/`verify`/`done` are engine events), WIP limits, transactional event outbox.
-- **Multiple doors, one core** — the same domain functions are exposed through the CLI, REST/SSE server, MCP server, web UI, and single-file compiled binary. The running server exposes its current OpenAPI document at [`/openapi.json`](http://127.0.0.1:3325/openapi.json).
-- **CLI** — `deck note · board · groom · move · reorder · block · unblock · next · tweak · feat/fix/… · verify · review · archive · deliver · delivery · policy · cleanup · recall · checkpoint · baseline · ops · rules · graph · init · doctor · projects · serve`.
-- **Web UI** — dark-default board at `http://127.0.0.1:3325` with live SSE updates, note capture in one action, card detail, groom form, deep-linkable `?view=todo|git`, guarded git view (branch/merge/commit/stash/PR), skeleton loading states.
-- **Git + gh** — 13 guarded git operations plus PR create/list behind typed `GhUnavailable` handling; `gh` resolved beyond `PATH`.
-- **Fast lane** — `deck tweak` promotes a one-line note straight to a build; ceremony scales with blast radius, never the other way around.
-- **Resume-first `deck next`** — the most-advanced active card leads the digest (bounded ≤8k-char packet: scope, tasks, laws, checkpoint, recall); `deck next --ready` peeks at the queue read-only without starting or reserving anything; an empty board says so plainly.
-- **Source baselines & context advisories (EXPERIMENTAL — not a shipped feature)** — an evaluation harness, not product: the graph-ranked candidate failed its frozen live pilot (recall/precision gates) and stays opt-in until a passing experiment. `deck baseline capture <id> <path>…` snapshots explicitly selected working-tree bytes (secret-shaped paths refused; snapshots stay local under `.deck/baselines/`) bound to the card's scope revision and graph generation; `deck baseline read|compare|advise` reports exact baseline/current digests and change states. `deck next --context-advisories baseline|graph` opts into an optional retrieval advisory that competes only for the packet's leftover budget — never displacing mandatory context (off by default): deterministic path/keyword ranking, or a graph-ranked candidate whose neighbor tiers stay visible (heuristic/unresolved edges are never presented as resolved) with an explicit labeled fallback to baseline retrieval when the graph is missing or stale. Advisories never gate execution — a changed byte is a fact, not a verdict. Pilot protocol and evidence live under `scripts/evaluation/` and `.deck/evaluations/` (replayed transcripts are reported but never count as live host execution).
-- **Session checkpoints** — `deck checkpoint <id>` reads the card's durable decisions; `deck checkpoint <id> add "<text>" --kind decision|gotcha|remaining|blocker` writes one (revision-checked, retry-safe, human text never overwritten). New entries bind the accepted scope revision and spec bytes. Current-card checkpoints ride the `deck next` digest; stale ones are labeled historical, while legacy byte-only entries with unverified E03 scope are labeled provenance unknown.
-- **Trustworthy recall** — session memory stays authoritative Markdown; the FTS index rebuilds transactionally from a content signature (mtime games can't fool it), queries are literal, and stale/error diagnostics surface in `deck recall` and the digest instead of pretending the memory is empty.
-- **Tracked skill pack** — the fourteen `deck-*` runbooks are authored in `src/skills/`, embedded byte-for-byte into the binary, and `deck doctor` reports missing/stale/customized installs; `deck setup` repairs managed regions without touching your edits.
-- **Versioned project intent (E03)** — epics carry optional intent + acceptance criteria with stable IDs (`deck epic-plan <id> intent/link/defer`), children acknowledge parent revisions, and the epic read shows uncovered criteria. Stories take dependency edges (`deck deps <story> add <prereq>`): ready selection skips blocked work and explains why, and a direct start re-checks every prerequisite inside the start reservation. Task/criterion identities survive re-grooms (no-op and reorder keep IDs; renames and removals are explicit ops), and accepted scope carries immutable revisions distinct from the publication checksum — checking a box never changes scope identity.
-- **Delivery & evidence policy (E05)** — every card enrolls a versioned delivery policy (`deck policy`): **team** is the default (prepare a PR, complete only on an observed merge with the configured required checks and approvals bound to the expected PR head); **solo** is an explicit opt-in that completes on guarded local integration and claims no hosted assurance. Acceptance evidence binds machine runs (or attributed manual review for criteria explicitly designated manual) to the exact scope revision, policy version, and byte-level execution-input fingerprint — changed inputs, failed or missing evidence block completion, and manual review can never override a required automated check. Rule overrides cannot bypass required evidence.
-- **Portable evidence and living capabilities** — `deck evidence export <epic-id> --out <dir>` writes a local, versioned `deck.evidence-bundle@1.0.0` JSON snapshot plus deterministic Markdown review. It includes stable project/epic/story IDs, scope and parent revisions, selected decisions, evidence and delivery summaries, freshness/assurance status, safe relative references and explicit omissions. It excludes raw commands, logs, checkpoint bodies, absolute paths, environment/config values and unsafe links. `deck evidence view <bundle.json>` renders the bundle offline and never performs provider reads. Capability projection is a separate local derived view: `deck capability preview <delta-file>` stores an attributable preview from explicit source-backed deltas, and `deck capability apply <preview-id> --accept` appends an accepted projection version. It does not write `openspec/specs/`, mutate historical source/evidence rows, infer missing proof, or claim hosted assurance beyond recorded delivery evidence.
+<br>
 
-## Quick start
+---
 
-Requires [Bun](https://bun.sh).
+## Why Deck?
 
-```bash
+A coding session produces more than a diff. Requirements, decisions, dependencies, unfinished work, and test results need to survive the session—and remain connected when the code changes.
+
+<table>
+<tr>
+<td width="50%" valign="top">
+
+**Know what was agreed**
+
+Versioned specifications preserve requirements, acceptance criteria, and planned tasks. Stable identities keep progress connected to the accepted scope.
+
+</td>
+<td width="50%" valign="top">
+
+**Understand the impact**
+
+Inspect code relationships before making a change. Capture the analysis behind the plan, with freshness and uncertainty visible.
+
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+
+**Carry work across sessions**
+
+Ownership, checkpoints, dependencies, and handoffs preserve the work context. Resume with the decisions and remaining tasks close at hand.
+
+</td>
+<td width="50%" valign="top">
+
+**Make completion explainable**
+
+Connect acceptance criteria to current verification evidence. Track delivery separately so a prepared PR and an observed merge remain distinguishable.
+
+</td>
+</tr>
+</table>
+
+**Agents reason. Deck enforces. Humans steer.**
+
+Agents research, propose, and implement. Deck validates state transitions and records scope, ownership, and evidence. Human review and approval guide consequential decisions.
+
+<br>
+
+---
+
+## The delivery loop
+
+The target lifecycle connects intent, code, and evidence:
+
+```mermaid
+flowchart LR
+    A["01 · Specify<br/>Agree on the outcome"] --> B["02 · Inspect impact<br/>Understand the code"]
+    B --> C["03 · Plan & approve<br/>Define the work"]
+    C --> D["04 · Apply<br/>Implement with ownership"]
+    D --> E["05 · Verify<br/>Check against criteria"]
+    E --> F["06 · Complete<br/>Record evidence & delivery"]
+    E -. "Gaps found" .-> D
+
+    classDef intent fill:#172512,stroke:#a3e635,color:#efffcf;
+    classDef work fill:#122231,stroke:#93c5fd,color:#e0f2fe;
+    classDef proof fill:#252113,stroke:#fbbf24,color:#fef3c7;
+    class A,B,C intent;
+    class D work;
+    class E,F proof;
+```
+
+| Before a change | During implementation | At completion |
+| :--- | :--- | :--- |
+| Accepted requirements and criteria | Explicit ownership and checkpoints | Evidence for the accepted criteria |
+| Recorded code impact and uncertainty | Progress against stable task identities | Review findings and remaining gaps |
+| A reviewed implementation plan | Recovery and handoff context | Local integration or observed GitHub delivery |
+
+The board's `todo → groomed → active → verify → done` lanes summarize the lifecycle. Engine operations govern starting, verifying, and completing work.
+
+<details>
+<summary><strong>Example: changing a shared permission check</strong></summary>
+
+1. **Specify:** define who should be allowed to perform the action, including denied cases.
+2. **Inspect:** find callers of the permission check and confirm uncertain graph relationships in source.
+3. **Plan:** identify the affected behavior, implementation tasks, and required checks.
+4. **Apply:** the agent implements the accepted change and records decisions and progress.
+5. **Verify:** collect evidence for allowed and denied cases; investigate changes outside the planned impact.
+6. **Complete:** retain the accepted scope, verification record, and delivery outcome.
+
+This illustrates the intended workflow; it is not a claim that a specific permission change has been executed or verified.
+
+</details>
+
+<br>
+
+---
+
+## Get started
+
+**Build from source today.** A one-command package installation is planned; it is not currently available.
+
+Prerequisites: **Git** and **[Bun](https://bun.sh) 1.4+**. GitHub operations additionally require an authenticated [GitHub CLI](https://cli.github.com). Configure your coding agent separately.
+
+### 1. Build Deck
+
+```sh
 git clone https://github.com/dgtalbug/deck.git
 cd deck
 bun install
-bun run build          # UI bundle + single-file ./deck binary
-bun run test:smoke     # rebuild + isolated compiled lifecycle smoke
-
-./deck serve           # board at http://127.0.0.1:3325
-./deck note "first thought"
-./deck doctor          # 9 checks
+bun run build
 ```
 
-Or run from source: `bun run dev` (server) · `bun run test:fast` (everyday suite) · `bun test` (full suite + coverage) · `bun run typecheck`. Domain tiers (`test:ui`, `test:board`, `test:server`, `test:cli`, `test:engine`, `test:graph`, `test:slow`) and the slow/flake notes live in [docs/testing.md](docs/testing.md).
+The build creates the `deck` executable in the repository root. Use its absolute path below, or add the executable to your `PATH`.
 
-`bun run test:smoke` is the compiled-binary lifecycle check. It uses an isolated temporary Deck home, project, Git repository, and fake `gh` executable; it does not touch a real project or GitHub account. The smoke exercises capture, HTTP grooming, start, verification gaps, clean verification, process restarts, and solo delivery finalization.
+### 2. Connect your project
 
-## The loop (where this is going)
+Run these commands in the Git repository you want Deck to manage. Replace both example paths with your actual locations.
 
-```
-deck note ─→ groom ─→ deck feat ──→ implement ──→ verify ─⇄ gaps
-              │          │                          │
-              │          └─ issue published at      └─ clean → review gate
-              │             implementation start         │
-              └─ GroomProposal: verb · research ·       └─ archive: prepare PR
-                 spec deltas · tasks                      delivery pending · card stays verify
-                                                          │
-                                                          └─ deliver: observed merge
-                                                             (or solo local integration)
-                                                             card → done · cleanup retries
+```sh
+cd /path/to/your-project
+/path/to/deck/deck init
+/path/to/deck/deck setup
+/path/to/deck/deck note "Describe the change you want to make"
 ```
 
-- **Specs live in the db, not markdown folders** — every groomed change carries its delta spec, research, and tasks as first-class data.
-- **Every spec gets a GitHub issue from birth** — grooming publishes a draft issue; starting the verb retargets it; labels mirror lanes; `deck sync` reconciles.
-- **The verb is the process** — spec types (`deck types`) are user-editable workflows: `fix` demands Reproduce + Root cause and cannot pass review without a red→green test; `feat` demands design sections when the blast radius grows; custom types carry their own sections, task laws, and git conventions, edited live without touching code.
-- **Agents get a full skill pack** — `deck setup` installs fourteen composable runbook skills (capture → build → finish, plus git conventions, resume, sync, graph lenses) into every detected agent host's skills directory — reproduced byte-for-byte from the tracked `src/skills/` source, with drift reported by `deck doctor`.
-- **The engine is deterministic** — deck computes checklists and gaps instantly; agents bring the intelligence via `deck next` (≤8k-char bounded context packets with source/revision status and required-read directives on overflow).
-- **No lock-in** — import/export adapters planned for openspec, spec-kit, backlog.md, and plain Markdown/JSON.
+`init` registers the project and creates its local state. `setup` detects supported agent configuration and installs the corresponding skills, preserving customized skill files.
 
-## Cooperative task edits and handoffs
+### 3. Open the board
 
-Whole-list task replacement is engine-internal; cooperative writers edit one task at a time through revision-checked patches and explicit ownership handoffs. An **owner handle** is a local coordination name (e.g. `agent-a`) recorded on the task — it is not authentication.
-
-```
-deck task show <card> <task>                                 # current revision + owner
-deck task assign <card> <task> --owner <handle> [--by <who>] # record the owner
-deck task patch <card> <task> --rev <n> --owner <handle> \
-               --command <id> --done true|false              # atomic owner/revision-checked edit
-deck handoff offer <card> --task <id> --from <a> --to <b> [--remaining "…"]
-deck handoff accept <card> <handoff-id> --as <b>
-deck handoff cancel <card> <handoff-id> --as <a>
-deck handoff list <card>
+```sh
+/path/to/deck/deck serve
 ```
 
-The same doors exist over HTTP (`PATCH /:project/cards/:id/tasks/:taskId`, `POST .../assign`, `POST/GET .../handoffs`, `.../accept`, `.../cancel`) and MCP (`task_patch`, `handoff_offer`, `handoff_accept`, `handoff_status`).
+Open **[localhost:3325](http://127.0.0.1:3325)**. Keep this terminal running; use another terminal for further commands.
 
-Error contract, in order of check:
+<details>
+<summary><strong>What initialization changes</strong></summary>
 
-- **stale revision** — the task changed since you read it; the refusal carries the current revision (re-read, resubmit).
-- **owner mismatch** — the task belongs to another (or no) owner; assignment or acceptance transfers it.
-- **duplicate command** — the same `commandId` with the same payload replays the original result; with a different payload it conflicts.
-- **handoff basis changed** — scope revision or checkpoint moved after the offer; the sender must re-offer.
-- **unsettled execution** — a running/recovering engine operation on the card blocks acceptance until reconciled (`deck ops reconcile`); a database record cannot stop a live process, so uncertain effects never auto-transfer.
+Deck creates a local project database and default configuration, adds a managed guidance block to `AGENTS.md`, and adds database exclusions to `.gitignore`. Agent setup installs guidance for the supported hosts it detects and reports its actions.
 
-Timeout alone never transfers ownership; only explicit acceptance does. Checkbox patches never change scope identity or complete a card — title/scope edits go through grooming.
+For MCP clients, configure the client to launch the executable with `mcp` as its argument. Client setup depends on your agent host.
 
-## Isolated workspaces (opt-in)
+</details>
 
-Checkout mode stays the default. Opt into isolated execution with worktrees that share one canonical board:
+<br>
 
+---
+
+## Your first change
+
+Capture a note, then use the board or an agent to clarify the requirements and submit a groomed proposal. Review the scope and inspect the relevant code before starting.
+
+These commands assume `deck` is on your `PATH` and you are in the registered project root. Replace `<card-id>` with your card's actual ID.
+
+| Step | Command | What it does |
+| :--- | :--- | :--- |
+| Inspect | `deck board` | Show current work |
+| Research | `deck graph index` | Refresh the code graph |
+| Start | `deck start feat <card-id>` | Start a groomed feature through the engine |
+| Resume | `deck next` | Read the current work context |
+| Review | `deck review <card-id>` | Run the review gate |
+| Prepare | `deck archive <card-id>` | Prepare delivery; completion remains pending |
+| Deliver | `deck deliver <card-id>` | Finalize when the delivery policy is satisfied |
+
+Your agent performs implementation and the required verification between these steps. Starting and delivering work can change Git branches and publish to GitHub.
+
+<details>
+<summary><strong>More commands and workflow details</strong></summary>
+
+```sh
+deck help                         # Discover commands
+deck help start                   # Inspect a command's surface
+deck next --ready                 # Inspect ready work without starting it
+deck graph search "symbol"        # Find symbols
+deck graph impact "symbol"        # Inspect potential impact
+deck graph why "symbol"           # Inspect upstream relationships
+deck scope show <card-id>          # Inspect accepted scope
+deck checkpoint <card-id>          # Read durable checkpoints
+deck delivery <card-id>            # Inspect delivery and follow-up state
 ```
-deck workspace create --name <name>    # managed sibling worktree on branch deck/<name>
-deck workspace attach <path>           # attach an existing worktree (same repo only)
-deck workspace status                  # canonical + per-workspace health
-deck workspace reconcile <id>          # inspect actual Git state vs the record
-deck workspace cancel <id>             # stop + remove a clean, owned worktree
+
+`deck groom <card-id>` prints a proposal contract. Submit the proposal through the board or supported agent/API workflow.
+
+Team delivery uses observed PR state and configured checks. Solo delivery is an explicit policy choice for local integration. Required evidence and review findings must be addressed before completion.
+
+</details>
+
+<br>
+
+---
+
+## Agent skills
+
+Deck ships **composable agent runbooks** for the delivery workflow. They tell your coding agent how to research, plan, build, verify, and resume work through Deck's commands. The engine owns lifecycle rules; skills guide the agent's use of them.
+
+Run `deck setup` in your project to install the pack for detected agent hosts. Current adapters include Claude Code, Codex, GitHub Copilot, Cursor, Gemini CLI, and a shared agent-skills directory. Detection and installation do not establish identical behavior across hosts.
+
+### Choose the right starting point
+
+```mermaid
+flowchart TD
+    Request["What do you want to do?"] --> Small["One focused change<br/>deck-capture"]
+    Request --> Large["A larger initiative<br/>deck-plan"]
+    Request --> Resume["Continue existing work<br/>deck-continue"]
+    Small --> Approval["Review and approve<br/>the groomed scope"]
+    Large --> Approval
+    Approval --> Build["Implement and verify<br/>deck-build"]
+    Build --> Finish["Review, prepare, deliver<br/>deck-finish"]
+    Build -. "Interrupted session" .-> Resume
+    Resume -. "Resume at the current stage" .-> Build
+    Resume -. "Already ready for review" .-> Finish
+
+    classDef planning fill:#172512,stroke:#a3e635,color:#efffcf;
+    classDef execution fill:#122231,stroke:#93c5fd,color:#e0f2fe;
+    classDef evidence fill:#252113,stroke:#fbbf24,color:#fef3c7;
+    class Small,Large,Approval planning;
+    class Build,Resume execution;
+    class Finish evidence;
 ```
 
-- **One board** — every worktree opens the same canonical `board.sqlite`; events, WIP limits and duplicate-start fencing are shared. Separate board databases are never merged; attachment refuses them.
-- **Execution follows the assignment** — hooks, checks, review diffs and delivery read the checkout the card was started in (`deck feat <id>` from inside the worktree), never silently the canonical path. CLI commands discover the canonical project from any worktree of a registered repository.
-- **Recovery, not guessing** — creation intent is recorded before any Git effect; a crash leaves an inspectable `creating`/`recovery-required` row. Missing or replaced assigned paths refuse execution with recovery details (`deck workspace status` → `reconcile`) instead of falling back to the canonical checkout. Cancel never force-removes dirty trees or unmerged branches — they stay with an actionable note.
-- **Overlaps stop for a human** — integration writes serialize on the target checkout with a named owner; conflicting merges abort with both branches preserved.
+Capture and planning stop before implementation. Resume follows the current card state; it does not restart the workflow from scratch. Recovery can require an explicit user decision before work continues.
 
-## Architecture
+### Ask your agent
 
-| Concern | Choice |
-|---|---|
-| Runtime | TypeScript on **Bun** (hard requirement) — `bun:sqlite`, `Bun.serve`, native TSX, `bun build --compile` |
-| Store | **SQLite** via Drizzle — WAL, busy-timeout, embedded migrations |
-| Server | `Bun.serve()` typed routes, SSE streams, content-negotiated static shell |
-| UI | **Preact** components + signals, pragmatic-drag-and-drop, dark default with no-flash mode pin |
-| Contract | zod schemas → OpenAPI 3.1 generated from the same source that validates requests |
-| Distribution | single-file binary (`./deck`); npm publish planned |
+After setup, name the skill in your request. For example:
 
+> Use **deck-capture** to research and specify this bug. Stop before implementation.
+
+> Use **deck-build** to implement the approved card, then report verification gaps.
+
+> Use **deck-continue** to inspect the interrupted work and resume from its current state.
+
+These are agent requests, **not shell commands**. Invocation syntax depends on the host. The runbooks use the Deck CLI; they do not require a particular host-native tool syntax.
+
+<details>
+<summary><strong>Browse the skill pack</strong></summary>
+
+| When you need to… | Skill |
+| :--- | :--- |
+| Set up a project or diagnose onboarding | [deck-onboard](src/skills/deck-onboard/SKILL.md) |
+| Inspect the board, accepted scope, and next work | [deck-explore](src/skills/deck-explore/SKILL.md) |
+| Research and specify one focused request | [deck-capture](src/skills/deck-capture/SKILL.md) |
+| Shape a larger idea into epics and stories | [deck-plan](src/skills/deck-plan/SKILL.md) |
+| Map relevant code before planning or building | [deck-spec-map](src/skills/deck-spec-map/SKILL.md) |
+| Inspect blast radius before editing symbols | [deck-impact](src/skills/deck-impact/SKILL.md) |
+| Implement approved scope and run verification | [deck-build](src/skills/deck-build/SKILL.md) |
+| Resume work or investigate a stuck operation | [deck-continue](src/skills/deck-continue/SKILL.md) |
+| Review, prepare delivery, and finalize | [deck-finish](src/skills/deck-finish/SKILL.md) |
+| Revise or reorganize work that has not started | [deck-update](src/skills/deck-update/SKILL.md) |
+| Reconcile publication and GitHub issue drift | [deck-sync](src/skills/deck-sync/SKILL.md) |
+| Inspect or customize specification types | [deck-types](src/skills/deck-types/SKILL.md) |
+| Follow the project's Git conventions | [deck-git-conventions](src/skills/deck-git-conventions/SKILL.md) |
+| Run structural code-graph audits | [deck-lens](src/skills/deck-lens/SKILL.md) |
+
+Research, impact, Git conventions, and audits support the main workflow when needed; they are not additional mandatory stages for every request.
+
+</details>
+
+<br>
+
+---
+
+## From a requirement to a work plan
+
+**The agent proposes the decomposition; Deck records and validates the plan.** A request first goes through a check for existing work, code research, and scope clarification. The capture runbook asks the agent to **reuse, update, create distinct work, or clarify** before creating another card.
+
+### Choose the shape before building
+
+| Shape | When the planning skill recommends it | What it contains |
+| :--- | :--- | :--- |
+| **Small task card** | One concern with up to three implementation tasks | A bounded change and its task checklist; specification detail follows the change type |
+| **Story** | A larger coherent slice, including work with more than three tasks | Its own specification, acceptance criteria, research, and implementation tasks |
+| **Epic** | An initiative with three or more stories, or broader multi-module/research-and-build work | Overall intent, epic acceptance criteria, and linked stories with explicit dependencies |
+
+These are **planning-runbook guidelines**, not an automatic classifier. The grooming code does enforce a specification-content check when a proposal has more than three tasks. That check alone does not establish the quality or completeness of the plan.
+
+A *task card* and a *checklist task* are different: the card moves through the delivery lifecycle; its checklist tasks are implementation steps with stable IDs and progress. A groomed story is also a work card and may belong to an epic. Deck currently supports epic → story/card → task hierarchy; nested epics are not supported.
+
+### Example: “Let teams invite and manage members”
+
+```mermaid
+flowchart TD
+    R["User requirement<br/>Teams can invite and manage members"] --> E["Epic<br/>Team membership<br/>Intent + acceptance criteria"]
+    E --> S1["Story 1 · Invitations<br/>Send and accept an invitation"]
+    E --> S2["Story 2 · Permissions<br/>Enforce member roles"]
+    E --> S3["Story 3 · Administration<br/>List and remove members"]
+    S1 --> T1["Tasks<br/>Persist invitations<br/>Add accept endpoint<br/>Build invite form<br/>Test expiry and reuse"]
+    S2 --> T2["Tasks<br/>Define role rules<br/>Enforce authorization<br/>Test allowed and denied cases"]
+    S3 --> T3["Tasks<br/>List members<br/>Implement removal<br/>Test access after removal"]
+
+    classDef intent fill:#172512,stroke:#a3e635,color:#efffcf;
+    classDef story fill:#122231,stroke:#93c5fd,color:#e0f2fe;
+    classDef task fill:#252113,stroke:#fbbf24,color:#fef3c7;
+    class R,E intent;
+    class S1,S2,S3 story;
+    class T1,T2,T3 task;
 ```
-src/
-├── cli/        verb dispatch table (route↔core↔CLI parity)
-├── core/       board domain, git ops, project registry — no I/O doors
-├── server/     REST/SSE routes, static shell, OpenAPI
-└── ui/         Preact board (slices: home, board, git)
+
+This is an illustrative decomposition, not generated project state. Story boundaries follow reviewable outcomes; the task count helps size the work but does not replace judgment.
+
+<details>
+<summary><strong>How a large plan is assembled</strong></summary>
+
+1. **Research and choose slices.** `deck-plan` uses `deck-spec-map` to find relevant code and natural boundaries. It can choose a research/POC-first, per-feature/module, or staged approach, explaining why the split fits.
+
+2. **Record the epic's intent.** Define the overall outcome and acceptance criteria. Create child stories for reviewable slices rather than putting every implementation detail in one giant epic specification.
+
+3. **Specify each story.** Compose `deck-types` and `deck-capture` to select the change type and groom the story. Each story should state its outcome, scope, non-goals, acceptance criteria, validation, and whether it can ship independently. Its task checklist describes the concrete implementation work.
+
+4. **Record prerequisites.** Add an explicit dependency when another story must complete first; otherwise state that none is required. Deck rejects dependency cycles. Ready-work selection skips unmet prerequisites, and starting a card checks them again.
+
+5. **Check coverage.** Link epic criteria to the stories responsible for them, or defer a criterion with a reason. Deck exposes uncovered criteria and children that need to acknowledge revised parent intent. A coverage link records responsibility; it does not prove the criterion has passed.
+
+6. **Approve and execute per story.** Planning stops before implementation. After approval, `deck-build` handles a story's tasks and verification, `deck-continue` resumes it, and `deck-finish` handles review and delivery. Independent stories may be candidates for parallel work, subject to ownership, WIP, and workspace constraints.
+
+The epic view rolls up child-story completion and task progress. Checking every task box is not sufficient proof of delivery; the story still goes through verification and the configured delivery policy.
+
+</details>
+
+<br>
+
+<details>
+<summary><strong>Planning commands and source contracts</strong></summary>
+
+The following illustrates the command sequence. Replace placeholders with the IDs returned by your project. Creating a story creates an attached note; groom it through the board or supported API before linking it as a specified story or adding dependencies.
+
+```sh
+deck epic "Team membership"
+deck epic-plan <epic-id> intent "Teams can manage membership" --criterion "Owners can invite members"
+deck story <epic-id> "Send and accept invitations"
+# Research and groom each story through the board or supported agent/API workflow.
+deck epic <epic-id>                                  # Inspect criteria IDs and children
+deck epic-plan <epic-id> link <criterion-id> <story-id>
+deck deps <dependent-story-id> add <prerequisite-story-id>
+deck deps <story-id> list
+deck epic <epic-id>                                  # Inspect coverage and rollup
+deck next --ready                                    # Inspect ready work
 ```
 
-## Design
+The agent authors task descriptions in the grooming proposal. Deck assigns task identities and stores the accepted plan; it does not independently turn natural-language requirements into implementation tasks.
 
-deck wears the **Electric v2.0** design system (shared with its sibling [iris](https://www.npmjs.com/package/@dgtalbug/iris)) — oklch tokens, semantic color law, dark-first. The identity — spade mark, terminal banners, 72-column grid — is transcribed from locked brand artifact sets, never improvised.
+Source contracts: [planning runbook](src/skills/deck-plan/SKILL.md), [capture runbook](src/skills/deck-capture/SKILL.md), [card and task types](src/core/board/types.ts), [grooming checks](src/core/board/groom.ts), [epic criteria and dependencies](src/core/board/planning.ts), and [start-time dependency checks](src/core/engine/verbs.ts).
 
-## License
+These commands describe Deck's product workflow. Development of Deck itself continues to use OpenSpec during stabilization.
 
-[MIT](LICENSE) © dgtalbug
+</details>
+
+<br>
+
+---
+
+## Project status
+
+| Area | Current boundary |
+| :--- | :--- |
+| **Specifications** | Accepted revisions, requirements, criteria, and stable task identities are represented in the native domain. |
+| **Code intelligence** | JavaScript, TypeScript, and TSX providers; graph queries, impact snapshots, approvals, and drift findings. |
+| **Agent continuity** | Checkpoints, recall, ownership, handoffs, and optional isolated worktrees. |
+| **Verification & delivery** | Evidence eligibility and delivery policies; complete cross-interface behavior remains under stabilization. |
+| **Interfaces** | Board, CLI, API, MCP, and skills; coverage varies by operation. |
+| **Distribution** | Source-build path. npm installation and downloadable platform executables remain future work. |
+
+**Graph evidence has limits.** Structural, heuristic, and unresolved relationships remain distinct. Confirm uncertain dependencies in source. Optional graph-ranked retrieval advisories are experimental; efficiency gains have not been established.
+
+**Next:** easier installation, unified approval and recovery views, and reproducible end-to-end evidence. GitHub Projects is a planned projection. Roadmap goals do not establish released behavior.
+
+<details>
+<summary><strong>Architecture and sources of truth</strong></summary>
+
+```mermaid
+flowchart TD
+    Human["Human<br/>Inspect and steer"] --> Board["Board"]
+    Agent["Coding agent<br/>Follow Deck skills"] --> Tools["CLI / API / MCP"]
+    Board --> Core["Deck native lifecycle<br/>Scope · ownership · evidence"]
+    Tools --> Core
+    Core --> Store[("SQLite<br/>Operational state")]
+    Source["Source files<br/>Actual implementation"] --> Graph[("Code graph<br/>Derived analysis")]
+    Graph --> Core
+    Core <-->|"Publish and reconcile"| GitHub["GitHub<br/>Issues and PR delivery facts"]
+
+    classDef domain fill:#172512,stroke:#a3e635,color:#efffcf;
+    classDef derived fill:#122231,stroke:#93c5fd,color:#e0f2fe;
+    class Core,Store domain;
+    class Source,Graph derived;
+```
+
+Deck owns operational lifecycle state. The graph is rebuildable analysis of source; GitHub supplies external publication and delivery facts. Interfaces expose that shared domain, with coverage varying by operation.
+
+Built with **TypeScript · Bun · SQLite/Drizzle · Tree-sitter · Preact**.
+
+Deck's own development uses OpenSpec during stabilization. Deck users do not need OpenSpec; Deck has its own specification records and native lifecycle.
+
+</details>
+
+<br>
+
+---
+
+## Contributing
+
+Useful contributions include **reproducible bugs, onboarding feedback, graph-resolution examples, and verification edge cases**.
+
+[Open an issue](https://github.com/dgtalbug/deck/issues) with your version, operating system, reproduction steps, and expected versus actual behavior. Discuss substantial behavior or architecture changes before implementation so requirements and verification can be agreed upon.
+
+<details>
+<summary><strong>Development commands</strong></summary>
+
+```sh
+bun run dev          # Development server
+bun run typecheck    # TypeScript checks
+bun run lint         # Source, test, and script linting
+bun run test:fast    # Everyday test tier
+bun run test:full    # Full suite with coverage
+bun run test:smoke   # Build and isolated compiled lifecycle smoke
+```
+
+The compiled smoke test uses temporary projects and a simulated GitHub CLI. It does not establish live GitHub behavior.
+
+</details>
+
+---
+
+<p align="center">
+  <strong>Specify with intent. Build with context. Complete with evidence.</strong><br>
+  <a href="https://github.com/dgtalbug/deck/blob/main/LICENSE">MIT licensed</a> · <a href="https://github.com/dgtalbug/deck/issues">Feedback & issues</a>
+</p>
