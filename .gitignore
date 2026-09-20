@@ -21,9 +21,6 @@
 !/LICENSE
 !/README.md
 !/CHANGELOG.md
-!/docs/
-/docs/*
-!/docs/testing.md
 
 # Build & runtime artifacts (also ignored inside tracked dirs)
 node_modules/
@@ -49,3 +46,4 @@ coverage/
 # Local planning only (including completed and archived changes)
 /openspec/
 /specs/
+/docs/

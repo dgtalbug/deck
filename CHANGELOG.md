@@ -52,3 +52,4 @@
 - 2026-09-20 — feat: Accept graph-impact snapshots as part of the planning contract (c2fbe72).
 - 2026-09-20 — feat: Controlled apply operations, crash-safe evidence runs, and verified completion (d130a7e).
 - 2026-09-20 — chore: Keep OpenSpec planning and legacy specs local; remove previously tracked OpenSpec files without deleting local copies; track the public changelog.
+- 2026-09-20 — chore: Remove standalone evaluation protocol documentation and stale comment references; keep all docs, including the testing guide, local-only.

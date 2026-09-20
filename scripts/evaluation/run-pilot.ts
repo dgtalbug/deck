@@ -1,4 +1,4 @@
-// Live paired pilot runner (frozen protocol: scripts/evaluation/protocol.md).
+// Live paired pilot runner.
 // Builds isolated scenario workspaces, produces the deck context packet per
 // strategy arm, runs headless ZCode trials, and records real receipts.
 // Usage: bun run scripts/evaluation/run-pilot.ts [--dry-run]

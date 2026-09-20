@@ -22,7 +22,7 @@ function mean(xs: number[]): number {
   return xs.length === 0 ? 0 : xs.reduce((total, value) => total + value, 0) / xs.length;
 }
 
-// Frozen pilot rule (scripts/evaluation/protocol.md): equal budgets, zero
+// Frozen pilot rule: equal budgets, zero
 // candidate critical violations, no increase in critical omissions or
 // interventions, strictly improved mean recall@10, and mean precision@10 plus
 // task-success rate no lower than baseline. These are engineering gates for
