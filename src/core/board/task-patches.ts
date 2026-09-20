@@ -3,7 +3,9 @@ import { and, eq, sql } from 'drizzle-orm';
 import { DeckError, NotFoundError, StaleWriterError } from './errors.ts';
 import { emitEvent } from '../events/outbox.ts';
 import { runTx, type DocumentStore, type Tx } from './store.ts';
-import { taskPatches, taskState, tasks, type TaskStateRow } from './schema.ts';
+import { applyOperations, taskPatches, taskState, tasks, type TaskStateRow } from './schema.ts';
+import { currentScopeRevision } from './accepted-scope.ts';
+import { StaleApplyBasisError } from '../engine/apply.ts';
 
 // Tasks start their delivery state at revision 1 with no owner. Seeding rides
 // the mutation that creates the task rows, never a later read or open.
@@ -153,6 +155,17 @@ function payloadDigest(input: TaskPatchInput): string {
 }
 
 export function applyTaskPatch(store: DocumentStore, input: TaskPatchInput): TaskPatchResult {
+  // A task patch under an active controlled apply must reference that apply's
+  // operation basis: a stale basis (scope moved under the apply) refuses
+  // without changing task progress.
+  const activeApply = store.db
+    .select()
+    .from(applyOperations)
+    .where(and(eq(applyOperations.cardId, input.cardId), eq(applyOperations.state, 'active')))
+    .get();
+  if (activeApply !== undefined && activeApply.acceptedRevision !== currentScopeRevision(store.db, input.cardId)) {
+    throw new StaleApplyBasisError(input.cardId, activeApply.acceptedRevision, currentScopeRevision(store.db, input.cardId));
+  }
   const digest = payloadDigest(input);
   let result: TaskPatchResult | undefined;
   runTx(store.db, (tx) => {

@@ -135,7 +135,9 @@ describe('checkpoint CLI door', () => {
     await checkpointCommand(store, parseArgs(['checkpoint', id, 'add', 'cli-written decision', '--kind', 'decision', '--basis', 'abc123']));
     const state = readCheckpoint(path, id);
     expect(state.entries[0]!.text).toBe('cli-written decision');
-    expect(state.entries[0]!.basis).toBe('abc123');
+    // The durable door derives basis from checkpoint authority (scope
+    // revision + entry digest); caller-supplied bases no longer override it.
+    expect(state.entries[0]!.basis).toMatch(/^scope:\d+:[0-9a-f]{16}$/);
     const listing = await checkpointCommand(store, parseArgs(['checkpoint', id]));
     expect(listing).toContain('checkpoint rev 1');
     expect(listing).toContain('cli-written decision');

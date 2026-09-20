@@ -80,8 +80,8 @@ export const userVerbs = sqliteTable('user_verbs', {
 export const operations = sqliteTable('operations', {
   id: text('id').primaryKey(),
   cardId: text('card_id').notNull(),
-  kind: text('kind', { enum: ['start', 'continue', 'review', 'archive'] })
-    .$type<'start' | 'continue' | 'review' | 'archive'>()
+  kind: text('kind', { enum: ['start', 'continue', 'review', 'archive', 'apply'] })
+    .$type<'start' | 'continue' | 'review' | 'archive' | 'apply'>()
     .notNull(),
   owner: text('owner').notNull(),
   checkout: text('checkout').notNull(),
@@ -140,6 +140,7 @@ export const handoffs = sqliteTable('handoffs', {
   checkpointRevision: integer('checkpoint_revision').notNull(),
   remainingWork: text('remaining_work'),
   evidenceIds: text('evidence_ids'),
+  evidenceBasis: text('evidence_basis'),
   state: text('state', { enum: ['offered', 'accepted', 'cancelled'] })
     .$type<'offered' | 'accepted' | 'cancelled'>()
     .notNull(),

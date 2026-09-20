@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { and, eq } from 'drizzle-orm';
 import { DeckError } from '../board/errors.ts';
 import { currentScopeRevision, scopeCriteria } from '../board/scope.ts';
-import { evidenceRecords } from '../board/schema.ts';
+import { evidenceRecords, evidenceRunLinks, evidenceRuns } from '../board/schema.ts';
 import { getPolicy, loadRules, runCheckCmd } from '../board/rules.ts';
 import type { DocumentStore } from '../board/store.ts';
 import type { DeliveryPolicy } from '../board/types.ts';
@@ -294,6 +294,37 @@ export async function evaluateEligibility(store: DocumentStore, cardId: string):
   const scopeRevision = currentScopeRevision(store.db, cardId);
   const inputs = await captureExecutionInputs(store.projectPath, { declaredInputs: [] });
   const records = listEvidence(store, cardId);
+  // Phase 4 evidence runs: a criterion is satisfied by a complete passed run
+  // bound to the current scope revision, policy version and input fingerprint,
+  // with the same standing as a legacy per-criterion record.
+  const runRows = store.db
+    .select()
+    .from(evidenceRuns)
+    .where(eq(evidenceRuns.cardId, cardId))
+    .all();
+  const runLinkRows = store.db
+    .select()
+    .from(evidenceRunLinks)
+    .all()
+    .filter((link) => runRows.some((run) => run.id === link.runId));
+  const runByCriterion = new Map<string, string>();
+  for (const run of runRows) {
+    if (
+      run.state !== 'complete' ||
+      run.result !== 'passed' ||
+      run.scopeRevision !== scopeRevision ||
+      run.policyVersion !== policy.version ||
+      run.inputFingerprint !== inputs.fingerprint
+    ) {
+      continue;
+    }
+    for (const link of runLinkRows) {
+      if (link.runId === run.id && link.criterionId !== null && !runByCriterion.has(link.criterionId)) {
+        runByCriterion.set(link.criterionId, run.id);
+      }
+    }
+  }
+  const incompleteRuns = runRows.filter((run) => run.state === 'incomplete');
   const criteria: CriterionEvidence[] = [];
   const reasons: string[] = [];
   for (const criterion of scopeCriteria(store.db, cardId).filter((item) => item.state === 'active')) {
@@ -341,8 +372,18 @@ export async function evaluateEligibility(store: DocumentStore, cardId: string):
     if (status !== 'satisfied') {
       reasons.push(`criterion "${criterion.title}" (${criterion.id}): ${status} ${manual ? '(manual)' : '(machine)'}`);
     }
+    if (status !== 'satisfied' && runByCriterion.has(criterion.id)) {
+      status = 'satisfied';
+      recordId = runByCriterion.get(criterion.id)!;
+      reasons.pop();
+    } else if (status === 'satisfied' && recordId === null) {
+      recordId = runByCriterion.get(criterion.id) ?? null;
+    }
     criteria.push({ criterionId: criterion.id, title: criterion.title, requirement: manual ? 'manual' : 'machine', status, recordId });
   }
   const eligible = criteria.every((criterion) => criterion.status === 'satisfied');
+  for (const run of incompleteRuns) {
+    reasons.push(`evidence run ${run.id} is incomplete — visible but ineligible for completion`);
+  }
   return { enrolled: true, policy, scopeRevision, fingerprint: inputs.fingerprint, criteria, eligible, reasons };
 }

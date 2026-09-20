@@ -29,6 +29,11 @@ function source(overrides: Partial<ProjectionSourceRecord> = {}): ProjectionSour
       policyVersion: 3,
       inputFingerprint: 'b'.repeat(64),
     },
+    completion: {
+      id: 'completion:cp-1',
+      acceptedRevision: 2,
+      inputFingerprint: 'b'.repeat(64),
+    },
     ...overrides,
   };
 }
@@ -80,5 +85,19 @@ describe('capability projection eligibility', () => {
 
     expect(result.status).toBe('ineligible');
     expect(result.reasons).toContain('attributable evidence is missing');
+  });
+
+  test('legacy done work without completion proof is unknown, never inferred', () => {
+    const result = readCapabilityEligibility(source({ completion: null }));
+
+    expect(result.status).toBe('unknown');
+    expect(result.reasons).toContain('Phase 4 completion proof is missing — historical or legacy work cannot be treated as current capability truth');
+  });
+
+  test('completion proof that predates the current scope is ineligible', () => {
+    const result = readCapabilityEligibility(source({ completion: { id: 'completion:cp-0', acceptedRevision: 1, inputFingerprint: 'b'.repeat(64) } }));
+
+    expect(result.status).toBe('ineligible');
+    expect(result.reasons).toContain('completion proof predates the current accepted scope revision');
   });
 });

@@ -6,6 +6,7 @@ import { runTx, type DocumentStore, type Tx } from '../board/store.ts';
 import { emitEvent } from '../events/outbox.ts';
 import { readCheckpoint } from '../board/checkpoint.ts';
 import { TaskOwnerMismatchError } from '../board/task-patches.ts';
+import { evidenceBasisDigest } from './apply.ts';
 
 export type HandoffState = HandoffRow['state'];
 
@@ -19,6 +20,7 @@ export interface Handoff {
   checkpointRevision: number;
   remainingWork: string | null;
   evidenceIds: string[];
+  evidenceBasis: string | null;
   state: HandoffState;
   createdAt: string;
   updatedAt: string;
@@ -45,6 +47,7 @@ function toHandoff(row: HandoffRow): Handoff {
     checkpointRevision: row.checkpointRevision,
     remainingWork: row.remainingWork,
     evidenceIds: row.evidenceIds === null ? [] : (JSON.parse(row.evidenceIds) as string[]),
+    evidenceBasis: row.evidenceBasis,
     state: row.state,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
@@ -128,6 +131,7 @@ export function offerHandoff(store: DocumentStore, input: HandoffOfferInput): Ha
       checkpointRevision,
       remainingWork: input.remainingWork ?? null,
       evidenceIds: JSON.stringify(input.evidenceIds ?? []),
+      evidenceBasis: evidenceBasisDigest(store, input.cardId),
       state: 'offered',
       createdAt: ts,
       updatedAt: ts,
@@ -222,6 +226,13 @@ export function acceptHandoff(store: DocumentStore, input: { handoffId: string; 
         `card ${row.cardId} checkpoint changed since the offer (offer revision ${row.checkpointRevision}, current ${currentCheckpointRevision}) — ` +
           `the sender must re-offer against the current basis`,
         { handoffId: input.handoffId, offeredRevision: row.checkpointRevision, currentRevision: currentCheckpointRevision },
+      );
+    }
+    if (row.evidenceBasis !== null && row.evidenceBasis !== evidenceBasisDigest(store, row.cardId)) {
+      throw new HandoffStateError(
+        `card ${row.cardId} evidence state changed since the offer — the recipient must review the current evidence basis before accepting; ` +
+          `the sender must re-offer`,
+        { handoffId: input.handoffId },
       );
     }
 

@@ -125,6 +125,27 @@ export const MANIFEST: AppOperation[] = [
     },
     opensProject: true,
   },
+  {
+    id: 'apply.doors',
+    summary: 'controlled apply start/resume/cancel/status, durable checkpoints, evidence runs and completion identity',
+    mutability: 'command',
+    cli: {
+      route: 'apply',
+      flags: {
+        json: 'boolean',
+        by: 'value',
+        dirty: 'value',
+        producer: 'value',
+        check: 'value',
+        run: 'value',
+        result: 'value',
+        criteria: 'value',
+        tasks: 'value',
+        review: 'value',
+      },
+    },
+    opensProject: true,
+  },
 
   // Project lifecycle and harness.
   { id: 'project.init', summary: 'initialize a deck project', mutability: 'command', cli: { route: 'init', flags: { name: 'value' } }, opensProject: false },
